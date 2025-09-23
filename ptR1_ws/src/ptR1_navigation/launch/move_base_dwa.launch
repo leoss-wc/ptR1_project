@@ -1,0 +1,23 @@
+<launch>
+  <!-- 🗺️ โหลดแผนที่ -->
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find your_package)/maps/map.yaml"/>
+
+  <!-- 📍 AMCL -->
+  <node name="amcl" pkg="amcl" type="amcl" output="screen">
+    <param name="odom_frame_id" value="odom"/>
+    <param name="base_frame_id" value="base_link"/>
+    <param name="global_frame_id" value="map"/>
+  </node>
+
+  <!-- 🧠 Move Base with DWAPlanner -->
+  <node pkg="move_base" type="move_base" name="move_base" output="screen">
+    <!-- เปลี่ยน planner -->
+    <param name="base_local_planner" value="dwa_local_planner/DWAPlannerROS"/>
+    
+    <!-- โหลด config ทั้งหมด -->
+    <rosparam file="$(find your_package)/config/dwa_planner.yaml" command="load"/>
+    <rosparam file="$(find your_package)/config/global_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find your_package)/config/local_costmap_params.yaml" command="load"/>
+    <rosparam file="$(find your_package)/config/costmap_common_params.yaml" command="load"/>
+  </node>
+</launch>

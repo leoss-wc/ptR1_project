@@ -1,0 +1,26 @@
+<launch>
+  <node pkg="test_package" type="mecanum_velocity_node.py" name="mecanum_velocity_node" output="screen">
+    <param name="wheel_radius" value="0.04" />
+    <param name="l1" value="0.1075" />
+    <param name="l2" value="0.0825" />
+    <param name="ppr" value="660" />
+    <param name="update_dt" value="0.02" />
+
+    <!-- Scale จากค่าที่วัดมา -->
+    <param name="scale_FL" value="1.0000" />
+    <param name="scale_FR" value="0.9993" />
+    <param name="scale_RL" value="0.9988" />
+    <param name="scale_RR" value="0.9974" />
+
+    <param name="encoder1_topic" value="encoder1" />
+    <param name="encoder2_topic" value="encoder2" />
+    <param name="encoder3_topic" value="encoder3" />
+    <param name="encoder4_topic" value="encoder4" />
+  </node>
+
+
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization_node" output="screen">
+    <rosparam command="load" file="$(find ptR1_navigation)/config/ekf_localizationV1.yaml" />
+  </node>
+
+</launch>

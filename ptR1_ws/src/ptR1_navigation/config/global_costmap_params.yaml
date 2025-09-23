@@ -1,0 +1,44 @@
+global_costmap:
+  global_frame: map             # กรอบอ้างอิงหลักของ global costmap มักใช้ "map" เมื่อใช้ AMCL
+  robot_base_frame: base_link   # กรอบฐานของหุ่นยนต์ เช่น "base_link" หรือ "base_footprint"
+
+  update_frequency: 5.0         # ความถี่ในการอัปเดตข้อมูล costmap (Hz) ยิ่งสูงยิ่ง responsive แต่กิน CPU มากขึ้น
+  publish_frequency: 2.0        # ความถี่ในการเผยแพร่ costmap เพื่อ visualization ใน RViz
+
+  transform_tolerance: 0.5      # เวลา buffer ที่จะรอ TF ให้พร้อมก่อนทิ้ง frame (วินาที)
+
+  resolution: 0.05              # ความละเอียดของ grid ใน costmap (เมตร/เซลล์) → ค่าเล็กแม่นยำกว่าแต่ใช้หน่วยความจำมากขึ้น
+
+  static_map: true              # ใช้ static map จาก map_server (เหมาะกับระบบ localization อย่าง AMCL)
+  rolling_window: false         # หาก true จะให้ costmap เคลื่อนที่ตามหุ่นยนต์ (เหมาะกับ local costmap เท่านั้น)
+
+  width: 10.0                   # ความกว้างของ costmap (เมตร) → ใช้เฉพาะเมื่อ rolling_window: true
+  height: 10.0                  # ความสูงของ costmap (เมตร) → ใช้เฉพาะเมื่อ rolling_window: true
+
+  plugins:                      # รายการ plugin ที่ใช้ใน costmap → static (map), obstacle (เซ็นเซอร์), inflation (กันชน)
+    - {name: static_layer,    type: "costmap_2d::StaticLayer"}        # โหลดข้อมูลจากแผนที่ static (/map)
+    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}      # ตรวจจับสิ่งกีดขวางจากเซ็นเซอร์จริง
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}     # สร้างระยะกันชนรอบสิ่งกีดขวาง
+
+  static_layer:
+    enabled: true              # เปิดใช้งาน static map
+    map_topic: /map            # ชื่อ topic ที่ map_server ส่งแผนที่ออกมา
+
+  obstacle_layer:
+    enabled: true              # เปิดใช้งาน layer ตรวจจับ obstacle จากเซ็นเซอร์จริง
+    observation_sources: laser_scan   # ชื่อของแหล่งข้อมูลที่ใช้สังเกตการณ์ (sensor)
+    
+    laser_scan:                        # กำหนดพารามิเตอร์ของเซ็นเซอร์เลเซอร์
+      sensor_frame: laser_frame       # กรอบของเซ็นเซอร์เลเซอร์ (ต้องสัมพันธ์กับ TF)
+      data_type: LaserScan            # ประเภทของข้อมูลที่รับจาก sensor
+      topic: /scan                    # ชื่อ topic ที่รับข้อมูล LaserScan
+      marking: true                   # ทำเครื่องหมายว่าบริเวณนั้นมี obstacle
+      clearing: true                  # เคลียร์ obstacle เมื่อไม่มีวัตถุอยู่แล้ว
+      expected_update_rate: 0.2       # ความถี่ที่คาดว่าเซ็นเซอร์จะส่งข้อมูล (วินาที)
+      min_obstacle_height: 0.05       # ความสูงต่ำสุดที่ยังถือว่าเป็น obstacle (เมตร)
+      max_obstacle_height: 0.6        # ความสูงสูงสุดที่ถือว่าเป็น obstacle (เมตร)
+
+  inflation_layer:
+    enabled: true                     # เปิดใช้งาน inflation layer (พื้นที่กันชน)
+    inflation_radius: 0.2             # ระยะจากสิ่งกีดขวางที่จะใส่ค่า cost เพิ่ม (เมตร)
+    cost_scaling_factor: 5.0          # ความชันของค่า cost รอบ obstacle → ค่ายิ่งสูง หุ่นยนต์ยิ่งหลีกเลี่ยง

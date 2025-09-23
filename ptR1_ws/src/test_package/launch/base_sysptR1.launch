@@ -1,0 +1,37 @@
+<launch> 
+   
+    <!-- Start ROSBridge WebSocket -->
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch"/>
+
+    <!-- ROSSerial สำหรับ Mega ที่ /dev/ttyUSB0 -->
+    <node pkg="rosserial_python" type="serial_node.py" name="serial_node_mega"
+          output="screen">
+        <param name="port" value="/dev/arduino_mega"/>
+        <param name="baud" value="250000"/>
+    </node>
+
+
+    <!-- ROSSerial สำหรับ Nano ที่ /dev/ttyUSB1 -->
+    <node pkg="rosserial_python" type="serial_node.py" name="serial_node_nano"
+          output="screen">
+        <param name="port" value="/dev/arduino_nano"/>
+        <param name="baud" value="57600"/>
+    </node>
+
+    <!-- Start cv_camera (USB webcam) and remap to /camera/image_raw 
+    <node pkg="cv_camera" type="cv_camera_node" name="cv_camera_node" output="screen" respawn="false">
+        <param name="device_id" value="0"/>
+        <param name="image_width" value="640"/>
+        <param name="image_height" value="480"/>
+        <param name="fps" value="15"/>
+        <param name="frame_id" value="camera_frame"/>
+        <param name="pixel_format" value="mjpeg"/>   
+        <param name="use_camera_info" value="false"/>
+    </node> -->
+    
+    <!-- Start the camera WebSocket server -->
+    <node name="camera_ws_py" pkg="test_package" type="img_ws.py" output="screen">
+        <param name="param1" value="default_value"/>
+    </node>
+
+</launch>

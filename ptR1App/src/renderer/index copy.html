@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Robot Control App</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-item active" data-view="home">🏠</div>
+    <div class="sidebar-item" data-view="commd">🤖</div>
+    <div class="sidebar-item" data-view="video">📹</div>
+    <div class="sidebar-item" data-view="map">🗺️</div>
+    <div class="sidebar-item" data-view="settings">⚙️</div>
+  </div>
+
+  <div class="main-content">
+    <!-- Home View -->
+    <div id="view-home" class="view">
+      <label style="margin: 10px; font-size: x-large; font-weight: bold;">🏠 Dashboard</label>
+      <div class="home-container" style="margin: 10px;">
+        <div class="panel">
+          <h4 style="text-align: center; margin: 5px 0; font-size: 16px;">Camera</h4>
+          <div class="video-stream">
+            <p id="status">Ready to connect.</p>
+            <video id="stream" width="100%" height="480" autoplay playsinline muted style="background: #222; object-fit: contain;"></video>
+            <canvas id="capture-canvas" width="640" height="480" style="display:none;"></canvas>
+            <button id="start-record">Start Recording</button>
+            <button id="stop-record" disabled>Stop Recording</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h4 style="text-align: center; margin: 5px 0; font-size: 16px;">Map</h4>
+          <div id="map-display" style="width: 100%; height: 300px; background: #222;">
+            <canvas id="homeMapCanvas" width="300" height="300" style="width: 100%; height: 100%;"></canvas>
+          </div>
+
+          <div>
+            <!--
+            <label for="ipInput">Camera ip:</label>
+            <select id="ipInput">
+              <option value="localhost">localhost:8181</option>
+              <option value="100.65.44.67">100.65.44.67:8181</option>
+              <option value="192.168.237.184">192.168.237.184:8181</option>
+            </select>
+            -->
+            <button id="connectButton">Connect</button>
+            <!--
+            <div class="ip-section" style="margin: 4px;">
+              <label for="ip-dropdown">Select Command:</label>
+              <select id="ip-dropdown">
+                <option value="127.0.0.1">localhost:9090</option>
+                <option value="100.65.44.67">100.65.44.67:9090</option>
+                <option value="192.168.237.184">192.168.237.184:9090</option>
+              </select>
+              <button id="selected-ip">Selected ip address</button>
+            </div>
+            -->
+            <div class="controls" style="margin-top: 5px;">
+              <div class="toggle">
+                <label for="keyboard-toggle">Control:</label>
+                <label class="switch">
+                  <input type="checkbox" id="keyboard-toggle">
+                  <span class="slider"></span>
+                </label>
+                <span id="mode-label" class="mode-text">MANUAL OFF</span>
+              </div>
+              <div style="margin-top: 10px;">
+                <label for="buttonR">Spot light 1</label>
+                <button class="buttonR" id="relayButton1">RELAY: OFF</button>
+                <label for="buttonR">Spot light 2</label>
+                <button class="buttonR" id="relayButton2">RELAY: OFF</button>
+                <button id="test-robot-move-btn" style="margin: 10px;">Test Robot Movement</button>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Command View -->
+    <div id="view-commd" class="view hidden">
+      <h2>🤖 Robot Control</h2>
+      <div class="controls-main">
+        <div id="robotSelector">
+          <h3>🤖 Select Robot</h3>
+          <select id="robotDropdown"></select>
+          <button id="connectRobotBtn">Connect</button>
+        </div>
+
+        <button id="addRobotBtn">➕ Add Robot</button>
+
+        <dialog id="robotDialog">
+          <form method="dialog">
+            <h3>➕ Add New Robot</h3>
+            <input type="text" id="robotName" placeholder="Name" required />
+            <input type="text" id="robotIP" placeholder="IP Address" required />
+            <input type="number" id="whepPort" placeholder="WHEP Port" required />
+            <input type="number" id="rosPort" placeholder="ROS Port" required />
+            <menu>
+              <button id="cancelBtn" type="reset" value="cancel">Cancel</button>
+              <button id="confirmBtn" type="submit" value="default">Save</button>
+            </menu>
+          </form>
+        </dialog>
+
+
+        <div style="margin-bottom: 10px;">
+          <label for="pwm-slider">PWM Value:
+            <span id="pwm-value-label" style="display: inline-block; width: 30px; text-align: right;">70</span>
+          </label><br>
+          <input type="range" id="pwm-slider" min="0" max="200" value="70" step="1">
+        </div>
+
+        <div class="cmd-section">
+          <label for="cmd-dropdown">Select Command:</label>
+          <select id="cmd-dropdown">
+            <option value="0x07000000">global variable (0x07000000)</option>
+            <option value="0x05000000">drive mode MANUAL OFF (0x05000000)</option>
+            <option value="0x05000001">drive mode MANUAL ON (0x05000001)</option>
+          </select>
+          <button id="send-selected-cmd-button">Send Selected Command</button>
+        </div>
+
+        <div class="cmd-input-section">
+          <label for="cmd-input">Enter Custom Command:</label>
+          <input type="text" id="cmd-input" placeholder="0x05000001" />
+          <button id="send-custom-cmd-button">Send Custom Command</button>
+        </div>
+
+        <div id="power-panel" style="margin-top: 20px;">
+          <h4>🔋 Voltage: <span id="voltage">--</span></h4>
+          <h4>📊 Battery: <span id="percent">--</span></h4>
+        </div>
+
+        <div id="status-panel" style="margin-top: 20px;">
+          <h4>Connection: <span id="connection-status">--</span></h4>
+          <label for="toggle-control-imu">IMU Control</label>
+          <input type="checkbox" id="toggle-control-imu">
+          <label for="toggle-control-mag">Magnetometer Control</label>
+          <input type="checkbox" id="toggle-control-mag">
+        </div>
+      </div>
+    </div>
+
+    <!-- Video View -->
+    <div id="view-video" class="view hidden">
+      <h2>📹 Recording</h2>
+      <div class="video-layout">
+        <div class="video-left">
+          <video id="video-player" controls style="width: 100%; height: 360px; background: #222;">
+            <source src="" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        </div>
+        <div class="video-right">
+          <input type="file" id="folder-picker" webkitdirectory directory multiple style="display:none;">
+          <button id="select-folder-btn">📂 Select Video Folder</button>
+          <div id="video-gallery" class="video-grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Map View -->
+    <div id="view-map" class="view hidden">
+      <div class="container">
+        <h4 class="title">🗺️ Map Viewer</h4>
+        <div class="grid">
+          <div class="map-left">
+            <div class="map-box">
+              <!-- ปุ่มสลับโหมด -->
+              <div class="map-mode-toggle">
+                <button id="btn-static-map" class="toggle-btn active">🗺️ Static Map</button>
+                <button id="btn-live-map" class="toggle-btn">📡 Live Mapping</button>
+                <span id="patrol-status-label">⏹ หยุดนิ่ง</span>
+              </div>
+              <div class="map-wrapper">
+                <canvas id="staticMapCanvas" class="map-canvas"></canvas>
+                <canvas id="liveMapCanvas" class="map-canvas hidden"></canvas>
+                <div class="canvas-controls">
+                  <button id="zoom-in">➕</button>
+                  <button id="zoom-out">➖</button>
+                  <button id="reset-view">🔄</button>
+                </div>
+              </div>
+            </div>
+            <!-- กล่องควบคุม Static Map -->
+            <div id="static-control-box" class="control-box">
+              <p id="active-map-display" style=" font-size: medium;">Active Map: <span id="active-map-name">None</span></p>
+              <button id="select-map-btn">Select This Map</button>
+              <button id="start-patrol-btn" class="control-btn blue">Start Patrol</button>
+              <button id="stop-patrol-btn" class="control-btn red">Stop Patrol</button>
+              <button id="resume-patrol-btn">Resume Patrol</button>
+              <button id="set-goal-btn">Set Goal</button>
+              <button id="toggle-draw-mode">Draw :OFF</button>
+              <button id="clear-path-btn">Clear</button>
+              <button id="save-path-btn">Save Path</button>
+            </div>
+            
+
+            <!-- กล่องควบคุม Live Mapping -->
+            <div id="live-control-box" class="control-box hidden">
+              <input id="map-name-input" placeholder="Enter map name..." />
+              <button id="save-map-btn" class="control-btn blue">💾 Save Map</button>
+              <button id="start-slam-btn" class="control-btn blue">🧭 Start SLAM</button>
+              <button id="stop-slam-btn" class="control-btn red">🛑 Stop SLAM</button>
+              <span id="slam-result-label" style="margin-left: 10px;"></span>
+
+            </div>
+
+
+
+          </div>
+          <div class="map-right">
+            <button id="open-map-folder-btn">📂 Open Map Folder</button>
+            <button id="sync-maps-btn">Sync Maps</button>
+            <div id="map-gallery" class="map-grid"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+   <div id="view-settings" class="view hidden">
+    <h2>⚙️ Settings & Robot Profiles</h2>
+
+    <div class="settings-section">
+        <h3>Select Robot Profile</h3>
+        <div class="profile-controls">
+            <select id="robot-profile-select">
+                </select>
+            <button id="add-profile-btn" class="custom-blue-btn">➕ Add</button>
+            <button id="delete-profile-btn" class="custom-red-btn">🗑️ Delete</button>
+        </div>
+    </div>
+
+    <div id="profile-form-section" class="settings-section" style="display: none;">
+        <h3 id="form-title">Edit Profile</h3>
+        <div class="form-group">
+            <label for="profile-name">Profile Name:</label>
+            <input type="text" id="profile-name" placeholder="e.g., ptR1 (must be unique)">
+        </div>
+        <div class="form-group">
+            <label for="profile-ros-ip">ROSBridge IP:</label>
+            <input type="text" id="profile-ros-ip" placeholder="e.g., localhost">
+        </div>
+        <div class="form-group">
+            <label for="profile-whep-url">WHEP Stream URL:</label>
+            <input type="text" id="profile-whep-url" placeholder="e.g., http://localhost:8889/live/whep">
+        </div>
+        <div class="form-actions">
+            <button id="save-profile-btn" class="custom-blue-btn btn-small">💾 Save Profile</button>
+            <button id="connect-all-btn" class="custom-blue-btn btn-small">Connect Using This Profile</button>
+        </div>
+    </div>
+    
+    <p id="settings-status" style="margin-top: 15px;"></p>
+</div>
+
+  <script src="page_script.js"></script>
+  <script type="module" src="app.js"></script>
+  <!--<script type="module" src="renderer.js"></script>-->
+  
+</body>
+</html>

@@ -1,0 +1,11 @@
+<launch>
+  <node pkg="cv_camera" type="cv_camera_node" name="cv_camera_node">
+    <param name="device_id" value="0"/>
+    <param name="image_width" value="640"/>
+    <param name="image_height" value="480"/>
+    <param name="fps" value="30"/>
+    <param name="frame_id" value="camera_frame"/>
+    <param name="pixel_format" value="mjpeg"/>  
+    <param name="use_camera_info" value="false"/>
+  </node>
+</launch>

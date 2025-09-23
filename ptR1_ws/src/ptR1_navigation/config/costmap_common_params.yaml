@@ -1,0 +1,49 @@
+# ขนาดและรูปร่างหุ่นยนต์ (ใช้กำหนด collision boundary)
+footprint: [[-0.15, -0.125], [-0.15, 0.125], [0.15, 0.125], [0.15, -0.125]]
+# → นิยามขนาดหุ่นยนต์เป็น polygon (หน่วยเมตร) มีความกว้าง 0.25 m และความยาว 0.30 m
+# → ใช้แทน robot_radius เพื่อความแม่นยำในการเลี่ยงสิ่งกีดขวาง
+
+# robot_radius: 0.2
+# → ถ้าใช้ robot_radius แทน footprint ต้อง comment footprint ออก
+
+transform_tolerance: 0.5  # เวลาที่ costmap จะรอ TF ข้อมูลตำแหน่งก่อนถือว่าข้อมูลขาด (วินาที)
+
+resolution: 0.05          # ความละเอียดของกริดใน costmap (เมตร/เซลล์)
+# → ยิ่งต่ำเท่าไร (เช่น 0.03) จะยิ่งแม่นยำ แต่ใช้ RAM/CPU เพิ่มขึ้น
+
+# Obstacle Layer (ใช้เซ็นเซอร์จริงในการตรวจจับสิ่งกีดขวางแบบ dynamic)
+obstacle_layer:
+  enabled: true                   # เปิดใช้งานชั้นตรวจจับ obstacle จากเซ็นเซอร์
+
+  obstacle_range: 2.5            # ระยะที่สามารถตรวจพบ obstacle (เมตร)
+  raytrace_range: 3.0            # ระยะที่สามารถลบ obstacle ที่เคยตรวจเจอออก (ถ้าไม่มีอีกแล้ว)
+
+  max_obstacle_height: 0.6       # ความสูงสูงสุดของ obstacle ที่จะพิจารณา (เมตร)
+  
+  observation_sources: laser_scan      # รายชื่อ sensor ที่ใช้ตรวจจับ obstacle (สามารถมีหลายตัวคั่นด้วย space)
+  laser_scan:                          # ตั้งค่าของเซ็นเซอร์ชื่อ laser_scan (ต้องตรงกับ observation_sources)
+    sensor_frame: laser_frame          # ชื่อ frame ของเลเซอร์ใน TF tree
+    data_type: LaserScan               # ประเภทของข้อมูล (LaserScan หรือ PointCloud)
+    topic: /scan                       # ชื่อ topic ที่รับข้อมูลจากเลเซอร์
+    marking: true                      # ทำเครื่องหมายตำแหน่ง obstacle บน costmap
+    clearing: true                     # ลบ obstacle ออกเมื่อไม่มีอยู่แล้ว (ใช้กับ ray tracing)
+    expected_update_rate: 0.2         # ความถี่ของข้อมูลที่คาดว่าจะได้รับ (วินาที)
+    min_obstacle_height: 0.05         # ความสูงต่ำสุดที่จะถือว่าเป็น obstacle (ช่วยกัน scan พื้น)
+    max_obstacle_height: 0.6          # ความสูงสูงสุดของ obstacle (ใช้ซ้ำกับข้างบนเพื่อ safety)
+
+# Inflation Layer (สร้างระยะกันชนรอบ obstacle ด้วย cost ที่ค่อย ๆ ลดลง)
+inflation_layer:
+  enabled: true                     # เปิดใช้งาน inflation
+  inflation_radius: 0.2            # รัศมีจาก obstacle ที่จะขยาย cost ออก (เมตร)
+  cost_scaling_factor: 10.0        # ความชันของค่า cost → ค่าสูง = หลบมาก, ค่าต่ำ = ผ่านใกล้ obstacle ได้ง่ายขึ้น
+
+# Static Layer (แผนที่สิ่งกีดขวางแบบคงที่ที่โหลดจาก map server)
+static_layer:
+  enabled: true                    # เปิดใช้งาน static map
+  map_topic: "/map"                # ชื่อ topic ที่รับข้อมูล map จาก node map_server
+
+# (Optional - ปิดไว้)
+# z_resolution: 0.05               # ความละเอียดแนวดิ่งของ voxel layer (ใช้ใน 3D costmap เท่านั้น)
+# z_voxels: 10                     # จำนวน voxel ในแนวดิ่ง
+# unknown_threshold: 10           # กำหนด voxel ที่ไม่รู้ว่าเป็นอะไรให้ถือว่าเป็น unknown
+# mark_threshold: 5               # กำหนด voxel ที่ถือว่าเป็น obstacle ได้

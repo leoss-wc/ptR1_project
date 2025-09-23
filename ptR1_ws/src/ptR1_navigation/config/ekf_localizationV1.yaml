@@ -1,0 +1,51 @@
+frequency: 30  # ความถี่ในการคำนวณ (Hz) EKF จะอัปเดตค่าตำแหน่งทุก 1/30 = 0.033 วินาที (33ms)
+sensor_timeout: 0.1  # Timeout ของเซ็นเซอร์ที่ยอมรับได้
+
+two_d_mode: true  # ใช้เฉพาะ 2D motion (x, y, yaw) ไม่ใช้ z, roll, pitch
+publish_tf: true  # ให้ EKF ส่ง TF odom → base_link อัตโนมัติ
+map_frame: map    # ใช้ map เป็นกรอบอ้างอิงของ Localization
+odom_frame: odom  # ใช้ odom เป็นกรอบอ้างอิงของ Odometry
+base_link_frame: base_link  #กรอบอ้างอิงของตัวหุ่นยนต์
+world_frame: odom #หมายถึงว่า EKF คำนวณ odom → base_link เท่านั้น   
+                  #ถ้ามี map → odom จาก AMCL หรือ SLAM, EKF จะไม่ยุ่งเกี่ยว
+
+output_topic: /odometry/filtered
+publish_acceleration: false  # ไม่ต้อง publish acc
+output_frame: odom
+
+# ====== Odometry ======
+odom0: /wheel_odom_raspi
+odom0_config: [false, false, false,  # x, y, z ❌ ไม่เปิด pose
+               false, false, false,  # roll, pitch, yaw
+               true,  true,  false,  # vx, vy, vz ✅ ใช้ velocity
+               false, false, true,   # wx, wy, wz ✅ ใช้ yaw rate
+               false, false, false]
+
+
+odom0_differential: true 
+odom0_relative: false
+odom0_queue_size: 10
+
+# ====== IMU - MPU6050 ======
+#imu0: /imu/data_raw
+#imu0_config: [false, false, false,
+#              false, false, false,  
+#              false, false, false,
+#              false, false, false,   
+#              false, false, false]
+
+#imu0_differential: false     # เป็น false ถ้า orientation มาจาก absolute sensor
+#imu0_relative: false         # เป็น false เช่นกัน ถ้า orientation เป็น absolute
+#imu0_queue_size: 10
+
+# ====== IMU1 - Compass (QMC5883) ======
+#imu1: /imu/mag
+#imu1_config: [false, false, false,  # position
+#              false, false, true,   # orientation (yaw only)
+#              false, false, false,  # linear velocity
+#              false, false, false,  # angular velocity
+#              false, false, false]  # acceleration
+#imu1_frame: mag_link
+#imu1_differential: false
+#imu1_relative: false
+#imu1_queue_size: 10

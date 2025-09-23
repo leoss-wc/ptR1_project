@@ -1,0 +1,4 @@
+<!-- map_server.launch -->
+<launch>
+  <node name="map_server" pkg="map_server" type="map_server" args="$(find ptR1_navigation)/maps/my_map.yaml" />
+</launch>

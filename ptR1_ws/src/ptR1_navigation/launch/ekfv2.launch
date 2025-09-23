@@ -1,0 +1,15 @@
+<launch>
+
+
+ <node name="send_uint32_once" pkg="test_package" type="send_uint32_once.py" output="screen"/>
+
+<node pkg="tf" type="static_transform_publisher" name="mag_tf"
+      args="0.03 0.02 0.24 0 0 0 base_link mag_link 100" />
+
+ <node name="tranfer_data_node" pkg="test_package" type="transfer_data.py" output="screen"/>
+
+  <node pkg="robot_localization" type="ekf_localization_node" name="ekf_localization_node" output="screen">
+    <rosparam command="load" file="$(find ptR1_navigation)/config/ekf_localizationV2.yaml" />
+  </node>
+
+</launch>

@@ -1,0 +1,6 @@
+string name
+---
+bool success
+string message
+string image_data_base64
+string yaml_data

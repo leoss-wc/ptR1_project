@@ -1,0 +1,12 @@
+local_costmap:
+  global_frame: odom             # กรอบอ้างอิงหลักของ local costmap → ใช้ "odom" สำหรับการคำนวณระยะทางระยะสั้นและการเคลื่อนไหว
+  robot_base_frame: base_link    # กรอบของหุ่นยนต์ที่ใช้เป็นอ้างอิง (เช่น base_link หรือ base_footprint)
+
+  update_frequency: 5.0          # ความถี่ในการอัปเดตข้อมูล costmap (Hz) → ยิ่งสูง หุ่นยนต์ตอบสนองเร็วขึ้น แต่กิน CPU มากขึ้น
+  publish_frequency: 2.0         # ความถี่ในการเผยแพร่ข้อมูล costmap สำหรับ visualization ใน RViz
+
+  rolling_window: true           # เปิดใช้ "หน้าต่างเลื่อน" → ทำให้ costmap เคลื่อนที่ตามหุ่นยนต์ เหมาะกับ local planner
+  width: 3.0                     # ความกว้างของ local costmap (เมตร) → กำหนดขนาดกริดรอบหุ่นยนต์
+  height: 3.0                    # ความสูงของ local costmap (เมตร) → ควรเพียงพอให้วาง path ได้รอบตัวหุ่นยนต์
+
+  resolution: 0.05               # ความละเอียดของกริด (เมตร/เซลล์) → ยิ่งเล็กยิ่งแม่นยำแต่ใช้หน่วยความจำมากขึ้น

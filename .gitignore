@@ -1,0 +1,24 @@
+# ไฟล์ที่สร้างโดยระบบปฏิบัติการ
+.DS_Store
+Thumbs.db
+
+
+# ไฟล์ Log และข้อมูลชั่วคราว
+*.log
+*.tmp
+*.swo
+
+node_modules/
+
+ptR1App/python-backend/runs/
+ptR1App/python-backend/venv/
+ptR1App/yolov8n.pt
+ptR1App/bus.jpg
+
+
+mediamtx_v1.14.0_linux_amd64/
+mediamtx_v1.14.0_darwin_arm64
+
+ptR1_ws/build/
+ptR1_ws/devel/
+ptR1_ws/src/YDLidar-SDK/

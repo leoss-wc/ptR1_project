@@ -1,0 +1,36 @@
+DWAPlannerROS:
+  # ✅ ตั้งค่าระบบล้อ
+  holonomic_robot: true
+
+  # ✅ ความเร็ว/เร่ง
+  max_vel_x: 0.5
+  min_vel_x: -0.3
+
+  max_vel_y: 0.5
+  min_vel_y: -0.5
+
+  max_vel_theta: 1.5
+  min_vel_theta: -1.5
+
+  acc_lim_x: 2.0
+  acc_lim_y: 2.0
+  acc_lim_theta: 3.2
+
+  # ✅ การจำลอง trajectory
+  sim_time: 2.0
+  vx_samples: 20
+  vy_samples: 20
+  vtheta_samples: 40
+  sim_granularity: 0.025
+
+  # ✅ ค่าน้ำหนักการวาง path
+  path_distance_bias: 32.0     # อยู่ใกล้เส้นทางเดิม
+  goal_distance_bias: 20.0     # มุ่งไปยังเป้าหมาย
+  occdist_scale: 0.05          # หลีกเลี่ยง obstacle
+  forward_point_distance: 0.325
+  stop_time_buffer: 0.2
+
+  # ✅ การหยุดที่ goal
+  latch_xy_goal_tolerance: true
+  xy_goal_tolerance: 0.15
+  yaw_goal_tolerance: 0.15
