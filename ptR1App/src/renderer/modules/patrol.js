@@ -2,7 +2,7 @@
 
 // modules/patrol.js
 // 👉 จัดการการวาด path, การส่ง patrol, การหยุด และ resume
-
+import { patrolPath } from './patrolState.js';
 import { activeMap } from './mapState.js';
 import { goalPoint } from './patrolState.js';
 

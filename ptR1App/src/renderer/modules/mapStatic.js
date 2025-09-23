@@ -1,5 +1,5 @@
 // modules/mapStatic.js
-import { startPatrolState, stopPatrolState } from './patrolState.js';
+import { startPatrolState, stopPatrolState, patrolPath } from './patrolState.js';
 
 import { activeMap } from './mapState.js';
 
@@ -18,7 +18,6 @@ let dragStartX = 0;
 let dragStartY = 0;
 
 let current_map_select = { name: null, base64: null };
-const patrolPath = [];
 let goalPoint = null;
 let mode = 'none';
 

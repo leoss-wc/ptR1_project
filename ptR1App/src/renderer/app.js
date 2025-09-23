@@ -77,34 +77,31 @@ function startMockPathTest() {
 
 document.addEventListener('DOMContentLoaded', async() => {
   console.log("app: DOMContentLoaded fired!");
-
   // Video Player view setup
   setupVideoPlayer();
 
   const homeMapCanvas = document.getElementById('homeMapCanvas');
   if (!homeMapCanvas) return;
-
   const savedMapName = localStorage.getItem('activeMapName');
-    if (savedMapName) {
-      setupMapCanvas(homeMapCanvas); // เตรียม Canvas ให้พร้อม
-      console.log("map canvas initialized.");
-      console.log(`Found saved active map: ${savedMapName}. Loading...`);
-      // เรียกใช้ API เพื่อดึงข้อมูลแผนที่ทั้งหมดด้วยชื่อ
-      const mapData = await window.electronAPI.getMapDataByName(savedMapName);
-      console.log("Data received from main process:", mapData); 
+  if (savedMapName) {
+    setupMapCanvas(homeMapCanvas); // เตรียม Canvas ให้พร้อม
+    console.log("map canvas initialized.");
+    console.log(`Found saved active map: ${savedMapName}. Loading...`);
+    // เรียกใช้ API เพื่อดึงข้อมูลแผนที่ทั้งหมดด้วยชื่อ
+    const mapData = await window.electronAPI.getMapDataByName(savedMapName);
+    console.log("Data received from main process:", mapData); 
+    
+    if (mapData.success) {
+      // อัปเดต State
+      activeMap.name = mapData.name;
+      activeMap.base64 = mapData.base64;
+      activeMap.meta = mapData.meta;
       
-      if (mapData.success) {
-        // อัปเดต State
-        activeMap.name = mapData.name;
-        activeMap.base64 = mapData.base64;
-        activeMap.meta = mapData.meta;
-        
-        // สั่งวาดลง homeMapCanvas!
-        await setMapImage(activeMap.base64);
-        console.log(`✅ Automatically loaded and displayed '${savedMapName}' on dashboard.`);
-      }
+      // สั่งวาดลง homeMapCanvas!
+      await setMapImage(activeMap.base64);
+      console.log(`✅ Automatically loaded and displayed '${savedMapName}' on dashboard.`);
     }
-
+  }
    // Static Map
   initStaticMap();
 
@@ -139,7 +136,7 @@ document.addEventListener('DOMContentLoaded', async() => {
     });
 
   recorder = new CanvasRecorder(canvas, {
-    fps: 15,
+    fps: 30,
     segmentMs: 10 * 60 * 1000 // หรือเปลี่ยนเป็น 10 * 1000 สำหรับ dev
   });
 
@@ -207,6 +204,31 @@ document.addEventListener('DOMContentLoaded', async() => {
     const customCmd = parseInt(cmdInput.value, 16);
     sendUInt32Command(customCmd);
   });
+
+  keyboardToggle.addEventListener('change', (event) => {
+    const isOn = event.target.checked;
+    modeLabel.textContent = isOn ? 'MANUAL ON' : 'MANUAL OFF';
+
+    console.log(isOn ? '🛠 Switched to MANUAL ON' : '🛑 Switched to MANUAL OFF');
+    window.electronAPI.setManualMode(isOn);
+  });
+
+  if (window.electronAPI?.onPowerUpdate) {
+  window.electronAPI.onPowerUpdate((data) => {
+  //console.log("Power data received:", data);
+  const { voltage, current, percent } = data;
+
+  document.getElementById('voltage').textContent = `${voltage} V`;
+  //document.getElementById('current').textContent = `${current} A`;
+  document.getElementById('percent').textContent = `${percent} %`;
+
+  // เปลี่ยนสีถ้าแบตต่ำกว่า 20%
+  const percentEl = document.getElementById('percent');
+  percentEl.style.color = parseFloat(percent) < 20 ? 'red' : 'white';
+  });
+  } else {
+  console.warn("⚠️ electronAPI.onPowerUpdate is undefined.");
+  }
 });
 
 // ✅ ฟังก์ชันส่ง Drive command เฉพาะตอน MANUAL ON
@@ -219,10 +241,13 @@ const pwmInitial = 40;
 
 const sendKeyDrive = (event) => {
   if (!event || !event.code) return;
+
   const keyboardToggle = document.getElementById('keyboard-toggle');
   let pwmInput = document.getElementById('pwm-slider');
   const modeLabel = document.getElementById('mode-label');
+
   if (!keyboardToggle || !pwmInput || !modeLabel) return;
+
   if (modeLabel.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
   const pwmInputValue = parseInt(pwmInput.value);
   const pwmMax = (!isNaN(pwmInputValue) && pwmInputValue > 0) ? pwmInputValue : 255;
@@ -495,7 +520,6 @@ async function deleteProfile() {
         document.getElementById('settings-status').textContent = `🗑️ Profile "${selectedProfileName}" deleted.`;
     }
 }
-
 /**
  * เชื่อมต่อโดยใช้ข้อมูลจากฟอร์มปัจจุบัน
  */
@@ -530,3 +554,5 @@ function connectUsingCurrentProfile() {
     statusEl.textContent = `🚀 Attempting to connect using profile: ${selectedProfileName}`;
     statusEl.style.color = 'green';
 }
+
+
