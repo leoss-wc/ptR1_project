@@ -7,9 +7,9 @@ const { exec } = require('child_process');
 const { spawn } = require('child_process');
 const yaml = require('js-yaml');
 
+
 let rosWorker;
 let mainWindow;
-let pythonProcess;
 const robotFilePath = path.join(app.getPath('userData'), 'robots.json');
 const settingsFilePath = path.join(app.getPath('userData'), 'settings.json');
 const mapCacheDir = path.join(app.getPath('userData'), 'map_cache');
@@ -259,6 +259,15 @@ ipcMain.on('connect-rosbridge', (event, ip) => {
   console.log(`Main: 🔌 Connecting to ROSBridge at ${url}`);
 });
 
+// ✨ เพิ่ม IPC handlers
+ipcMain.on('start-stream', () => {
+  rosWorker?.postMessage({ type: 'startStream' });
+});
+
+ipcMain.on('stop-stream', () => {
+  rosWorker?.postMessage({ type: 'stopStream' });
+});
+
 ipcMain.on('sync-maps', async () => {
   const localMapFolder = path.join(app.getPath('userData'), 'maps');
 
@@ -462,13 +471,10 @@ ipcMain.handle('get-video-path', (_, relativePath) => {
 });
 
 function createWindow(ip) {
-  const wsURL = `ws://${ip}:8181`;
-  const mediaURL = `http://${"127.0.0.1"}:3001`;
-  // รัน backend YOLO
-  const backendPath = path.join(__dirname, '../../../yoloBackend/app.py');
-  pythonProcess = spawn('python3', [backendPath], {
-    stdio: 'inherit'
-  });
+  const backendPath = path.join(__dirname, '../../python-backend/yolo_app.py');
+  const pythonExecutable = path.join(__dirname, '../../python-backend/venv/bin/python');
+
+  //pythonProcess = spawn(pythonExecutable, [backendPath], {stdio: 'inherit'});
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -556,6 +562,12 @@ app.whenReady().then(() => {
           break;
         case 'planned-path':
           mainWindow?.webContents.send('planned-path', message.data);
+          break;
+        case 'planned-path':
+          mainWindow?.webContents.send('planned-path', message.data);
+          break;
+        case 'stream-status': 
+          mainWindow?.webContents.send('stream-status', message.data);
           break;
 
         default:

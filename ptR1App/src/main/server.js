@@ -65,6 +65,12 @@ parentPort.on('message', (message) => {
       case 'setInitialPose':
       publishInitialPose(message.pose);
         break;
+      case 'startStream':
+        callStartStreamService();
+        break;
+      case 'stopStream':
+        callStopStreamService();
+        break;
 
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
@@ -709,6 +715,55 @@ function publishInitialPose(pose) {
   console.log('Server : 📤 Publishing to /initialpose:', message);
   initialPoseTopic.publish(message);
 }
+
+function callStartStreamService() {
+  if (!ros || !ros.isConnected) {
+    console.log('Server : Start Stream Service Failed: ROS is not connected.');
+    // ส่งข้อความกลับไปว่าล้มเหลวเนื่องจากไม่ได้เชื่อมต่อ
+    parentPort.postMessage({
+      type: 'stream-status',
+      data: {
+        success: false,
+        message: 'ROS is not connected.'
+      }
+    });
+    return; // ออกจากฟังก์ชัน
+  }
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/stream_manager/start',
+    serviceType: 'std_srvs/Trigger'
+  });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    console.log('Server : Start Stream Service Result:', result);
+    parentPort.postMessage({ type: 'stream-status', data: result });
+  });
+}
+
+function callStopStreamService() {
+  if (!ros || !ros.isConnected) {
+    console.log('Server : Start Stream Service Failed: ROS is not connected.');
+    // ส่งข้อความกลับไปว่าล้มเหลวเนื่องจากไม่ได้เชื่อมต่อ
+    parentPort.postMessage({
+      type: 'stream-status',
+      data: {
+        success: false,
+        message: 'ROS is not connected.'
+      }
+    });
+    return;
+  }
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/stream_manager/stop',
+    serviceType: 'std_srvs/Trigger'
+  });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    console.log('Server : Stop Stream Service Result:', result);
+    parentPort.postMessage({ type: 'stream-status', data: result });
+  });
+}
+
 
 
 setTimeout((url) => {

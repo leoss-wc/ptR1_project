@@ -243,13 +243,21 @@ input:checked + .slider:before {
   font-size: 16px; 
 }
 
-#connectButton{
-  width: 30%;
+.connectButton-black{
+  width: 25%;
   height: 40px;
   background: #222;
   color: white;
-  font-size: 16px; 
+  font-size: 14px; 
   margin-top: 10px;
+}
+
+.home-bar-btn-black{
+  
+  height: 30px;
+  background: #222;
+  color: white;
+  font-size: 12px; 
 }
 
 #ip-dropdown {

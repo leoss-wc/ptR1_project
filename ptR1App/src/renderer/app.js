@@ -16,10 +16,17 @@ import { setPlannedPath } from './modules/planState.js';
 import * as patrolState from './modules/patrolState.js';
 
 import * as patrol from './modules/patrol.js';
+
+import { FrameProcessor } from './modules/FrameProcessor.js';
+import { OverlayCanvas } from './modules/OverlayCanvas.js';
+
+
 let recorder = null;
 let rtcPlayer = null;
 let allRobotProfiles = []; //ตัวแปรสำหรับเก็บโปรไฟล์ทั้งหมดที่โหลดมา
 let selectedProfileName = null; //ตัวแปรสำหรับเก็บชื่อโปรไฟล์ที่กำลังเลือก
+let frameProcessor = null;
+let yoloOverlay = null;
 
 let mockMoveInterval = null;
 function startMockPathTest() {
@@ -184,18 +191,33 @@ document.addEventListener('DOMContentLoaded', async() => {
     document.getElementById('save-profile-btn').addEventListener('click', saveProfile);
     document.getElementById('delete-profile-btn').addEventListener('click', deleteProfile);
     document.getElementById('connect-all-btn').addEventListener('click', connectUsingCurrentProfile);
+    document.getElementById('connect-video-btn').addEventListener('click', connectVideoPlayer);
     
     // โหลดโปรไฟล์ทั้งหมดเมื่อแอปเริ่มทำงาน
     await loadAndDisplayProfiles();
     
-    // ... (ส่วนที่เหลือของ DOMContentLoaded) ...
-    initRelayButtons();
 
   connectButton.addEventListener('click', () => {
     //window.electronAPI.connectROSBridge(ip);
     connectUsingCurrentProfile();
     console.log(`Connectting`);
   });
+
+  document.getElementById('start-stream-btn').addEventListener('click', () => {
+        console.log("Requesting to start FFmpeg stream...");
+        window.electronAPI.startFFmpegStream();
+    });
+
+    document.getElementById('stop-stream-btn').addEventListener('click', () => {
+        console.log("Requesting to stop FFmpeg stream...");
+        window.electronAPI.stopFFmpegStream();
+    });
+
+    //Listener เพื่อรับ Feedback สถานะการสั่งงาน Stream
+    window.electronAPI.onStreamStatus((result) => {
+        console.log("Stream Status Update:", result);
+        alert(`Stream command status: ${result.success ? 'Success' : 'Failed'}\nMessage: ${result.message}`);
+    });
 
   if (!keyboardToggle || !pwmInput || !cmdDropdown || !sendSelectedCmdButton || !cmdInput || !sendCustomCmdButton || !modeLabel) {
     console.error("❌ UI elements not found! Check HTML structure.");
@@ -542,34 +564,55 @@ async function deleteProfile() {
  */
 function connectUsingCurrentProfile() {
     const statusEl = document.getElementById('settings-status');
-
     const address = document.getElementById('profile-address').value;
     const rosPort = document.getElementById('profile-ros-port').value;
-    const whepPort = document.getElementById('profile-whep-port').value;
 
-    // แก้ไขเงื่อนไขการตรวจสอบ
-    if (!address || !rosPort || !whepPort) {
-        statusEl.textContent = '❌ Please fill in all address and port fields.';
+    if (!address || !rosPort) {
+        statusEl.textContent = '❌ Please fill in address and ROS port fields.';
         statusEl.style.color = 'red';
         return;
     }
 
     const rosIp = address;
-    const whepUrl = `http://${address}:${whepPort}/live/whep`;
-
     console.log(`🔌 Connecting to ROSBridge at ${rosIp}:${rosPort}`);
     window.electronAPI.connectROSBridge(rosIp);
 
-    // ... (RTC Player connection) ...
-     const videoElement = document.getElementById('stream');
+    statusEl.textContent = `🚀 Attempting to connect to ROS using profile: ${selectedProfileName}`;
+    statusEl.style.color = 'green';
+}
+
+function connectVideoPlayer() {
+    const address = document.getElementById('profile-address').value;
+    const whepPort = document.getElementById('profile-whep-port').value;
+    if (!address || !whepPort) {
+        alert("❌ Please fill in address and WHEP port fields.");
+        return;
+    }
+
+    const whepUrl = `http://${address}:${whepPort}/live/whep`;
+    const videoElement = document.getElementById('stream');
     const webrtcStatusElement = document.getElementById('rtc_status');
     
+    // --- เชื่อมต่อ WebRTC Player ---
     if (rtcPlayer) rtcPlayer.disconnect();
     rtcPlayer = new WebRTCPlayer(whepUrl, videoElement, webrtcStatusElement);
     rtcPlayer.connect();
 
-    statusEl.textContent = `🚀 Attempting to connect using profile: ${selectedProfileName}`;
-    statusEl.style.color = 'green';
+    // --- เริ่มต้น Frame Processor สำหรับ YOLO ---
+    if (yoloOverlay) yoloOverlay.clear();
+    yoloOverlay = new OverlayCanvas('yolo-overlay', videoElement);
+    
+    if (frameProcessor) frameProcessor.stop();
+    frameProcessor = new FrameProcessor(videoElement, (detections) => {
+        if (yoloOverlay) {
+            yoloOverlay.drawDetections(detections);
+        }
+    });
+
+    setTimeout(() => {
+        if(yoloOverlay) yoloOverlay.resize();
+        frameProcessor.start();
+    }, 2000); // หน่วงเวลาเพื่อให้ WebRTC เริ่มทำงานก่อน
 }
 
 

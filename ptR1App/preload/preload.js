@@ -11,6 +11,9 @@ contextBridge.exposeInMainWorld('robotControl', {
 contextBridge.exposeInMainWorld('electronAPI', {
   loadVideosFromFolder: (pathOverride) => ipcRenderer.invoke('load:videos', pathOverride),
   getVideoFileURL: (relativePath) => ipcRenderer.invoke('get-video-path', relativePath),
+  startFFmpegStream: () => ipcRenderer.send('start-stream'),
+  stopFFmpegStream: () => ipcRenderer.send('stop-stream'),
+  onStreamStatus: (callback) => ipcRenderer.on('stream-status', (_, data) => callback(data)),
 
   loadRobots: () => ipcRenderer.invoke('robots:load'),
   saveRobots: (robots) => ipcRenderer.invoke('robots:save', robots),
