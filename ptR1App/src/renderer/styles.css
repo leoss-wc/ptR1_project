@@ -607,3 +607,11 @@ input:checked + .slider:before {
 
 
 
+.patrol-options {
+  display: flex;
+  align-items: center;
+  margin: 5px 0;
+}
+.patrol-options label {
+  margin-left: 5px;
+}

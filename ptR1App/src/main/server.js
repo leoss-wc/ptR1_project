@@ -62,11 +62,15 @@ parentPort.on('message', (message) => {
       case 'stopSLAM':
         callStopSLAMService();
         break;
+      case 'setInitialPose':
+      publishInitialPose(message.pose);
+        break;
+
       default:
-        console.warn(`Server worker ❌ Unknown command: ${message.type}`);
+        console.warn(`Server worker  Unknown command: ${message.type}`);
     }
   } catch (err) {
-    console.error(`Server: ❗ Worker Error while processing message [${message.type}]:`, err.message);
+    console.error(`Server: Worker Error while processing message [${message.type}]:`, err.message);
     // คุณสามารถเลือกส่งกลับ frontend ได้ด้วย เช่น:
     // parentPort.postMessage({ type: 'error', data: `Error: ${err.message}` });
   }
@@ -79,13 +83,13 @@ function connectROSBridge(url) {
   
   
   if (ros && ros.isConnected && rosbridgeURL === url) {
-    console.log('Server : ✅ Already connected to ROSBridge at ', url);
+    console.log('Server : Already connected to ROSBridge at ', url);
     //parentPort.postMessage({ type: 'log', data: 'Connected to ROSBridge' });
     return;
   }
 
   if (ros) {
-    console.log('Server : 🔄 Closing previous ROSBridge connection before reconnecting...');
+    console.log('Server : Closing previous ROSBridge connection before reconnecting...');
     //parentPort.postMessage({ type: 'log', data: 'Server : Closing previous ROSBridge connection before reconnecting...' });
     ros.close();
   }
@@ -98,7 +102,7 @@ function connectROSBridge(url) {
   });
 
   ros.on('connection', () => {
-    console.log('Serverosbridger : ✅ Connected to ROSBridge at', url);
+    console.log('Serverosbridger : Connected to ROSBridge at', url);
     parentPort.postMessage({ type: 'connection', data: 'connected' });
     //subscribe function
     subscribeSensorData();
@@ -106,22 +110,22 @@ function connectROSBridge(url) {
     subscribeMapData();
     subscribeRobotPose();
     subscribePlannedPath();
+    subscribeMoveBaseResult();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
-      console.log('Server : 🛑 Reconnect attempts stopped after successful connection at', url);
+      console.log('Server : Reconnect attempts stopped after successful connection at', url);
     }
   });
 
   ros.on('error', (error) => {
-    console.log('Server : ❌ Error connecting to ROSBridge:');
-    //console.log('Server : ❌ Error connecting to ROSBridge:', error);
+    console.log('Server : Error connecting to ROSBridge:');
     parentPort.postMessage({ type: 'connection', data: 'error' });
     startReconnect();
   });
 
   ros.on('close', () => {
-    console.log('Server : 🔌❌ Connection to ROSBridge closed url : ',url);
+    console.log('Server :  Connection to ROSBridge closed url : ',url);
     parentPort.postMessage({ type: 'connection', data: 'disconnected' });
     startReconnect();
   });
@@ -272,6 +276,84 @@ function subscribePlannedPath() {
     });
   });
 }
+
+function subscribeMoveBaseResult() {
+  if (!ros || !ros.isConnected) return;
+
+  const resultTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/move_base/result',
+    messageType: 'move_base_msgs/MoveBaseActionResult'
+  });
+
+  resultTopic.subscribe((msg) => {
+    if (!msg.status) return;
+
+    let result = { status: 'UNKNOWN', text: msg.status.text || '' };
+
+    switch (msg.status.status) {
+      case 0: // PENDING
+        console.log('Server: Goal is PENDING.');
+        // สถานะนี้ไม่ปรากฏใน /result topic แต่ใส่ไว้เพื่อความสมบูรณ์
+        result.status = 'PENDING';
+        break;
+      case 1: // ACTIVE
+        console.log('Server: Goal is ACTIVE.');
+        // สถานะนี้ไม่ปรากฏใน /result topic
+        result.status = 'ACTIVE';
+        break;
+      case 2: // PREEMPTED
+        //ถูกยกเลิก (โดย Goal ใหม่): Goal ปัจจุบันถูกยกเลิก เพราะมี Goal ใหม่ถูกส่งเข้ามาแทนที่
+        console.warn('Server: Goal PREEMPTED (cancelled by a new goal).');
+        result.status = 'PREEMPTED';
+        break;
+      case 3: // SUCCEEDED
+        // สำเร็จ: หุ่นยนต์ไปถึงเป้าหมายที่กำหนดไว้
+        console.log('Server: Goal SUCCEEDED.');
+        result.status = 'SUCCEEDED';
+        break;
+      case 4: // ABORTED
+        // ล้มเหลว: หุ่นยนต์ไม่สามารถไปถึงเป้าหมายได้ (เช่น มีสิ่งกีดขวาง)
+        console.error('Server: Goal ABORTED (failed to reach).');
+        result.status = 'ABORTED';
+        break;
+      case 5: // REJECTED
+        // ถูกปฏิเสธ: เป้าหมายถูกปฏิเสธโดย action server (เช่น เป้าหมายอยู่นอกขอบเขตที่กำหนด)
+        console.error('Server: Goal REJECTED (invalid goal).');
+        result.status = 'REJECTED';
+        break;
+      case 6: // PREEMPTING
+        // กำลังถูกยกเลิก: อยู่ในระหว่างกระบวนการยกเลิกเป้าหมาย
+        console.log('Server: Goal is PREEMPTING (cancellation in progress).');
+        result.status = 'PREEMPTING';
+        break;
+      case 7: // RECALLING
+        //  กำลังร้องขอยกเลิก: มีการส่งคำขอยกเลิก Goal ไปแล้ว แต่ Server ยังไม่ตอบรับ
+        console.log('Server: Goal is RECALLING (cancellation requested).');
+        result.status = 'RECALLING';
+        break;
+      case 8: // RECALLED
+        //ยกเลิกสำเร็จ: Server ยืนยันว่า Goal นี้ถูกยกเลิกเรียบร้อยแล้ว
+        console.warn('Server: Goal RECALLED (cancelled successfully).');
+        result.status = 'RECALLED';
+        break;
+      case 9: // LOST
+        //การเชื่อมต่อขาดหาย: การสื่อสารกับ Action Server ที่ทำงานนี้อยู่ขาดหายไป
+        console.error('Server: Goal LOST (action server disappeared).');
+        result.status = 'LOST';
+        break;
+      default:
+        console.warn(`Server: Goal finished with unhandled status: ${msg.status.status}`);
+        break;
+    }
+
+    // ส่งผลลัพธ์ทั้งหมดกลับไปที่ Main Process ผ่าน Event เดียว
+    if (result.status !== 'UNKNOWN' && result.status !== 'ACTIVE' && result.status !== 'PENDING') {
+      parentPort.postMessage({ type: 'goal-result', data: result });
+    }
+  });
+}
+
 
 // Power
 function subscribeSensorData() {
@@ -522,19 +604,7 @@ function sendPatrolPathToROS(pathArray) {
   topic.publish(msg);
   console.log('📤 ส่ง PoseArray ไปยัง /patrol_path');
 }
-// ฟัง topic feedback เช่น /patrol_status (Bool หรือ String ก็ได้)
-function subscribePatrolStatus() {
-  const patrolStatusTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/patrol_status',
-    messageType: 'std_msgs/Bool'
-  });
 
-  patrolStatusTopic.subscribe((msg) => {
-    const isMoving = msg.data;
-    parentPort.postMessage({ type: 'patrol-status', data: isMoving });
-  });
-}
 function sendStopPatrolCommand() {
   if (!ros || !ros.isConnected) {
   console.warn('Server : ❌ Cannot stop patrol – ROSBridge not connected.');
@@ -599,6 +669,48 @@ function resumePatrolFrom(pathArray, startIndex) {
   topic.publish(msg);
   console.log(`▶️ Resumed patrol from index ${startIndex} (${subPath.length} points)`);
 }
+function publishInitialPose(pose) {
+  if (!ros || !ros.isConnected) {
+    console.error('Server : ❌ Cannot send initial pose: ROSBridge is not connected.');
+    return;
+  }
+
+  const initialPoseTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/initialpose',
+    messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+  });
+
+  const message = new ROSLIB.Message({
+    header: {
+      frame_id: 'map'
+    },
+    pose: {
+      pose: {
+        position: {
+          x: pose.position.x,
+          y: pose.position.y,
+          z: 0
+        },
+        orientation: pose.orientation
+      },
+      // Covariance บอกถึงความไม่แน่นอน (ค่ามาตรฐานที่ใช้กันทั่วไป)
+      covariance: [
+        0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0685
+      ]
+    }
+  });
+
+  console.log('Server : 📤 Publishing to /initialpose:', message);
+  initialPoseTopic.publish(message);
+}
+
+
 setTimeout((url) => {
   if (!rosAutoConnected) {
     console.log('Server : ⏳ No IP received in 3s, connecting to localhost fallback...');

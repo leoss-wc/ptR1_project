@@ -1,18 +1,11 @@
-console.log('[preload.js] loaded');
-
 const { contextBridge, ipcRenderer } = require('electron');
-const path = require('path');
-const fs = require('fs');
+
 console.log('[PRELOAD] Using raw preload:', __filename);
 
 contextBridge.exposeInMainWorld('robotControl', {
   sendKeyCommand: (command) => ipcRenderer.send('key-command', {command}),
   sendServoCommand: (command) => ipcRenderer.send('servo-command', {command}),
   sendCommand: (command) => ipcRenderer.send('uint32-command', {command}),
-});
-
-contextBridge.exposeInMainWorld('api', {
-  getWebSocketPort: () => ipcRenderer.invoke('get-ws-port'), // ฟังก์ชันขอพอร์ต
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -44,19 +37,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   syncMaps: () => ipcRenderer.send('sync-maps'),
   getLocalMaps: () => ipcRenderer.invoke('get-local-maps'),
   selectFolder_video: () => ipcRenderer.invoke('dialog:select-folder'),
-   getDefaultVideoPath: () => ipcRenderer.invoke('get-default-video-path'),
+  getDefaultVideoPath: () => ipcRenderer.invoke('get-default-video-path'),
   selectFolder: (defaultPath = null) => ipcRenderer.invoke('dialog:select-folder-map', defaultPath),
   getUserDataPath: (subfolder = '') => ipcRenderer.invoke('get-userdata-path', subfolder),
   selectMap: (mapName) => ipcRenderer.send('select-map', mapName),
   getMapDataByName: (name) => ipcRenderer.invoke('get-map-data-by-name', name),
+  saveMapCache: (mapName, imageData) => ipcRenderer.invoke('mapcache:save', { mapName, imageData }),
+  loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
+
+  // Robot pose and planned path api
   onRobotPose: (callback) => ipcRenderer.on('robot-pose', (event, ...args) => callback(...args)),
   onPlannedPath: (callback) => ipcRenderer.on('planned-path', (event, ...args) => callback(...args)),
-  // Patrol related functions
+  setInitialPose: (pose) => ipcRenderer.send('set-initial-pose', pose),
+
+  // Patrol related api
   sendPatrolPath: (pathArray) => ipcRenderer.send('send-patrol-path', pathArray),
   sendStopPatrol: () => ipcRenderer.send('send-stop-patrol'),
-  onPatrolStatus: (callback) => ipcRenderer.on('patrol-status', (_, isMoving) => callback(isMoving)),
   sendSingleGoal: (pt) => ipcRenderer.send('send-single-goal', pt),
   resumePatrol: (path, index) => ipcRenderer.send('resume-patrol', { path, index }),
+  cancelCurrentGoal: () => ipcRenderer.send('send-stop-patrol'),
+  onGoalResult: (callback) => ipcRenderer.on('goal-result', (_, data) => callback(data)),
+
+
   // SLAM related api
   saveMap: (mapName) => ipcRenderer.send('save-map', mapName),
   onMapSaveResult: (callback) => ipcRenderer.on('map-save-result', (_, result) => callback(result)),

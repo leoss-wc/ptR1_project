@@ -158,11 +158,17 @@
               <p id="active-map-display" style=" font-size: medium;">Active Map: <span id="active-map-name">None</span></p>
               <button id="select-map-btn">Select This Map</button>
               <button id="start-patrol-btn" class="control-btn blue">Start Patrol</button>
+              <button id="pause-patrol-btn" class="control-btn blue">Pause Patrol</button>
               <button id="stop-patrol-btn" class="control-btn red">Stop Patrol</button>
               <button id="resume-patrol-btn">Resume Patrol</button>
               <button id="set-goal-btn">Set Goal</button>
               <button id="toggle-draw-mode">Draw :OFF</button>
+              <div class="patrol-options">
+                <input type="checkbox" id="loop-patrol-checkbox">
+                <label for="loop-patrol-checkbox">Loop Patrol</label>
+              </div>
               <button id="clear-path-btn">Clear</button>
+              <button id="set-pose-btn" class="control-btn">Set Initial Pose</button>
               <button id="save-path-btn">Save Path</button>
             </div>
             
@@ -229,7 +235,7 @@
     <p id="settings-status" style="margin-top: 15px;"></p>
 </div>
 
-  <script src="page_script.js"></script>
+  
   <script type="module" src="app.js"></script>
   <!--<script type="module" src="renderer.js"></script>-->
   

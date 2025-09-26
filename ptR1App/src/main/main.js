@@ -12,6 +12,7 @@ let mainWindow;
 let pythonProcess;
 const robotFilePath = path.join(app.getPath('userData'), 'robots.json');
 const settingsFilePath = path.join(app.getPath('userData'), 'settings.json');
+const mapCacheDir = path.join(app.getPath('userData'), 'map_cache');
 
 
 
@@ -53,6 +54,13 @@ function saveRobotsToFile(robots) {
   }
 }
 
+ipcMain.on('set-initial-pose', (_, pose) => {
+  if (rosWorker) {
+    console.log('[Main] Received initial pose, forwarding to ROS worker:', pose);
+    rosWorker.postMessage({ type: 'setInitialPose', pose: pose });
+  }
+});
+
 ipcMain.handle('robots:load', () => {
   return loadRobotsFromFile();
 });
@@ -61,6 +69,39 @@ ipcMain.handle('robots:save', (_, robots) => {
   return saveRobotsToFile(robots);
 });
 
+ipcMain.handle('mapcache:save', async (_, { mapName, imageData }) => {
+  try {
+    if (!fs.existsSync(mapCacheDir)) {
+      fs.mkdirSync(mapCacheDir);
+    }
+    const filePath = path.join(mapCacheDir, `${mapName}.json`);
+    
+    // 🔧 แก้ไข: เปลี่ยนจาก dataToSave เป็น imageData
+    // ตัวแปร imageData คือข้อมูลที่ถูกส่งมาจาก mapStatic.js และพร้อมสำหรับบันทึกแล้ว
+    await fs.promises.writeFile(filePath, JSON.stringify(imageData));
+    
+    console.log(`[Cache] Saved processed data for map: ${mapName}`);
+    return true;
+  } catch (error) {
+    console.error(`[Cache] Failed to save cache for map: ${mapName}`, error);
+    return false;
+  }
+});
+
+ipcMain.handle('mapcache:load', async (_, mapName) => {
+  try {
+    const filePath = path.join(mapCacheDir, `${mapName}.json`);
+    if (fs.existsSync(filePath)) {
+      const fileContent = await fs.promises.readFile(filePath, 'utf-8');
+      console.log(`[Cache] Loaded processed data for map: ${mapName}`);
+      return JSON.parse(fileContent);
+    }
+    return null; // ไม่พบไฟล์ cache
+  } catch (error) {
+    console.error(`[Cache] Failed to load cache for map: ${mapName}`, error);
+    return null;
+  }
+});
 
 ipcMain.on('key-command', (_, { command }) => {
   if (rosWorker) {
@@ -85,10 +126,6 @@ ipcMain.on('uint32-command', (_, { command }) => {
   }
   console.log(`🎮 Received uint32 Command: ${command} (main log)`);
   rosWorker.postMessage({ type: 'sendCmd', command: command });
-});
-
-ipcMain.handle('get-ws-port', async () => {
-  return 8080;
 });
 
 ipcMain.handle('get-default-video-path', () => {
@@ -155,10 +192,10 @@ ipcMain.handle('load:videos', async (event, customPath = null) => {
 
 ipcMain.on('relay-command', (_, { relayId, command }) => {
   if (!rosWorker) {
-    console.error('❌ Worker not initialized when sending relay-command');
+    console.error('Worker not initialized when sending relay-command');
     return;
   }
-  console.log(`🔧 Received relay command: ${relayId} → ${command}`);
+  console.log(`Received relay command: ${relayId} → ${command}`);
   rosWorker.postMessage({
     type: 'sendRelay',
     relayId,
@@ -253,15 +290,11 @@ ipcMain.on('sync-maps', async () => {
       await new Promise((resolve) => {
         rosWorker.once('message', (msg) => {
           if (msg.type === 'map-data' && msg.data.name === name) {
-            
-            // ✅ 3. เปลี่ยน path ที่จะบันทึกไฟล์ให้ไปที่โฟลเดอร์ของตัวเอง
-            
-            // บันทึกไฟล์ .png ลงในโฟลเดอร์ png/
+
             const buffer = Buffer.from(msg.data.base64, 'base64');
             const pngFilePath = path.join(pngFolder, `${msg.data.name}.png`);
             fs.writeFileSync(pngFilePath, buffer);
 
-            // บันทึกไฟล์ .yaml ลงในโฟลเดอร์ yaml/
             const yamlFilePath = path.join(yamlFolder, `${msg.data.name}.yaml`);
             fs.writeFileSync(yamlFilePath, msg.data.yaml);
 
@@ -276,7 +309,7 @@ ipcMain.on('sync-maps', async () => {
       });
     }
 
-    console.log(`✅ Synced maps: ${pendingMaps.join(', ')}`);
+    console.log(`[main]:  Synced maps: ${pendingMaps.join(', ')}`);
     mainWindow.webContents.send('sync-complete', imageArray);
   });
 });
@@ -428,13 +461,6 @@ ipcMain.handle('get-video-path', (_, relativePath) => {
   return `file://${fullPath.replace(/\\/g, '/')}`;
 });
 
-// 🔁 ส่งต่อ status จาก worker → renderer
-function sendPatrolStatus(isMoving) {
-  if (mainWindow) {
-    mainWindow.webContents.send('patrol-status', isMoving);
-  }
-}
-
 function createWindow(ip) {
   const wsURL = `ws://${ip}:8181`;
   const mediaURL = `http://${"127.0.0.1"}:3001`;
@@ -474,9 +500,9 @@ app.whenReady().then(() => {
   const mapFolder = path.join(app.getPath('userData'), 'maps');
   if (!fs.existsSync(mapFolder)) {
     fs.mkdirSync(mapFolder, { recursive: true });
-    console.log('📂 Created userData/maps folder:', mapFolder);
+    console.log('[main]:  Created userData/maps folder:', mapFolder);
   } else {
-    console.log('✅ userData/maps already exists:', mapFolder);
+    console.log('[main]:  userData/maps already exists:', mapFolder);
   }
 
   createWindow();
@@ -512,9 +538,9 @@ app.whenReady().then(() => {
           break;
         case 'map-save-result':
           mainWindow.webContents.send('map-save-result', message.data);
-          break;
-        case 'patrol-status':
-          sendPatrolStatus(message.data);
+        case 'goal-result':
+          console.log('[Main] Forwarding goal result to renderer:', message.data);   
+          mainWindow?.webContents.send('goal-result', message.data);
           break;
         case 'slam-result':
           mainWindow?.webContents.send('slam-result', message.data);
@@ -533,16 +559,16 @@ app.whenReady().then(() => {
           break;
 
         default:
-          console.warn('Unknown message from worker:', message);
+          console.warn('[main]: Unknown message from worker:', message);
       }
     });
   
     rosWorker.on('error', (error) => {
-      console.error('❌ Worker Error:', error);
+      console.error('[main]: Worker Error:', error);
     });
   
     rosWorker.on('exit', (code) => {
-      console.log(`🛑 Worker exited with code ${code}`);
+      console.log(`[main]: Worker exited with code ${code}`);
     });
   
     ipcMain.on('uint32-command', (event, message) => {

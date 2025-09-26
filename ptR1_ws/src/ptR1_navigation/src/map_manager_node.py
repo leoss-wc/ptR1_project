@@ -3,6 +3,8 @@ import rospy
 import os
 import base64
 import subprocess
+import yaml  # ไลบรารีสำหรับจัดการไฟล์ YAML
+import shutil #  ไลบรารีสำหรับจัดการไฟล์ 
 
 from ptR1_navigation.srv import ListMaps, ListMapsResponse
 from ptR1_navigation.srv import LoadMap, LoadMapResponse
@@ -30,6 +32,7 @@ def handle_list_maps(req):
     return ListMapsResponse(names)
 
 # ----------------- [LOAD MAP] ------------------
+# คัดลอกไฟล์ map ที่เลือก ไปทับไฟล์ active_map
 def handle_load_map(req):
     rospy.loginfo(f"🗺️ Loading map: {req.name}")
     name = req.name
@@ -39,17 +42,39 @@ def handle_load_map(req):
     dest_pgm = os.path.join(MAP_FOLDER, f"{ACTIVE_MAP_NAME}.pgm")
 
     if not os.path.exists(src_yaml) or not os.path.exists(src_pgm):
+        rospy.logerr(f"Map '{name}' not found at specified path.")
         return LoadMapResponse(False, f"Map '{name}' not found")
 
     try:
-        os.system(f"cp {src_yaml} {dest_yaml}")
-        os.system(f"cp {src_pgm} {dest_pgm}")
+        # 🔧 แก้ไข: ใช้ shutil.copy เพื่อความปลอดภัยและประสิทธิภาพที่ดีกว่า
+        shutil.copy(src_yaml, dest_yaml)
+        shutil.copy(src_pgm, dest_pgm)
+        rospy.loginfo(f"Copied '{name}' to '{ACTIVE_MAP_NAME}'")
+
+        # --- ✨ เพิ่ม: ส่วนแก้ไขเนื้อหาไฟล์ YAML ---
+        # 1. เปิดและอ่านไฟล์ active_map.yaml
+        with open(dest_yaml, 'r') as file:
+            map_data = yaml.safe_load(file)
+
+        # 2. แก้ไขค่าของ key 'image'
+        new_image_name = f"{ACTIVE_MAP_NAME}.pgm"
+        map_data['image'] = new_image_name
+        rospy.loginfo(f"Updating image path in YAML to: {new_image_name}")
+
+        # 3. เขียนข้อมูลที่แก้ไขแล้วกลับลงไปในไฟล์เดิม
+        with open(dest_yaml, 'w') as file:
+            yaml.dump(map_data, file, default_flow_style=False)
+        # -----------------------------------------
+
         rospy.loginfo(f"🗺️ Loaded map: {name}")
         return LoadMapResponse(True, f"Map '{name}' loaded successfully")
+        
     except Exception as e:
+        rospy.logerr(f"Error loading map '{name}': {str(e)}")
         return LoadMapResponse(False, str(e))
 
 # -------------- [GET MAP FILE] -----------------
+# อ่านไฟล์ .png และ .yaml แล้วส่งกลับในรูปแบบ base64 ไปยัง ptR1 App
 def handle_get_map_file(req):
     rospy.loginfo(f" 🗺️ Getting map file: {req.name}")
     map_name = req.name
@@ -104,8 +129,7 @@ def handle_save_map(req):
             'rosrun', 'map_server', 'map_saver',
             '-f', os.path.join(MAP_FOLDER, name)
         ])
-
-        # แปลง .pgm → .png (ใช้ ImageMagick : `sudo apt install imagemagick`)
+        # แปลง .pgm เป็น .png ด้วย ImageMagick
         subprocess.check_call([
             'convert', pgm_path, png_path
         ])

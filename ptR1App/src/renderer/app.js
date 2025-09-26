@@ -5,7 +5,7 @@ import { CanvasRecorder } from './modules/recorder.js';
 
 import { initStaticMap } from './modules/mapStatic.js';
 
-import { setupMapCanvas , setMapImage, renderDashboardMap} from './modules/mapHome.js';
+import { setMapImage, renderDashboardMap, initHomeMap} from './modules/mapHome.js';
 import { activeMap } from './modules/mapState.js';
 
 import { WebRTCPlayer } from './modules/webrtc-player.js';
@@ -13,9 +13,9 @@ import { setupVideoPlayer } from './modules/videoPlayer.js';
 
 import { updateRobotPose } from './modules/robotState.js';
 import { setPlannedPath } from './modules/planState.js';
+import * as patrolState from './modules/patrolState.js';
 
-import { setGoalPoint, isPatrolling, setPatrolPath } from './modules/patrolState.js';
-
+import * as patrol from './modules/patrol.js';
 let recorder = null;
 let rtcPlayer = null;
 let allRobotProfiles = []; //ตัวแปรสำหรับเก็บโปรไฟล์ทั้งหมดที่โหลดมา
@@ -47,7 +47,7 @@ function startMockPathTest() {
 
   // 2. ตั้งค่า State เริ่มต้น
   updateRobotPose(startPos, { x: 0, y: 0, z: 0, w: 1 }); // วางหุ่นยนต์ที่จุดเริ่มต้น
-  setGoalPoint(goalPos); // กำหนดเป้าหมาย (จุดสีแดง)
+  patrolState.setGoalPoint(goalPos); // กำหนดเป้าหมาย (จุดสีแดง)
   
   let currentStep = 0;
 
@@ -79,31 +79,48 @@ document.addEventListener('DOMContentLoaded', async() => {
   console.log("app: DOMContentLoaded fired!");
   // Video Player view setup
   setupVideoPlayer();
-
-  const homeMapCanvas = document.getElementById('homeMapCanvas');
-  if (!homeMapCanvas) return;
-  const savedMapName = localStorage.getItem('activeMapName');
-  if (savedMapName) {
-    setupMapCanvas(homeMapCanvas); // เตรียม Canvas ให้พร้อม
-    console.log("map canvas initialized.");
-    console.log(`Found saved active map: ${savedMapName}. Loading...`);
-    // เรียกใช้ API เพื่อดึงข้อมูลแผนที่ทั้งหมดด้วยชื่อ
-    const mapData = await window.electronAPI.getMapDataByName(savedMapName);
-    console.log("Data received from main process:", mapData); 
-    
-    if (mapData.success) {
-      // อัปเดต State
-      activeMap.name = mapData.name;
-      activeMap.base64 = mapData.base64;
-      activeMap.meta = mapData.meta;
-      
-      // สั่งวาดลง homeMapCanvas!
-      await setMapImage(activeMap.base64);
-      console.log(`✅ Automatically loaded and displayed '${savedMapName}' on dashboard.`);
-    }
+  //ตั้งค่าการสลับ View ผ่าน Sidebar
+  document.querySelectorAll('.sidebar-item').forEach(item => {
+    item.addEventListener('click', () => switchView(item.dataset.view));
+  });
+  const pwmSlider = document.getElementById('pwm-slider');
+  const pwmValueLabel = document.getElementById('pwm-value-label');
+  if (pwmSlider && pwmValueLabel) {
+    pwmSlider.addEventListener('input', () => pwmValueLabel.textContent = pwmSlider.value);
   }
-   // Static Map
-  initStaticMap();
+  // Map Mode Toggle (Static/Live)
+  document.getElementById('btn-static-map').addEventListener('click', () => {
+    document.getElementById('staticMapCanvas').classList.remove('hidden');
+    document.getElementById('liveMapCanvas').classList.add('hidden');
+    document.getElementById('btn-static-map').classList.add('active');
+    document.getElementById('btn-live-map').classList.remove('active');
+    document.getElementById('static-control-box').classList.remove('hidden');
+    document.getElementById('live-control-box').classList.add('hidden');
+    document.getElementById('patrol-status-label').classList.remove('hidden');
+  });
+  document.getElementById('btn-live-map').addEventListener('click', () => {
+    document.getElementById('staticMapCanvas').classList.add('hidden');
+    document.getElementById('liveMapCanvas').classList.remove('hidden');
+    document.getElementById('btn-static-map').classList.remove('active');
+    document.getElementById('btn-live-map').classList.add('active');
+    document.getElementById('static-control-box').classList.add('hidden');
+    document.getElementById('live-control-box').classList.remove('hidden');
+    document.getElementById('patrol-status-label').classList.add('hidden');
+  });
+
+  switchView('home')
+
+  document.getElementById('save-path-btn').addEventListener('click', patrol.saveDrawnPath);
+  document.getElementById('start-patrol-btn').addEventListener('click', patrol.startPatrol);
+  document.getElementById('pause-patrol-btn').addEventListener('click', patrol.pausePatrol);
+  document.getElementById('resume-patrol-btn').addEventListener('click', patrol.resumePatrol);
+  document.getElementById('stop-patrol-btn').addEventListener('click', patrol.stopPatrol);
+  
+  patrol.initPatrolManager();
+
+  document.getElementById('loop-patrol-checkbox').addEventListener('change', (event) => {
+    patrolState.setLooping(event.target.checked);
+  });
 
   // Relay
   initRelayButtons();
@@ -556,3 +573,22 @@ function connectUsingCurrentProfile() {
 }
 
 
+function switchView(viewName) {
+  // ซ่อนทุก View และเอา active ออกจาก sidebar
+  document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
+  document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
+
+  // แสดง View และ Sidebar item ที่ต้องการ
+  const activeView = document.getElementById(`view-${viewName}`);
+  const activeSidebarItem = document.querySelector(`.sidebar-item[data-view="${viewName}"]`);
+  if (activeView) activeView.classList.remove('hidden');
+  if (activeSidebarItem) activeSidebarItem.classList.add('active');
+  
+  // ✨ จุดสำคัญ: สั่ง Init ให้ View ที่กำลังจะแสดงผล
+  if (viewName === 'home') {
+    const homeCanvas = document.getElementById('homeMapCanvas');
+    if (homeCanvas) initHomeMap(homeCanvas);
+  } else if (viewName === 'map') {
+    initStaticMap();
+  }
+}

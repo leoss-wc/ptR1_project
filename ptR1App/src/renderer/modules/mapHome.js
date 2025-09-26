@@ -3,12 +3,36 @@
 
 import { activeMap } from './mapState.js';
 import { robotPose,robotTrail } from './robotState.js';
-import { goalPoint,isPatrolling } from './patrolState.js';
+import { goalPoint,isPatrolling , patrolPath} from './patrolState.js';
 import { plannedPath } from './planState.js';
 
 let canvas, ctx, mapImg;
 let zoom = 1.0;
 let offset = { x: 0, y: 0 };
+let hasBeenReset = false;
+
+
+
+export function initHomeMap(canvasElement) {
+  // 1. ตั้งค่า Canvas และ Context
+  canvas = canvasElement;
+  ctx = canvas.getContext('2d');
+
+  // 2. ตรวจสอบว่ามี Active Map ใน State หรือไม่
+  if (activeMap.base64) {
+    // 3. ถ้ามี ให้โหลดรูปภาพมาเตรียมไว้ใน mapImg ทันที
+    setMapImage(activeMap.base64);
+  } else {
+    console.log("HomeMap: No active map to display on init.");
+  }
+
+  //: ResizeObserver จะเป็นตัวจัดการการ Reset View เริ่มต้น
+  const resizeObserver = new ResizeObserver(() => {
+    resizeCanvas();
+  });
+  resizeObserver.observe(canvas);
+  initCanvasControls();
+}
 
 
 function getYawFromQuaternion(q) {
@@ -109,31 +133,39 @@ function drawPlannedPath() {
 }
 
 export function renderDashboardMap() {
-  if (!ctx) return;
-
-  // ล้างหน้าจอ
+  // ถ้ายังไม่มี context หรือ canvas ยังไม่มีขนาด ให้หยุดทำงานทันที
+  if (!ctx || canvas.width === 0 || canvas.height === 0) {
+    console.warn(`HomeMap: Render skipped, canvas has no size yet (${canvas.width}x${canvas.height}).`);
+    return;
+  }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   
-  // ถ้ามีรูปภาพแล้ว ค่อยวาด
-  if (mapImg) {
+  // 🔧 แก้ไข: เพิ่มเงื่อนไขตรวจสอบ Meta Data ที่นี่!
+  // ต้องมีทั้ง mapImg และ activeMap.meta ก่อนถึงจะวาดอะไรลงไป
+  if (mapImg && activeMap.meta) {
     ctx.drawImage(mapImg, offset.x, offset.y, mapImg.width * zoom, mapImg.height * zoom);
-
-    // วาดเส้นทางที่ผ่านมาแล้วเสมอ
+    
+    // ฟังก์ชันวาดอื่นๆ จะถูกเรียกจากที่นี่ ซึ่งตอนนี้ปลอดภัยแล้ว
     drawRobotTrail(); 
-
-    // ตรวจสอบสถานะเพื่อวาดเส้นทางข้างหน้า
     if (isPatrolling) {
-      drawPatrolPath(); // 👈 วาดเส้นทาง Patrol ทั้งหมด (อาจจะต้องย้ายฟังก์ชันนี้มา)
+      drawPatrolPath();
     } else {
-      drawPlannedPath(); // 👈 วาดเส้นทางที่ Navigator คำนวณ
+      drawPlannedPath();
     }
-
-    drawRobotTrail();
     drawRobot();
     drawGoal();
+  } else {
+    // ✨ เพิ่ม: แสดงข้อความบอกสถานะถ้าแผนที่ยังไม่พร้อม
+    ctx.fillStyle = 'gray';
+    ctx.font = '16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Waiting for map data...', canvas.width / 2, canvas.height / 2);
   }
 }
 
+
+
+/*
 export function setupMapCanvas(canvasElement) {
   canvas = canvasElement;
   ctx = canvas.getContext('2d');
@@ -146,13 +178,16 @@ export function setupMapCanvas(canvasElement) {
   initCanvasControls();
   //renderLoop();
 }
+*/
 
 export function setMapImage(base64Str) {
   return new Promise((resolve) => {
     mapImg = new Image();
+    // รีเซ็ต Flag ทุกครั้งที่เปลี่ยนแผนที่ใหม่
+    hasBeenReset = false; 
     mapImg.onload = () => {
-      resetViewV2();
-      renderDashboardMap();
+      console.log('🏠 HomeMap: Map image loaded successfully.');
+      resizeCanvas();
       resolve();
     };
     mapImg.src =  base64Str;
@@ -160,20 +195,27 @@ export function setMapImage(base64Str) {
 }
 
 export function resetViewV2() {
-  if (!canvas || !mapImg) return;
+  if (!canvas || !mapImg || canvas.width === 0 || canvas.height === 0) {
+    console.warn(`HomeMap: resetViewV2 skipped, canvas has no size yet (${canvas.width}x${canvas.height}).`);
+    return;
+  }
 
-  // 1. คำนวณ zoom พื้นฐานเพื่อให้กว้างพอดีกับ Canvas (เหมือนเดิม)
-  const baseZoom = canvas.width / mapImg.width;
+  // 🔧 แก้ไข: เปลี่ยนมาใช้ Logic แบบ "Fit and Center"
+  
+  // 1. คำนวณอัตราส่วนการซูมที่พอดีกับความกว้างและความสูง
+  const zoomX = canvas.width / mapImg.width;
+  const zoomY = canvas.height / mapImg.height;
 
-  // 2. ✅ เพิ่มตัวคูณเพื่อซูมเข้าไปใกล้กว่าเดิม
-  const initialZoomMultiplier = 5; // Multiply zoom control  
-  zoom = baseZoom * initialZoomMultiplier;
+  // 2. ใช้ค่าซูมที่น้อยกว่า เพื่อให้แน่ใจว่าทั้งแผนที่อยู่ในกรอบ
+  zoom = Math.min(zoomX, zoomY);
 
-  // 3. จัดให้แผนที่อยู่กึ่งกลาง
+  // 3. จัดให้แผนที่อยู่กึ่งกลาง Canvas
   offset.x = (canvas.width - mapImg.width * zoom) / 2;
   offset.y = (canvas.height - mapImg.height * zoom) / 2;
+  
+  console.log(`🚀 HomeMap: View reset with "Fit and Center". New zoom=${zoom.toFixed(2)}`);
 
-  //console.log(`View reset (Multiplied): zoom=${zoom}, offset=`, offset);
+  renderDashboardMap();
 }
 
 function initCanvasControls() {
@@ -242,11 +284,55 @@ function initCanvasControls() {
 
 function resizeCanvas() {
   if (!canvas) return;
-
-  // อ่านขนาดที่แสดงผลจริง แล้วกำหนดให้เป็นขนาดของพื้นที่วาด
   canvas.width = canvas.clientWidth;
   canvas.height = canvas.clientHeight;
+  if (canvas.width > 0 && canvas.height > 0 && mapImg && !hasBeenReset) {
+    resetViewV2();
+    hasBeenReset = true;
+  } else {
+    renderDashboardMap();
+  }
+}
 
-  // สั่งวาดใหม่เพื่อให้การเปลี่ยนแปลงมีผลทันที
-  renderDashboardMap(); 
+function drawPatrolPath() {
+  if (patrolPath.length < 2 || !activeMap?.meta || !mapImg) return;
+  // ✨ เพิ่ม: Log สำหรับตรวจสอบข้อมูลภายใน
+  console.log("--- Debugging drawPatrolPath ---");
+  console.log("First point in path:", patrolPath[0]);
+  console.log("Origin from meta:", activeMap.meta.origin);
+  console.log("---------------------------------");
+
+  const { resolution, origin } = activeMap.meta;
+  const imgH = mapImg.height;
+
+  ctx.strokeStyle = 'orange'; // สีส้ม เหมือนกับในหน้า Static Map
+  ctx.lineWidth = 2;
+  ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ เพื่อแยกความแตกต่าง
+  ctx.beginPath();
+
+
+  // ✨ DEBUG: เพิ่ม Log ตรวจสอบพิกัดที่คำนวณได้
+  console.log(`--- Drawing on Canvas (Size: ${canvas.width}x${canvas.height}) ---`);
+
+
+  patrolPath.forEach((point, index) => {
+    // แปลง World Coordinate เป็น Screen Coordinate
+    const px = (point.x - origin[0]) / resolution;
+    const py = imgH - (point.y - origin[1]) / resolution;
+    const screenX = px * zoom + offset.x;
+    const screenY = py * zoom + offset.y;
+
+    // ✨ DEBUG: แสดงค่าพิกัดของจุดแรกที่คำนวณได้
+    if (index === 0) {
+      console.log(`First point calculated at screen coordinates: (x: ${screenX.toFixed(2)}, y: ${screenY.toFixed(2)})`);
+    }
+
+    if (index === 0) {
+      ctx.moveTo(screenX, screenY);
+    } else {
+      ctx.lineTo(screenX, screenY);
+    }
+  });
+  ctx.stroke();
+  ctx.setLineDash([]); // คืนค่าให้เป็นเส้นทึบสำหรับส่วนอื่น
 }
