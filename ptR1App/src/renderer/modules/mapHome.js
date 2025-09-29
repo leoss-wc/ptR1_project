@@ -139,6 +139,7 @@ export function renderDashboardMap() {
     return;
   }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = false;
   
   // 🔧 แก้ไข: เพิ่มเงื่อนไขตรวจสอบ Meta Data ที่นี่!
   // ต้องมีทั้ง mapImg และ activeMap.meta ก่อนถึงจะวาดอะไรลงไป

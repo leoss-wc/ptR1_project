@@ -139,10 +139,8 @@
     <div id="view-map" class="view hidden">
       <div class="container">
         <h4 class="title">🗺️ Map Viewer</h4>
-        <div class="grid">
-          <div class="map-left">
+        <div class="grid"> <div class="map-left">
             <div class="map-box">
-              <!-- ปุ่มสลับโหมด -->
               <div class="map-mode-toggle">
                 <button id="btn-static-map" class="toggle-btn active">🗺️ Static Map</button>
                 <button id="btn-live-map" class="toggle-btn">📡 Live Mapping</button>
@@ -154,14 +152,14 @@
                 <div class="canvas-controls">
                   <button id="zoom-in">➕</button>
                   <button id="zoom-out">➖</button>
-                  <button id="reset-view">🔄</button>
+                  <button id="reset-static-view-btn">🔄 Reset View</button> 
                 </div>
               </div>
             </div>
-            <!-- กล่องควบคุม Static Map -->
             <div id="static-control-box" class="control-box">
               <p id="active-map-display" style=" font-size: medium;">Active Map: <span id="active-map-name">None</span></p>
               <button id="select-map-btn">Select This Map</button>
+              
               <button id="start-patrol-btn" class="control-btn blue">Start Patrol</button>
               <button id="pause-patrol-btn" class="control-btn blue">Pause Patrol</button>
               <button id="stop-patrol-btn" class="control-btn red">Stop Patrol</button>
@@ -176,29 +174,22 @@
               <button id="set-pose-btn" class="control-btn">Set Initial Pose</button>
               <button id="save-path-btn">Save Path</button>
             </div>
-            
-
-            <!-- กล่องควบคุม Live Mapping -->
             <div id="live-control-box" class="control-box hidden">
               <input id="map-name-input" placeholder="Enter map name..." />
               <button id="save-map-btn" class="control-btn blue">💾 Save Map</button>
               <button id="start-slam-btn" class="control-btn blue">🧭 Start SLAM</button>
               <button id="stop-slam-btn" class="control-btn red">🛑 Stop SLAM</button>
               <span id="slam-result-label" style="margin-left: 10px;"></span>
-
+              <button id="reset-live-view-btn">🔄 Reset View</button> 
             </div>
-
-
-
-          </div>
-          <div class="map-right">
-            <button id="open-map-folder-btn">📂 Open Map Folder</button>
+          </div> <div class="map-right"> <button id="open-map-folder-btn">📂 Open Map Folder</button>
             <button id="sync-maps-btn">Sync Maps</button>
             <div id="map-gallery" class="map-grid"></div>
           </div>
-        </div>
-      </div>
+
+        </div> </div>
     </div>
+
 
    <div id="view-settings" class="view hidden">
     <h2>⚙️ Settings & Robot Profiles</h2>

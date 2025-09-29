@@ -1,4 +1,8 @@
 <!-- map_server.launch -->
 <launch>
   <node name="map_server" pkg="map_server" type="map_server" args="$(find ptR1_navigation)/maps/active_map.yaml" />
+  <node name="map_manager_node" pkg="ptR1_navigation" type="map_manager_node.py" output="screen" />
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+        <arg name="port" value="9090"/>
+    </include>
 </launch>

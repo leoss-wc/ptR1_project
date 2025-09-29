@@ -4,9 +4,10 @@ import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
 import { initStaticMap } from './modules/mapStatic.js';
+import { renderCanvas as renderStaticMapCanvas } from './modules/mapStatic.js';
 
-import { setMapImage, renderDashboardMap, initHomeMap} from './modules/mapHome.js';
-import { activeMap } from './modules/mapState.js';
+
+import { renderDashboardMap, initHomeMap} from './modules/mapHome.js';
 
 import { WebRTCPlayer } from './modules/webrtc-player.js';
 import { setupVideoPlayer } from './modules/videoPlayer.js';
@@ -20,6 +21,9 @@ import * as patrol from './modules/patrol.js';
 import { FrameProcessor } from './modules/FrameProcessor.js';
 import { OverlayCanvas } from './modules/OverlayCanvas.js';
 
+import {resetLiveMapView,processLiveMapData, initLiveMap, drawLiveMap, updateLiveRobotPose } from './modules/mapLive.js';
+import * as mapView from './modules/mapView.js'; // Import ทุกอย่างจาก mapView
+
 
 let recorder = null;
 let rtcPlayer = null;
@@ -27,6 +31,11 @@ let allRobotProfiles = []; //ตัวแปรสำหรับเก็บโ
 let selectedProfileName = null; //ตัวแปรสำหรับเก็บชื่อโปรไฟล์ที่กำลังเลือก
 let frameProcessor = null;
 let yoloOverlay = null;
+let isFirstMapReceived = false; // ตัวแปรเพื่อตรวจสอบว่าได้รับข้อมูลแผนที่ครั้งแรกหรือยัง
+let lastFrameTime = 0;
+const targetFPS = 1; //live map  Frame Rate 
+const fpsInterval = 1000 / targetFPS;
+let liveMapRenderId = null;
 
 let mockMoveInterval = null;
 function startMockPathTest() {
@@ -104,6 +113,9 @@ document.addEventListener('DOMContentLoaded', async() => {
     document.getElementById('static-control-box').classList.remove('hidden');
     document.getElementById('live-control-box').classList.add('hidden');
     document.getElementById('patrol-status-label').classList.remove('hidden');
+    document.querySelector('.canvas-controls').classList.remove('hidden');
+    stopLiveMapRender();
+
   });
   document.getElementById('btn-live-map').addEventListener('click', () => {
     document.getElementById('staticMapCanvas').classList.add('hidden');
@@ -113,7 +125,23 @@ document.addEventListener('DOMContentLoaded', async() => {
     document.getElementById('static-control-box').classList.add('hidden');
     document.getElementById('live-control-box').classList.remove('hidden');
     document.getElementById('patrol-status-label').classList.add('hidden');
+    document.querySelector('.canvas-controls').classList.add('hidden');
+    startLiveMapRender();
   });
+  const mapWrapper = document.querySelector('.map-wrapper');
+    if (mapWrapper) {
+      // ส่ง container และ callback ของทั้งสอง map ไปให้ mapView จัดการ
+      mapView.initMapViewController(
+        mapWrapper,
+        renderStaticMapCanvas, // Callback สำหรับ Static Map
+        drawLiveMap           // Callback สำหรับ Live Map
+      );
+    }
+    document.getElementById('reset-live-view-btn').addEventListener('click', () => {
+    resetLiveMapView();
+    });
+
+  requestAnimationFrame(renderLoop);
 
   switchView('home')
 
@@ -186,15 +214,15 @@ document.addEventListener('DOMContentLoaded', async() => {
   const connectButton = document.getElementById('connectButton');
 
   // --- ส่วนจัดการ Settings ---
-    document.getElementById('robot-profile-select').addEventListener('change', handleProfileSelection);
-    document.getElementById('add-profile-btn').addEventListener('click', addNewProfile);
-    document.getElementById('save-profile-btn').addEventListener('click', saveProfile);
-    document.getElementById('delete-profile-btn').addEventListener('click', deleteProfile);
-    document.getElementById('connect-all-btn').addEventListener('click', connectUsingCurrentProfile);
-    document.getElementById('connect-video-btn').addEventListener('click', connectVideoPlayer);
+  document.getElementById('robot-profile-select').addEventListener('change', handleProfileSelection);
+  document.getElementById('add-profile-btn').addEventListener('click', addNewProfile);
+  document.getElementById('save-profile-btn').addEventListener('click', saveProfile);
+  document.getElementById('delete-profile-btn').addEventListener('click', deleteProfile);
+  document.getElementById('connect-all-btn').addEventListener('click', connectUsingCurrentProfile);
+  document.getElementById('connect-video-btn').addEventListener('click', connectVideoPlayer);
     
-    // โหลดโปรไฟล์ทั้งหมดเมื่อแอปเริ่มทำงาน
-    await loadAndDisplayProfiles();
+  // โหลดโปรไฟล์ทั้งหมดเมื่อแอปเริ่มทำงาน
+  await loadAndDisplayProfiles();
     
 
   connectButton.addEventListener('click', () => {
@@ -203,21 +231,55 @@ document.addEventListener('DOMContentLoaded', async() => {
     console.log(`Connectting`);
   });
 
+  // --- ส่วนจัดการ Video Stream และ YOLO Overlay ---
   document.getElementById('start-stream-btn').addEventListener('click', () => {
-        console.log("Requesting to start FFmpeg stream...");
-        window.electronAPI.startFFmpegStream();
-    });
+      console.log("Requesting to start FFmpeg stream...");
+      window.electronAPI.startFFmpegStream();
+  });
+  document.getElementById('stop-stream-btn').addEventListener('click', () => {
+      console.log("Requesting to stop FFmpeg stream...");
+      window.electronAPI.stopFFmpegStream();
+  });
+  //Listener เพื่อรับ Feedback สถานะการสั่งงาน Stream
+  window.electronAPI.onStreamStatus((result) => {
+      console.log("Stream Status Update:", result);
+      alert(`Stream command status: ${result.success ? 'Success' : 'Failed'}\nMessage: ${result.message}`);
+  });
 
-    document.getElementById('stop-stream-btn').addEventListener('click', () => {
-        console.log("Requesting to stop FFmpeg stream...");
-        window.electronAPI.stopFFmpegStream();
-    });
 
-    //Listener เพื่อรับ Feedback สถานะการสั่งงาน Stream
-    window.electronAPI.onStreamStatus((result) => {
-        console.log("Stream Status Update:", result);
-        alert(`Stream command status: ${result.success ? 'Success' : 'Failed'}\nMessage: ${result.message}`);
-    });
+  // --- ส่วนจัดการ SLAM ---
+  const startSlamBtn = document.getElementById('start-slam-btn');
+  const stopSlamBtn = document.getElementById('stop-slam-btn');
+  const saveMapBtn = document.getElementById('save-map-btn');
+  const mapNameInput = document.getElementById('map-name-input');
+  const slamResultLabel = document.getElementById('slam-result-label');
+  // กดปุ่ม Start SLAM
+  startSlamBtn.addEventListener('click', () => {
+    console.log('Requesting to start SLAM...');
+    slamResultLabel.textContent = 'Starting SLAM...';
+    slamResultLabel.style.color = 'yellow';
+    window.electronAPI.startSLAM();
+  });
+  // กดปุ่ม Stop SLAM
+  stopSlamBtn.addEventListener('click', () => {
+    console.log('Requesting to stop SLAM...');
+    slamResultLabel.textContent = 'Stopping SLAM...';
+    slamResultLabel.style.color = 'yellow';
+    window.electronAPI.stopSLAM();
+  });
+  // กดปุ่ม Save Map
+  saveMapBtn.addEventListener('click', () => {
+    const mapName = mapNameInput.value.trim();
+    if (!mapName) {
+      alert('Please enter a map name before saving.');
+      return;
+    }
+    console.log(`Requesting to save map as "${mapName}"...`);
+    slamResultLabel.textContent = `Saving map: ${mapName}...`;
+    slamResultLabel.style.color = 'yellow';
+    window.electronAPI.saveMap(mapName);
+  });
+
 
   if (!keyboardToggle || !pwmInput || !cmdDropdown || !sendSelectedCmdButton || !cmdInput || !sendCustomCmdButton || !modeLabel) {
     console.error("❌ UI elements not found! Check HTML structure.");
@@ -349,7 +411,7 @@ document.addEventListener('keyup', (event) => {
   pressedKeys.delete(code);
 });
 
-// ✅ ฟังก์ชันส่ง Servo command เฉพาะตอน MANUAL ON
+//ฟังก์ชันส่ง Servo command เฉพาะตอน MANUAL ON
 const sendServoControl = (event) => {
   if (!event || !event.code) return;
 
@@ -373,12 +435,29 @@ const sendServoControl = (event) => {
   window.robotControl.sendServoCommand(command);
 };
 
-// ✅ เพิ่ม Event Listener นี้เข้ามา
-window.electronAPI.onRobotPose((poseData) => {
+window.electronAPI.onLiveMap((mapData) => {
+  // 1. ประมวลผลและให้ mapLive.js เก็บ state
+  processLiveMapData(mapData);
+  
+  // 2. สั่งวาด Canvas
+  const liveMapCanvas = document.getElementById('liveMapCanvas');
+  if (liveMapCanvas && !liveMapCanvas.classList.contains('hidden')) {
+    if (!isFirstMapReceived) {
+      resetLiveMapView();
+      isFirstMapReceived = true;
+    }
+  }
+});
+
+window.electronAPI.onRobotPosSlam((poseData) => {
   if (poseData.position && poseData.orientation) {
-    // 1. อัปเดต State ส่วนกลาง
+    updateLiveRobotPose(poseData);
+  }
+});
+
+window.electronAPI.onRobotPosAmcl((poseData) => {
+  if (poseData.position && poseData.orientation) {
     updateRobotPose(poseData.position, poseData.orientation);
-    // 2. สั่งให้ Canvas วาดใหม่เพื่อแสดงตำแหน่งล่าสุด
     renderDashboardMap();
   }
 });
@@ -387,6 +466,35 @@ window.electronAPI.onPlannedPath((pathData) => {
   setPlannedPath(pathData);
 });
 
+function renderLoop(currentTime) {
+  // บรรทัดนี้จะทำให้ loop ทำงานต่อไปเรื่อยๆ ตราบใดที่ยังไม่ถูกยกเลิก
+  liveMapRenderId = requestAnimationFrame(renderLoop);
+  
+  const elapsed = currentTime - lastFrameTime;
+  if (elapsed > fpsInterval) {
+    lastFrameTime = currentTime - (elapsed % fpsInterval);
+    const liveMapCanvas = document.getElementById('liveMapCanvas');
+    if (liveMapCanvas && !liveMapCanvas.classList.contains('hidden')) {
+      drawLiveMap(); 
+    }
+  }
+}
+
+function stopLiveMapRender() {
+  // ถ้ามีการเรนเดอร์อยู่ ให้หยุด
+  if (liveMapRenderId) {
+    console.log("Stopping Live Map render loop.");
+    cancelAnimationFrame(liveMapRenderId);
+    liveMapRenderId = null;
+  }
+}
+function startLiveMapRender() {
+  // ถ้ายังไม่มีการเรนเดอร์อยู่ ให้เริ่มใหม่
+  if (!liveMapRenderId) {
+    console.log("Starting Live Map render loop.");
+    renderLoop();
+  }
+}
 async function loadAndDisplayProfiles() {
     const profileSelect = document.getElementById('robot-profile-select');
     profileSelect.innerHTML = '<option value="">-- Select a Profile --</option>'; // ค่าเริ่มต้น
@@ -615,6 +723,35 @@ function connectVideoPlayer() {
     }, 2000); // หน่วงเวลาเพื่อให้ WebRTC เริ่มทำงานก่อน
 }
 
+window.electronAPI.onSLAMStartResult((data) => {
+  console.log('SLAM Start Result:', data);
+  const slamResultLabel = document.getElementById('slam-result-label');
+  slamResultLabel.textContent = data.message;
+  slamResultLabel.style.color = data.success ? 'lime' : 'red';
+});
+
+// รับผลลัพธ์จากการ Stop SLAM
+window.electronAPI.onSLAMStopResult((data) => {
+  console.log('SLAM Stop Result:', data);
+  const slamResultLabel = document.getElementById('slam-result-label');
+  slamResultLabel.textContent = data.message;
+  slamResultLabel.style.color = data.success ? 'lime' : 'red';
+});
+
+// รับผลลัพธ์จากการ Save Map
+window.electronAPI.onMapSaveResult((result) => {
+    console.log('Map Save Result:', result);
+    const slamResultLabel = document.getElementById('slam-result-label');
+    slamResultLabel.textContent = `Save '${result.name}': ${result.message}`;
+    slamResultLabel.style.color = result.success ? 'lime' : 'red';
+
+    // ถ้าสำเร็จ ให้ทำการ Sync แผนที่ใหม่ทันที
+    if (result.success) {
+      alert(`Map "${result.name}" saved successfully! Syncing maps...`);
+      // อาจจะเรียกใช้ฟังก์ชัน sync maps ที่มีอยู่แล้ว
+      document.getElementById('sync-maps-btn').click(); 
+    }
+});
 
 function switchView(viewName) {
   // ซ่อนทุก View และเอา active ออกจาก sidebar
@@ -627,11 +764,11 @@ function switchView(viewName) {
   if (activeView) activeView.classList.remove('hidden');
   if (activeSidebarItem) activeSidebarItem.classList.add('active');
   
-  // ✨ จุดสำคัญ: สั่ง Init ให้ View ที่กำลังจะแสดงผล
   if (viewName === 'home') {
     const homeCanvas = document.getElementById('homeMapCanvas');
     if (homeCanvas) initHomeMap(homeCanvas);
   } else if (viewName === 'map') {
     initStaticMap();
+    initLiveMap();
   }
 }

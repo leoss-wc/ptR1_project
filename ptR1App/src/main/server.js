@@ -8,7 +8,8 @@ let rosbridgeURL = '';
 let reconnectTimer = null;
 let rosAutoConnected = false;
 
-let cameraSocket = null;
+let slamPoseSubscriber = false;
+let amclPoseSubscriber = null;
 
 const BUFFER_SIZE_VOLTAGE = 50;  // ค่าเฉลี่ยจาก 10 วินาที
 let voltageBuffer = [];
@@ -63,7 +64,7 @@ parentPort.on('message', (message) => {
         callStopSLAMService();
         break;
       case 'setInitialPose':
-      publishInitialPose(message.pose);
+        publishInitialPose(message.pose);
         break;
       case 'startStream':
         callStartStreamService();
@@ -71,14 +72,24 @@ parentPort.on('message', (message) => {
       case 'stopStream':
         callStopStreamService();
         break;
+      case 'switchPoseSubscriber':
+        console.log(`Server: Switching pose subscriber to mode: ${message.mode}`);
+        // หยุด subscriber ทั้งสองตัวก่อน
+        if (amclPoseSubscriber) amclPoseSubscriber.unsubscribe();
+        if (slamTfClient) slamTfClient.unsubscribe('base_footprint');
 
+        // เริ่มตัวที่ต้องการ
+        if (message.mode === 'amcl') {
+          subscribeAmclPose();
+        } else if (message.mode === 'slam') {
+          subscribeSlamPose();
+        }
+        break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
   } catch (err) {
     console.error(`Server: Worker Error while processing message [${message.type}]:`, err.message);
-    // คุณสามารถเลือกส่งกลับ frontend ได้ด้วย เช่น:
-    // parentPort.postMessage({ type: 'error', data: `Error: ${err.message}` });
   }
 });
 
@@ -112,9 +123,8 @@ function connectROSBridge(url) {
     parentPort.postMessage({ type: 'connection', data: 'connected' });
     //subscribe function
     subscribeSensorData();
-    subscribePatrolStatus();
     subscribeMapData();
-    subscribeRobotPose();
+    //subscribeRobotPose();
     subscribePlannedPath();
     subscribeMoveBaseResult();
     if (reconnectTimer) {20
@@ -239,29 +249,116 @@ function subscribeMapData() {
   });
 
   mapTopic.subscribe((msg) => {
+    if (!slamPoseSubscriber) {
+      console.log('Server: First map message received, initializing TFClient now.');
+      slamPoseSubscriber = true;
+      setTimeout(() => {
+        subscribeRobotPoseSlam();
+      }, 200); // Delay 200ms
+    }
     parentPort.postMessage({
       type: 'live-map',
       data: msg
     });
   });
 }
-function subscribeRobotPose() {
-  const poseTopic = new ROSLIB.Topic({
+
+function subscribeRobotPoseSlam() {
+  if (!ros || !ros.isConnected) return;
+
+  console.log('Server: Subscribing to simplified pose topic /robot_pose_simple...');
+
+  const simplePoseTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/robot_pose_simple',
+    messageType: 'geometry_msgs/PoseStamped'
+  });
+
+  simplePoseTopic.subscribe((msg) => {
+
+    // ข้อมูลอยู่ใน msg.pose
+    const pos = msg.pose.position;
+    const ori = msg.pose.orientation;
+    
+    parentPort.postMessage({
+      type: 'robot-pose-slam',
+      data: { position: pos, orientation: ori }
+    });
+  });
+}
+
+function subscribeAmclPose() {
+  if (!ros || !ros.isConnected) return;
+  console.log('Server: Subscribing to AMCL pose topic /amcl_pose...');
+
+  // ถ้ามี subscriber เก่าอยู่ ให้ยกเลิกก่อน
+  if (amclPoseSubscriber) {
+    amclPoseSubscriber.unsubscribe();
+  }
+
+  amclPoseSubscriber = new ROSLIB.Topic({
     ros: ros,
     name: '/amcl_pose',
     messageType: 'geometry_msgs/PoseWithCovarianceStamped'
   });
 
-  poseTopic.subscribe((msg) => {
+  amclPoseSubscriber.subscribe((msg) => {
     const pos = msg.pose.pose.position;
     const ori = msg.pose.pose.orientation;
+    parentPort.postMessage({
+      type: 'robot-pose-amcl',
+      data: { position: pos, orientation: ori }
+    });
+  });
+}
 
+
+/*
+function subscribeRobotPose() {
+  if (!ros || !ros.isConnected) return;
+/*
+  // --- ส่วนที่ 1: สำหรับโหมด Localization (AMCL) ---
+  const amclPoseTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/amcl_pose',
+    messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+  });
+
+  amclPoseTopic.subscribe((msg) => {
+    // เมื่อได้รับข้อมูลจาก /amcl_pose ให้ส่งกลับไป
+    const pos = msg.pose.pose.position;
+    const ori = msg.pose.pose.orientation;
     parentPort.postMessage({
       type: 'robot-pose',
       data: { position: pos, orientation: ori }
     });
   });
+
+  console.log('Server: Setting up TFClient for SLAM pose...'); // เพิ่ม Log เพื่อตรวจสอบ
+
+  // --- ทดสอบเฉพาะส่วนของ SLAM (gmapping ผ่าน /tf) ---
+  const tfClient = new ROSLIB.TFClient({
+    ros: ros,
+    fixedFrame: 'map',
+    angularThres: 0.01,
+    transThres: 0.01,
+    rate: 10.0 // พยายามดึงข้อมูล 10 ครั้ง/วินาที
+  });
+
+  tfClient.subscribe('base_footprint', (transform) => {
+    // เมื่อได้รับ Transform ระหว่าง map -> base_footprint ให้ส่งกลับไป
+    console.log('Server: SUCCESS! Received TF transform for base_footprint:', transform);
+    const pos = transform.translation;
+    const ori = transform.rotation;
+    parentPort.postMessage({
+      type: 'robot-pose',
+      data: { position: pos, orientation: ori }
+    });
+  });
+
+  console.log('Server: TFClient is now subscribed to base_footprint.'); // เพิ่ม Log เพื่อตรวจสอบ
 }
+*/
 function subscribePlannedPath() {
   const planTopic = new ROSLIB.Topic({
     ros: ros,
@@ -631,7 +728,7 @@ function sendSingleGoalToMoveBase(pt) {
 
   const goalTopic = new ROSLIB.Topic({
     ros: ros,
-    name: '/rb/navigation/goal',
+    name: '/move_base_simple/goal',
     messageType: 'geometry_msgs/PoseStamped',
   });
 

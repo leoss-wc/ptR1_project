@@ -176,6 +176,7 @@ include_directories(
    src/get_map_file_server.py
    src/map_manager_node.py
    src/patrol_navigator_node.py
+   src/pose_republisher.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

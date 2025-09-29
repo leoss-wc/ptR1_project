@@ -1,0 +1,20 @@
+<launch>
+  <arg name="model" default="burger"/>
+
+  <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_world.launch">
+    <arg name="model" value="$(arg model)" />
+  </include>
+
+  <include file="$(find turtlebot3_slam)/launch/turtlebot3_slam.launch">
+    <arg name="slam_methods" value="gmapping"/>
+  </include>
+
+  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
+    <arg name="port" value="9090"/>
+  </include>
+
+  <node pkg="ptR1_navigation" type="pose_republisher.py" name="pose_republisher" output="screen" />
+
+  <node name="map_manager_node" pkg="ptR1_navigation" type="map_manager_node.py" output="screen"></node>
+
+</launch>

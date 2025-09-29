@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('robotControl', {
 });
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  loadVideosFromFolder: (pathOverride) => ipcRenderer.invoke('load:videos', pathOverride),
   getVideoFileURL: (relativePath) => ipcRenderer.invoke('get-video-path', relativePath),
   startFFmpegStream: () => ipcRenderer.send('start-stream'),
   stopFFmpegStream: () => ipcRenderer.send('stop-stream'),
@@ -49,7 +48,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
 
   // Robot pose and planned path api
-  onRobotPose: (callback) => ipcRenderer.on('robot-pose', (event, ...args) => callback(...args)),
+  onRobotPosSlam: (callback) => ipcRenderer.on('robot-pose-slam', (event, ...args) => callback(...args)),
+  onRobotPosAmcl: (callback) => ipcRenderer.on('robot-pose-amcl', (event, ...args) => callback(...args)),
+
+  switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onPlannedPath: (callback) => ipcRenderer.on('planned-path', (event, ...args) => callback(...args)),
   setInitialPose: (pose) => ipcRenderer.send('set-initial-pose', pose),
 
@@ -67,12 +69,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onMapSaveResult: (callback) => ipcRenderer.on('map-save-result', (_, result) => callback(result)),
   startSLAM: () => ipcRenderer.send('start-slam'),
   stopSLAM: () => ipcRenderer.send('stop-slam'),
-  onSLAMStartResult: (cb) => ipcRenderer.on('slam-start-result', (_, data) => cb(data)),
+  onSLAMStartResult: (cb) => ipcRenderer.on('slam-result', (_, data) => cb(data)),
   onSLAMStopResult: (cb) => ipcRenderer.on('slam-stop-result', (_, data) => cb(data)),
   onLiveMap: (cb) => ipcRenderer.on('live-map', (_, data) => cb(data)),
 
   //Home map canvas api
-  onRobotPose: (cb) => ipcRenderer.on('robot-pose', (_, data) => cb(data)),
   getMapMeta: (mapName) => ipcRenderer.invoke('get-map-meta', mapName),
 
   // Settings related api

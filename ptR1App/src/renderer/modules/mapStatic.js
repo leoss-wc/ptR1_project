@@ -1,15 +1,10 @@
 // modules/mapStatic.js
 import { patrolPath } from './patrolState.js';
 import { activeMap } from './mapState.js';
+import * as mapView from './mapView.js'; 
 
 let canvas, ctx, mapImage;
-let zoom = 1.0;
-let offsetX = 0;
-let offsetY = 0;
-let isDragging = false;
 let isDrawing = false;
-let dragStartX = 0;
-let dragStartY = 0;
 let isHoveringFirstPoint = false;
 let current_map_select = { name: null, base64: null ,meta:null};
 let goalPoint = null;
@@ -22,7 +17,6 @@ let currentMousePos = { x: 0, y: 0 }; //เก็บตำแหน่งเม�
 let mapHitCanvas, mapHitCtx; //ตัวแปรสำหรับ Canvas ที่ใช้ตรวจสอบการคลิกแบบ Pixel-perfect
 
 let dimmerMaskImage = null;//ตัวแปรสำหรับเก็บภาพมาสก์ Dimmer ที่สร้างขึ้น
-let processedSelection = null; // ตัวแปรสำหรับเก็บผลลัพธ์ที่ประมวลผลเสร็จแล้วชั่วคราว
 
 export function initStaticMap() {
   canvas = document.getElementById('staticMapCanvas');
@@ -32,15 +26,19 @@ export function initStaticMap() {
   loadLocalMapsToGallery();
 }
 
-// ✨ เพิ่ม: ฟังก์ชันสำหรับ Reset View โดยใช้หลัก "Fit and Center"
+//ฟังก์ชันสำหรับ Reset View โดยใช้หลัก "Fit and Center"
 function resetStaticMapView() {
   if (!canvas || !mapImage) return;
-  console.log("🗺️ StaticMap: View reset to fit and center.");
+  console.log("StaticMap: View reset to fit and center.");
   const zoomX = canvas.width / mapImage.width;
   const zoomY = canvas.height / mapImage.height;
-  zoom = Math.min(zoomX, zoomY) * 0.95; // ซูมออกเล็กน้อยให้มีขอบ
-  offsetX = (canvas.width - mapImage.width * zoom) / 2;
-  offsetY = (canvas.height - mapImage.height * zoom) / 2;
+
+  const newScale = Math.min(zoomX, zoomY) * 0.95;
+
+  mapView.viewState.scale = newScale;
+  mapView.viewState.offsetX = (canvas.width - mapImage.width * newScale) / 2;
+  mapView.viewState.offsetY = (canvas.height - mapImage.height * newScale) / 2;
+  
   renderCanvas();
 }
 
@@ -128,18 +126,17 @@ document.getElementById('select-map-btn').addEventListener('click', async () => 
 function bindUI() {
   document.getElementById('zoom-in').addEventListener('click', () => {
     if (mapImage) {
-      zoom *= 1.2;
+      mapView.viewState.scale *= 1.2;
       renderCanvas();
     }
   });
   document.getElementById('zoom-out').addEventListener('click', () => {
     if (mapImage) {
-      zoom /= 1.2;
+      mapView.viewState.scale /= 1.2;
       renderCanvas();
     }
   });
-  // 🔧 แก้ไข: ให้ปุ่ม Reset เรียกใช้ฟังก์ชันใหม่
-  document.getElementById('reset-view').addEventListener('click', resetStaticMapView);
+  document.getElementById('reset-static-view-btn').addEventListener('click', resetStaticMapView);
 
   document.getElementById('clear-path-btn').addEventListener('click', () => {
     patrolPath.length = 0;
@@ -203,8 +200,10 @@ function isClickInsideBounds(clickX, clickY) {
   if (!mapHitCtx) return false;
 
   // 2. แปลงพิกัดบนหน้าจอ (Screen) เป็นพิกัดบน "รูปภาพแผนที่" (Image Pixel)
-  const px = Math.floor((clickX - offsetX) / zoom);
-  const py = Math.floor((clickY - offsetY) / zoom);
+  // ของเดิม: const px = Math.floor((clickX - offsetX) / zoom);
+  const px = Math.floor((clickX - mapView.viewState.offsetX) / mapView.viewState.scale); 
+  // ของเดิม: const py = Math.floor((clickY - offsetY) / zoom);
+  const py = Math.floor((clickY - mapView.viewState.offsetY) / mapView.viewState.scale);
 
   // 3. ตรวจสอบว่าพิกัดที่คำนวณได้อยู่นอกขอบเขตของรูปภาพหรือไม่
   if (px < 0 || px >= mapHitCanvas.width || py < 0 || py >= mapHitCanvas.height) {
@@ -278,31 +277,39 @@ function preprocessMapData(sourceImage) {
 // ฟังก์ชันสำหรับวาด Overlay Dimmer
 function drawBoundaryMask() {
   if (!mapImage || !canvas) return;
+  const { offsetX, offsetY, scale } = mapView.viewState;
 
-  ctx.save(); // บันทึกสถานะ Canvas ปัจจุบัน
-
-  // --- ส่วนที่ 1: ทำให้พื้นที่ "นอก" แผนที่มืดลง ---
+  // ฟังก์ชันนี้จะถูกเรียกใช้ใน "Screen Space" (หลังจาก ctx.restore() แล้ว)
+  ctx.save(); 
+  
+  // 1. เริ่มวาดสี่เหลี่ยมสีดำทึบเต็มหน้าจอ
   ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
   ctx.beginPath();
-  // สร้าง Path เต็มพื้นที่ Canvas
   ctx.rect(0, 0, canvas.width, canvas.height);
-  // สร้าง Path "เจาะรู" ตรงกลางเป็นรูปสี่เหลี่ยมของแผนที่ (ทวนเข็มนาฬิกา)
-  ctx.moveTo(offsetX, offsetY);
-  ctx.lineTo(offsetX, offsetY + mapImage.height * zoom);
-  ctx.lineTo(offsetX + mapImage.width * zoom, offsetY + mapImage.height * zoom);
-  ctx.lineTo(offsetX + mapImage.width * zoom, offsetY);
+
+  // 2. สร้าง Path สำหรับ "เจาะรู" ที่ถูกหมุนไปพร้อมกับแผนที่
+  //    - ย้ายจุดศูนย์กลางไปที่มุมซ้ายบนของแผนที่บนจอ
+  ctx.translate(offsetX, offsetY);
+  //    - ขยายตามการซูม
+  ctx.scale(scale, scale);
+  //    - หมุนในทิศทางเดียวกันกับแผนที่
+  ctx.rotate(-Math.PI / 2);
+  ctx.translate(-mapImage.height, 0);
+  
+  // 3. สร้างรูปทรงของรู (เป็นพิกัดพิกเซลของแผนที่)
+  ctx.moveTo(0, 0);
+  ctx.lineTo(mapImage.width, 0);
+  ctx.lineTo(mapImage.width, mapImage.height);
+  ctx.lineTo(0, mapImage.height);
   ctx.closePath();
-  // ใช้ 'evenodd' rule เพื่อเติมสีเฉพาะพื้นที่ที่ไม่มีรูเจาะ (คือพื้นที่ด้านนอก)
+  
+  // 4. คืนค่าการแปลงค่าทั้งหมดกลับสู่ปกติ
+  ctx.restore(); 
+
+  // 5. เติมสีโดยใช้ 'evenodd' rule ซึ่งจะเว้นพื้นที่รูที่ถูกแปลงค่าไว้
   ctx.fill("evenodd");
-
-  // --- ส่วนที่ 2: วาด Dimmer "ใน" แผนที่ (Pixel-perfect) ---
-  if (dimmerMaskImage) {
-    ctx.drawImage(dimmerMaskImage, offsetX, offsetY, mapImage.width * zoom, mapImage.height * zoom);
-  }
-
-  ctx.restore(); // คืนค่าสถานะ Canvas
 }
-
+/*
 function setupCanvasEvents() {
   canvas.addEventListener('mousedown', (e) => {
     const rect = canvas.getBoundingClientRect();
@@ -438,6 +445,130 @@ function setupCanvasEvents() {
     }
   });
 }
+  */
+
+function setupCanvasEvents() {
+  canvas.addEventListener('mousedown', (e) => {
+    if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
+      // --- Logic สำหรับโหมดพิเศษ (เหมือนเดิม) ---
+      const rect = canvas.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+      if (!isClickInsideBounds(clickX, clickY)) return;
+
+      if (mode === 'draw') {
+        if (isHoveringFirstPoint && patrolPath.length > 1) { 
+        patrolPath.push({ ...patrolPath[0] });
+        renderCanvas();
+        cancelMode(); 
+      } else { 
+        isDrawing = true; 
+        addPathPoint(e); 
+        renderCanvas(); 
+      }
+
+      } else if (mode === 'goal') {
+        setGoalPointOnClick(e);
+      } else if (mode === 'pose') {
+        isSettingPose = true;
+        poseStartPosition = getWorldCoordsFromEvent(e);
+        renderCanvas();
+      }
+    } else {
+      // --- ✨ เมื่อเป็นโหมดปกติ ให้เรียกใช้ Pan Logic จาก mapView ---
+      mapView.handleMouseDown(e);
+    }
+  });
+
+  canvas.addEventListener('mouseup', (e) => {
+    if (mode === 'pose' && isSettingPose) {
+      const endPoint = getWorldCoordsFromEvent(e);
+      const dx = endPoint.x - poseStartPosition.x;
+      const dy = endPoint.y - poseStartPosition.y;
+      const yaw = Math.atan2(dy, dx);
+      const quaternion = yawToQuaternion(yaw);
+      
+      const poseData = {
+        position: poseStartPosition,
+        orientation: quaternion,
+      };
+      window.electronAPI.setInitialPose(poseData);
+      
+      isSettingPose = false;
+      poseStartPosition = null;
+      cancelMode();
+    }
+    isDrawing = false;
+    mapView.handleMouseUp(e);
+  });
+
+  canvas.addEventListener('mouseleave', (e) => {
+    isDrawing = false;
+    mapView.handleMouseUp(e);
+    if (isHoveringFirstPoint) {
+      isHoveringFirstPoint = false;
+      renderCanvas();
+    }
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    // อัปเดตตำแหน่งเมาส์ปัจจุบันเสมอ
+    const rect = canvas.getBoundingClientRect();
+    currentMousePos.x = e.clientX - rect.left;
+    currentMousePos.y = e.clientY - rect.top;
+
+    // แยก Logic การทำงานตาม mode อย่างชัดเจน
+    if (mode === 'draw') {
+      if (isDrawing) {
+        // ถ้ากำลังวาด: เพิ่มจุดและวาดใหม่
+        addPathPoint(e);
+        renderCanvas();
+      } else if (patrolPath.length > 0 && activeMap.meta) {
+        const snapRadius = 10 / mapView.viewState.scale;
+        const firstPoint = patrolPath[0];
+        const { resolution, origin } = activeMap.meta;
+        
+        // --- 🔧 แก้ไขสูตรคำนวณ 2 บรรทัดนี้ ---
+        const firstPointPy = (firstPoint.x - origin[0]) / resolution; // world x -> pixel y
+        const firstPointPx = mapImage.width - ((firstPoint.y - origin[1]) / resolution); // world y -> pixel x
+        
+        const mouseMapX = (currentMousePos.x - mapView.viewState.offsetX) / mapView.viewState.scale;
+        const mouseMapY = (currentMousePos.y - mapView.viewState.offsetY) / mapView.viewState.scale;
+        
+        // --- 🔧 อัปเดตตัวแปรที่ใช้คำนวณ distance ---
+        const distance = Math.sqrt(Math.pow(mouseMapX - firstPointPx, 2) + Math.pow(mouseMapY - firstPointPy, 2));
+        const previouslyHovering = isHoveringFirstPoint;
+        isHoveringFirstPoint = distance < snapRadius;
+
+        if (previouslyHovering !== isHoveringFirstPoint) {
+            canvas.style.cursor = isHoveringFirstPoint ? 'pointer' : 'crosshair';
+            renderCanvas();
+        }
+      }
+    } else if (mode === 'pose') {
+      // ถ้าอยู่ในโหมด pose: วาดลูกศรตามเมาส์
+      if (isSettingPose) {
+        renderCanvas();
+      }
+    } else {
+      // ถ้าเป็นโหมดปกติ (none): ให้ Pan แผนที่
+      mapView.handleMouseMove(e);
+    }
+  });
+
+
+  window.addEventListener('resize', () => {
+    if(canvas.classList.contains('hidden')) return;
+    resetStaticMapView();
+  });
+
+  canvas.addEventListener('contextmenu', (e) => {
+    if (mode !== 'none') {
+      e.preventDefault();
+      cancelMode();
+    }
+  });
+}
 
 function cancelMode() {
   mode = 'none';
@@ -457,129 +588,134 @@ function addPathPoint(e) {
   if (!activeMap.meta || !mapImage || mapImage.height === 0) return;
   const rect = canvas.getBoundingClientRect();
   const { resolution, origin } = activeMap.meta;
-  const imgH = mapImage.height;
+
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
-  const px = (clickX - offsetX) / zoom;
-  const py = (clickY - offsetY) / zoom;
+
+  const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
+  const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
+
   const worldPoint = {
-    x: origin[0] + (px * resolution),
-    y: origin[1] + ((imgH - py) * resolution)
-  };
+        x: origin[0] + (px * resolution),
+        y: origin[1] + ((mapImage.height - py) * resolution)
+    };
+
   patrolPath.push(worldPoint);
 }
 
-function renderCanvas() {
-  if (!canvas) return;
+export function renderCanvas() {
+  if (!canvas || !mapImage) return;
+
+  // 1. เตรียม Canvas และล้างหน้าจอ
   canvas.width = canvas.clientWidth;
   canvas.height = canvas.clientHeight;
-  if (!mapImage) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(mapImage, offsetX, offsetY, mapImage.width * zoom, mapImage.height * zoom);
+  ctx.imageSmoothingEnabled = false;
 
-  
-  // --- ลำดับที่ 2: วาด Dimmer Effect (ถ้าอยู่ในโหมดที่กำหนด) ---
-  if (mode === 'draw' || mode === 'goal') {
-    drawBoundaryMask();
+  // 2. บันทึกสถานะเริ่มต้นของ Canvas ก่อนทำการแปลงใดๆ
+  ctx.save();
+
+  // 3. ใช้ mapView จัดการ Pan และ Zoom (จะมีการ translate และ scale context)
+  ctx.translate(mapView.viewState.offsetX, mapView.viewState.offsetY);
+  ctx.scale(mapView.viewState.scale, mapView.viewState.scale);
+
+  // 4. หมุนมุมมองทั้งหมด -90 องศา เพื่อให้แผนที่ตั้งตรง
+  ctx.rotate(-Math.PI / 2);
+  ctx.translate(-mapImage.height, 0); // ย้ายภาพกลับเข้ามาในกรอบหลังหมุน
+
+  // --- ณ จุดนี้ ระบบพิกัดพร้อมแล้ว ทุกอย่างที่วาดหลังจากนี้จะถูกแปลงโดยอัตโนมัติ ---
+
+  // 5. วาดแผนที่ (ที่ยังเอียงอยู่) ลงบนมุมมองที่ถูกหมุน -> ผลลัพธ์คือภาพที่ตั้งตรง
+  ctx.drawImage(mapImage, 0, 0, mapImage.width, mapImage.height);
+
+   if (dimmerMaskImage && (mode === 'draw' || mode === 'goal')) {
+    ctx.drawImage(dimmerMaskImage, 0, 0, mapImage.width, mapImage.height);
   }
-
-  // --- ลำดับที่ 3: วาดเส้น Path, จุด, และ Goal ทับลงไปบนสุด ---
-  if (current_map_select.name) {
-    ctx.font = '16px sans-serif';
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
-    ctx.fillText(`Map: ${current_map_select.name}`, 10, 20);
-  }
-
-  if (patrolPath.length > 0 && activeMap.meta) {
+  // 6. วาดทุกอย่างที่เหลือ (Path, Goal, etc.) โดยใช้ "พิกัดพิกเซลของแผนที่ดั้งเดิม"
+  if (activeMap.meta) {
     const { resolution, origin } = activeMap.meta;
+    const mapImgHeight = mapImage.height;
+
+    // --- วาดเส้น Path ---
     if (patrolPath.length > 1) {
       ctx.strokeStyle = 'orange';
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 2 / mapView.viewState.scale; // ปรับความหนาเส้นตามการซูม
       ctx.beginPath();
       patrolPath.forEach((point, i) => {
+        // แปลง World Coords -> Map Pixel Coords (สูตรดั้งเดิม)
         const px = (point.x - origin[0]) / resolution;
-        const py = mapImage.height - (point.y - origin[1]) / resolution;
-        const screenX = px * zoom + offsetX;
-        const screenY = py * zoom + offsetY;
-        i === 0 ? ctx.moveTo(screenX, screenY) : ctx.lineTo(screenX, screenY);
+        const py = mapImgHeight - ((point.y - origin[1]) / resolution);
+        // วาดลงไปตรงๆ ที่ px, py (Context ที่ถูกแปลงแล้วจะจัดการตำแหน่งบนจอให้เอง)
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
       });
       ctx.stroke();
     }
 
-    const baseRadius = 6;         // ขนาดพื้นฐานของจุด
-    const hoverRadius = 8;        // ขนาดพื้นฐานของจุดเมื่อถูกชี้
-    const minRadius = 2;          // ขนาดเล็กที่สุดที่อนุญาต (pixel)
-    const maxRadius = 8;         // ขนาดใหญ่ที่สุดที่อนุญาต (pixel)
-
-
+    // --- วาดจุดบน Path ---
     patrolPath.forEach((point, i) => {
-      const px = (point.x - origin[0]) / resolution;
-      const py = mapImage.height - (point.y - origin[1]) / resolution;
-      const screenX = px * zoom + offsetX;
-      const screenY = py * zoom + offsetY;
-      ctx.beginPath();
-
-      if (i === 0 && isHoveringFirstPoint) {
-        // --- คำนวณขนาดของจุดที่ถูกชี้ (Hover) ---
-        const calculatedRadius = hoverRadius / zoom;
-        const radius = Math.max(minRadius, Math.min(calculatedRadius, maxRadius));
+        const px = (point.x - origin[0]) / resolution;
+        const py = mapImgHeight - ((point.y - origin[1]) / resolution);
+        const radius = (i === 0 && isHoveringFirstPoint ? 8 : 6) / mapView.viewState.scale;
         
-        ctx.fillStyle = '#00FF00';
-        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-
-      } else {
-        // --- คำนวณขนาดของจุดปกติ ---
-        const calculatedRadius = baseRadius / zoom;
-        const radius = Math.max(minRadius, Math.min(calculatedRadius, maxRadius));
-
-        ctx.fillStyle = 'cyan';
-        ctx.arc(screenX, screenY, radius, 0, Math.PI * 2);
-      }
-
-
-      ctx.fill();
+        ctx.beginPath();
+        ctx.arc(px, py, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = (i === 0 && isHoveringFirstPoint) ? '#00FF00' : 'cyan';
+        ctx.fill();
     });
-  }
-  if (goalPoint) {
-    const px = (goalPoint.x - activeMap.meta.origin[0]) / activeMap.meta.resolution;
-    const py = mapImage.height - (goalPoint.y - activeMap.meta.origin[1]) / activeMap.meta.resolution;
-    const x = px * zoom + offsetX;
-    const y = py * zoom + offsetY;
-    ctx.beginPath();
-    ctx.arc(x, y, 6 / zoom, 0, 2 * Math.PI);
-    ctx.fillStyle = 'red';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'white';
-    ctx.stroke();
+
+    // --- วาด Goal Point ---
+    if (goalPoint) {
+      const px = (goalPoint.x - origin[0]) / resolution;
+      const py = mapImgHeight - ((goalPoint.y - origin[1]) / resolution);
+      
+      ctx.beginPath();
+      ctx.arc(px, py, 6 / mapView.viewState.scale, 0, 2 * Math.PI);
+      ctx.fillStyle = 'red';
+      ctx.fill();
+      ctx.lineWidth = 2 / mapView.viewState.scale;
+      ctx.strokeStyle = 'white';
+      ctx.stroke();
+    }
   }
 
+  // 7. คืนค่า Canvas กลับสู่สถานะเริ่มต้น (ไม่มี Pan, Zoom, หรือ Rotation)
+  ctx.restore();
+  if (mode === 'draw' || mode === 'goal') {
+    drawBoundaryMask();
+  }
+
+  // --- ณ จุดนี้ เรากลับมาวาดใน "พิกัดหน้าจอ" (Screen Space) ตามปกติ ---
+  
+  // 8. วาดลูกศร Initial Pose (ซึ่งต้องสัมพันธ์กับตำแหน่งเมาส์บนหน้าจอ)
   if (isSettingPose && poseStartPosition) {
-    // 1. แปลง World Coords ของจุดเริ่มต้นกลับเป็น Screen Coords
-    const startPx = (poseStartPosition.x - activeMap.meta.origin[0]) / activeMap.meta.resolution;
-    const startPy = mapImage.height - (poseStartPosition.y - activeMap.meta.origin[1]) / activeMap.meta.resolution;
-    const startScreenX = startPx * zoom + offsetX;
-    const startScreenY = startPy * zoom + offsetY;
+    // แปลงจุดเริ่มต้น (World Coords) ให้ออกมาเป็นพิกัดบนหน้าจอ (Screen Coords)
+    const { resolution, origin } = activeMap.meta;
+    const startPx = (poseStartPosition.x - origin[0]) / resolution;
+    const startPy = mapImage.height - ((poseStartPosition.y - origin[1]) / resolution);
+    
+    // คำนวณตำแหน่งบนจอโดยจำลองการแปลงทั้งหมด
+    const rotatedX = startPy;
+    const rotatedY = -startPx + mapImage.height;
+    
+    const startScreenX = rotatedX * mapView.viewState.scale + mapView.viewState.offsetX;
+    const startScreenY = rotatedY * mapView.viewState.scale + mapView.viewState.offsetY;
 
-    // 2. จุดสิ้นสุดคือตำแหน่งเมาส์ปัจจุบัน (ซึ่งเป็น Screen Coords อยู่แล้ว)
+    // จุดสิ้นสุดคือตำแหน่งเมาส์ปัจจุบัน
     const endScreenX = currentMousePos.x;
     const endScreenY = currentMousePos.y;
 
-    // 3. วาดเส้นและหัวลูกศร
+    // วาดลูกศร
     ctx.save();
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
     ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
-    ctx.lineWidth = Math.max(1, 3 / zoom); // ทำให้เส้นไม่หนาหรือบางเกินไป
-
-    // วาดเส้นตรง
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(startScreenX, startScreenY);
     ctx.lineTo(endScreenX, endScreenY);
     ctx.stroke();
-
-    // วาดหัวลูกศร
+    // ... (โค้ดวาดหัวลูกศร) ...
     const angle = Math.atan2(endScreenY - startScreenY, endScreenX - startScreenX);
-    const headlen = Math.max(5, 15 / zoom); // ขนาดหัวลูกศร
+    const headlen = 10;
     ctx.beginPath();
     ctx.moveTo(endScreenX, endScreenY);
     ctx.lineTo(endScreenX - headlen * Math.cos(angle - Math.PI / 6), endScreenY - headlen * Math.sin(angle - Math.PI / 6));
@@ -589,7 +725,6 @@ function renderCanvas() {
     ctx.fill();
     ctx.restore();
   }
-
 }
 
 function loadLocalMapsToGallery() {
@@ -631,30 +766,24 @@ async function autoCropMapImage(sourceImage, meta) {
   if (maxX === -1) { // กรณีแผนที่ว่างเปล่า
     return { croppedImage: sourceImage, newMeta: meta };
   }
-
-  // 2. คำนวณขนาดและสร้าง Canvas ใหม่สำหรับรูปที่ Crop แล้ว
   const cropWidth = maxX - minX + 1;
   const cropHeight = maxY - minY + 1;
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = cropWidth;
   cropCanvas.height = cropHeight;
   const cropCtx = cropCanvas.getContext('2d');
-
-  // 3. วาดเฉพาะส่วนของแผนที่ลงบน Canvas ใหม่
   cropCtx.drawImage(sourceImage, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
-  
-  // 4. สร้าง Image object ใหม่จาก Canvas ที่ Crop แล้ว
-  const croppedImage = new Image();
-  croppedImage.src = cropCanvas.toDataURL();
-  await new Promise(resolve => croppedImage.onload = resolve); // รอให้รูปใหม่โหลดเสร็จ
+  const finalImage = new Image();
+  finalImage.src = cropCanvas.toDataURL();
+  await new Promise(resolve => finalImage.onload = resolve);
 
-  // 5. คำนวณ Origin ใหม่ให้สอดคล้องกับรูปที่ถูกตัด
-  const newMeta = JSON.parse(JSON.stringify(meta)); // Deep copy
+
+  const newMeta = JSON.parse(JSON.stringify(meta));
   newMeta.origin[0] = meta.origin[0] + minX * meta.resolution;
-  newMeta.origin[1] = meta.origin[1] + (height - maxY - 1) * meta.resolution;
-  
-  console.log(`✅ Cropping complete. New size: ${cropWidth}x${cropHeight}. New origin:`, newMeta.origin);
-  return { croppedImage, newMeta };
+  newMeta.origin[1] = meta.origin[1] + (sourceImage.height - maxY - 1) * meta.resolution;
+
+  // 5. คืนค่าเป็นรูปภาพและ metadata ที่ผ่านการหมุนแล้ว
+   return { croppedImage: finalImage, newMeta };
 }
 
 function addMapToGallery(name, base64) {
@@ -665,23 +794,20 @@ function addMapToGallery(name, base64) {
   img.className = 'map-thumb';
   img.style.cursor = 'pointer';
   img.addEventListener('click', async () => {
-    // 🔧 แก้ไข: ส่วนนี้จะทำแค่ "Preview"
     console.log(`👁️ Previewing map: ${name}`);
-    
     // 1. โหลดข้อมูล Meta ชั่วคราวสำหรับ Preview
     const result = await window.electronAPI.getMapMeta(name);
     if (!result.success) {
       alert(`Could not load metadata for ${name}`);
       return;
     }
-
     // 2. เก็บข้อมูลที่เลือกลงในตัวแปรชั่วคราว
     current_map_select = { name, base64, meta: result.data };
-    
     // 3. โหลดและแสดงรูปภาพต้นฉบับเพื่อ Preview
     mapImage = new Image();
     mapImage.onload = () => {
       // ไม่ต้องทำ processing ใดๆ แค่แสดงผล
+      resetStaticMapView(); 
       resetStaticMapView(); 
     };
     mapImage.src = base64;
@@ -694,14 +820,19 @@ function setGoalPointOnClick(e) {
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
-  const px = (clickX - offsetX) / zoom;
-  const py = (clickY - offsetY) / zoom;
+
+  const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
+  const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
+  
+  // --- 🔧 ใช้สูตรคำนวณใหม่ทั้งหมด ---
   goalPoint = {
     x: activeMap.meta.origin[0] + (px * activeMap.meta.resolution),
     y: activeMap.meta.origin[1] + ((mapImage.height - py) * activeMap.meta.resolution)
   };
+  
   window.electronAPI.sendSingleGoal(goalPoint);
   cancelMode();
+  renderCanvas();
 }
 
 function createDimmerMask(imageData) {
@@ -766,14 +897,14 @@ function yawToQuaternion(yaw) {
   };
 }
 
-//ฟังก์ชันย่อยสำหรับแปลง event เป็น world coords (ลดโค้ดซ้ำซ้อน)
 function getWorldCoordsFromEvent(e) {
   if (!activeMap.meta || !mapImage || mapImage.height === 0) return null;
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
-  const px = (clickX - offsetX) / zoom;
-  const py = (clickY - offsetY) / zoom;
+
+  const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
+  const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
   return {
     x: activeMap.meta.origin[0] + (px * activeMap.meta.resolution),
     y: activeMap.meta.origin[1] + ((mapImage.height - py) * activeMap.meta.resolution)

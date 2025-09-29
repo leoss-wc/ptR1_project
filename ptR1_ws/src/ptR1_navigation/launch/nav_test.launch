@@ -1,0 +1,13 @@
+<launch>
+    <env name="TURTLEBOT3_MODEL" value="burger"/>
+
+    <param name="/move_base/base_local_planner" value="teb_local_planner/TebLocalPlannerROS" />
+
+    <include file="$(find turtlebot3_gazebo)/launch/turtlebot3_world.launch" />
+
+    <include file="$(find turtlebot3_navigation)/launch/turtlebot3_navigation.launch">
+        <arg name="map_file" value="$(find ptR1_navigation)/maps/active_map.yaml"/>
+        <remap from="/move_base_simple/goal" to="/rb/navigation/goal" />
+    </include>
+
+    </launch>

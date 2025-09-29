@@ -623,3 +623,9 @@ input:checked + .slider:before {
 .patrol-options label {
   margin-left: 5px;
 }
+
+#liveMapCanvas {
+  /* บอกให้ Chromium แสดงผลแบบพิกเซล ไม่ต้องเกลี่ยสี */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}

@@ -515,7 +515,6 @@ app.whenReady().then(() => {
 
   try {
     rosWorker = new Worker(path.join(__dirname, 'server.js'));
-
     rosWorker.on('message', (message) => {
       switch (message.type) {
         case 'power':
@@ -537,7 +536,7 @@ app.whenReady().then(() => {
           mainWindow.webContents.send('ros:map-load', message.data);
           break;
         case 'map-save':
-          mainWindow.webContents.send('ros:map-save', message.data);
+          mainWindow.webContents.send('map-save-result', message.data);
           break;
         case 'map-base64':
           mainWindow.webContents.send('ros:map-base64', message.data);
@@ -557,17 +556,19 @@ app.whenReady().then(() => {
         case 'live-map':
           mainWindow?.webContents.send('live-map', message.data);
           break;
-        case 'robot-pose':
-          mainWindow?.webContents.send('robot-pose', message.data);
+        case 'robot-pose-slam':
+          mainWindow?.webContents.send('robot-pose-slam', message.data);
           break;
-        case 'planned-path':
-          mainWindow?.webContents.send('planned-path', message.data);
+        case 'robot-pose-amcl':
+          mainWindow?.webContents.send('robot-pose-amcl', message.data);
           break;
         case 'planned-path':
           mainWindow?.webContents.send('planned-path', message.data);
           break;
         case 'stream-status': 
           mainWindow?.webContents.send('stream-status', message.data);
+          break;
+        case 'map-data':
           break;
 
         default:
