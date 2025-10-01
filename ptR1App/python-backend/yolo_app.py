@@ -8,8 +8,7 @@ from PIL import Image
 import json
 from ultralytics import YOLO
 
-# --- โหลดโมเดล YOLOv8 ของคุณ ---
-# ตรวจสอบให้แน่ใจว่าไฟล์ yolov8n.pt อยู่ในโฟลเดอร์เดียวกับ app.py
+# --- โหลดโมเดล YOLOv8  ---
 try:
     model = YOLO('yolov8n.pt')
     print("YOLOv8 model loaded successfully.")
