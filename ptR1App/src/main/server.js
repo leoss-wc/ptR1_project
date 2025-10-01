@@ -52,7 +52,7 @@ parentPort.on('message', (message) => {
         sendStopPatrolCommand();
         break;
       case 'sendSingleGoal':
-        sendSingleGoalToMoveBase(message.point);
+        sendSingleGoalToMoveBase(message.data); 
         break;
       case 'resumePatrol':
         resumePatrolFrom(message.path, message.index);
@@ -82,7 +82,7 @@ parentPort.on('message', (message) => {
         if (message.mode === 'amcl') {
           subscribeAmclPose();
         } else if (message.mode === 'slam') {
-          subscribeSlamPose();
+          subscribeRobotPoseSlam();
         }
         break;
       default:
@@ -125,8 +125,11 @@ function connectROSBridge(url) {
     subscribeSensorData();
     subscribeMapData();
     //subscribeRobotPose();
+    subscribeSlamMapData();
+    subscribeAmclPose()
     subscribePlannedPath();
     subscribeMoveBaseResult();
+    subscribeLaserScanData();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
@@ -263,6 +266,25 @@ function subscribeMapData() {
   });
 }
 
+function subscribeSlamMapData() {
+  const slamMapTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/rb/slam/map', 
+    messageType: 'nav_msgs/OccupancyGrid',
+  });
+
+  console.log(`[Server] Subscribing to SLAM map topic: ${slamMapTopic.name}`);
+
+  slamMapTopic.subscribe((msg) => {
+    // ส่งข้อมูลแผนที่จาก SLAM ผ่าน Message Type ใหม่
+    parentPort.postMessage({
+      type: 'slam-map-update', // ✅ ใช้ Type ใหม่!
+      data: msg
+    });
+  });
+}
+
+
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
 
@@ -311,54 +333,29 @@ function subscribeAmclPose() {
     });
   });
 }
-
-
-/*
-function subscribeRobotPose() {
+function subscribeLaserScanData() {
   if (!ros || !ros.isConnected) return;
-/*
-  // --- ส่วนที่ 1: สำหรับโหมด Localization (AMCL) ---
-  const amclPoseTopic = new ROSLIB.Topic({
+
+  const scanTopic = new ROSLIB.Topic({
     ros: ros,
-    name: '/amcl_pose',
-    messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+    name: '/scan', // ชื่อ Topic ของ Laser Scan โดยทั่วไป
+    messageType: 'sensor_msgs/LaserScan'
   });
 
-  amclPoseTopic.subscribe((msg) => {
-    // เมื่อได้รับข้อมูลจาก /amcl_pose ให้ส่งกลับไป
-    const pos = msg.pose.pose.position;
-    const ori = msg.pose.pose.orientation;
+  console.log('[Server] Subscribing to LaserScan topic: /scan');
+
+  scanTopic.subscribe((message) => {
+    // ส่งข้อมูลที่จำเป็นกลับไปเท่านั้น เพื่อลดขนาดข้อมูล
     parentPort.postMessage({
-      type: 'robot-pose',
-      data: { position: pos, orientation: ori }
+      type: 'laser-scan-update',
+      data: {
+        angle_min: message.angle_min,
+        angle_increment: message.angle_increment,
+        ranges: message.ranges
+      }
     });
   });
-
-  console.log('Server: Setting up TFClient for SLAM pose...'); // เพิ่ม Log เพื่อตรวจสอบ
-
-  // --- ทดสอบเฉพาะส่วนของ SLAM (gmapping ผ่าน /tf) ---
-  const tfClient = new ROSLIB.TFClient({
-    ros: ros,
-    fixedFrame: 'map',
-    angularThres: 0.01,
-    transThres: 0.01,
-    rate: 10.0 // พยายามดึงข้อมูล 10 ครั้ง/วินาที
-  });
-
-  tfClient.subscribe('base_footprint', (transform) => {
-    // เมื่อได้รับ Transform ระหว่าง map -> base_footprint ให้ส่งกลับไป
-    console.log('Server: SUCCESS! Received TF transform for base_footprint:', transform);
-    const pos = transform.translation;
-    const ori = transform.rotation;
-    parentPort.postMessage({
-      type: 'robot-pose',
-      data: { position: pos, orientation: ori }
-    });
-  });
-
-  console.log('Server: TFClient is now subscribed to base_footprint.'); // เพิ่ม Log เพื่อตรวจสอบ
 }
-*/
 function subscribePlannedPath() {
   const planTopic = new ROSLIB.Topic({
     ros: ros,
@@ -723,7 +720,7 @@ function sendStopPatrolCommand() {
   stopTopic.publish(msg);
   console.log('🛑 หยุดการลาดตระเวน');
 }
-function sendSingleGoalToMoveBase(pt) {
+function sendSingleGoalToMoveBase(data) {
   if (!ros || !ros.isConnected) return;
 
   const goalTopic = new ROSLIB.Topic({
@@ -733,16 +730,18 @@ function sendSingleGoalToMoveBase(pt) {
   });
 
   const msg = new ROSLIB.Message({
-    header: { frame_id: 'map', stamp: new Date() },
+    header: { frame_id: 'map' },
+    // ✨ ใช้ข้อมูลจาก data.pose
     pose: {
-      position: { x: pt.x, y: pt.y, z: 0 },
-      orientation: { x: 0, y: 0, z: 0, w: 1 }
+      position: data.pose.position,
+      orientation: data.pose.orientation
     }
   });
 
-  console.log(`📍 ส่ง goal เดี่ยวไปยัง (${pt.x.toFixed(2)}, ${pt.y.toFixed(2)})`);
+  console.log(`📍 ส่ง goal (พร้อมทิศทาง) ไปยัง (${data.pose.position.x.toFixed(2)}, ${data.pose.position.y.toFixed(2)})`);
   goalTopic.publish(msg);
 }
+
 function resumePatrolFrom(pathArray, startIndex) {
   if (!ros || !ros.isConnected) return;
 

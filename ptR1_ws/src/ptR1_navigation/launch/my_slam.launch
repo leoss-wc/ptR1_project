@@ -1,0 +1,15 @@
+<launch>
+
+  <node pkg="gmapping" type="slam_gmapping" name="my_gmapping_node">
+    
+    <remap from="map" to="/rb/slam/map" />
+    <remap from="map_metadata" to="/my_robot/map_metadata" />
+    
+    <remap from="scan" to="/my_laser/scan" />
+    
+    <param name="base_frame" value="base_footprint" />
+    <param name="odom_frame" value="odom" />
+
+  </node>
+
+</launch>

@@ -46,6 +46,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMapDataByName: (name) => ipcRenderer.invoke('get-map-data-by-name', name),
   saveMapCache: (mapName, imageData) => ipcRenderer.invoke('mapcache:save', { mapName, imageData }),
   loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
+  onSlamMap: (callback) => ipcRenderer.on('slam-map-data', (_event, value) => callback(value)),
+  switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
+  onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),
 
   // Robot pose and planned path api
   onRobotPosSlam: (callback) => ipcRenderer.on('robot-pose-slam', (event, ...args) => callback(...args)),

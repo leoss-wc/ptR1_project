@@ -101,7 +101,6 @@ function handleGoalResult(result) {
           window.electronAPI.sendSingleGoal(nextGoal);
       } else {
           console.log("Patrol finished!");
-          alert("Patrol Complete!");
       }
       break;
 

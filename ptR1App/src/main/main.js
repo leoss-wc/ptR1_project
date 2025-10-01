@@ -343,9 +343,9 @@ ipcMain.on('send-stop-patrol', () => {
   }
 });
 
-ipcMain.on('send-single-goal', (_, point) => {
+ipcMain.on('send-single-goal', (_, data) => {
   if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendSingleGoal', point });
+    rosWorker.postMessage({ type: 'sendSingleGoal', data });
   }
 });
 
@@ -517,6 +517,11 @@ app.whenReady().then(() => {
     rosWorker = new Worker(path.join(__dirname, 'server.js'));
     rosWorker.on('message', (message) => {
       switch (message.type) {
+        case 'map-data':
+          break;
+        case 'robot-pose-amcl':
+          mainWindow?.webContents.send('robot-pose-amcl', message.data);
+          break;
         case 'power':
           mainWindow?.webContents.send('power', message.data);
           break;
@@ -559,16 +564,17 @@ app.whenReady().then(() => {
         case 'robot-pose-slam':
           mainWindow?.webContents.send('robot-pose-slam', message.data);
           break;
-        case 'robot-pose-amcl':
-          mainWindow?.webContents.send('robot-pose-amcl', message.data);
-          break;
         case 'planned-path':
           mainWindow?.webContents.send('planned-path', message.data);
           break;
         case 'stream-status': 
           mainWindow?.webContents.send('stream-status', message.data);
           break;
-        case 'map-data':
+        case 'slam-map-update':
+          mainWindow?.webContents.send('slam-map-data', message.data);
+          break;
+        case 'laser-scan-update':
+          mainWindow?.webContents.send('laser-scan-data', message.data);
           break;
 
         default:

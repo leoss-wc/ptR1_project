@@ -3,8 +3,8 @@ import rospy
 import os
 import base64
 import subprocess
-import yaml  # ไลบรารีสำหรับจัดการไฟล์ YAML
-import shutil #  ไลบรารีสำหรับจัดการไฟล์ 
+import yaml
+import shutil
 
 from ptR1_navigation.srv import ListMaps, ListMapsResponse
 from ptR1_navigation.srv import LoadMap, LoadMapResponse
@@ -13,12 +13,13 @@ from ptR1_navigation.srv import SaveMap, SaveMapResponse
 from ptR1_navigation.srv import StartSLAM, StartSLAMResponse
 from ptR1_navigation.srv import StopSLAM, StopSLAMResponse
 
-slam_process = None  # ✅ เก็บ process ไว้สำหรับหยุด
-
-
+#รวมการจัดการ Process ไว้ที่นี่ที่เดียว
+running_processes = []
+map_server_process = None #เก็บ Popen object ของ map_server แยกไว้เพื่อ stop/start ได้ง่าย 
 
 MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
 ACTIVE_MAP_NAME = "active_map"
+
 
 # ----------------- [LIST MAPS] -----------------
 def handle_list_maps(req):
@@ -32,8 +33,8 @@ def handle_list_maps(req):
     return ListMapsResponse(names)
 
 # ----------------- [LOAD MAP] ------------------
-# คัดลอกไฟล์ map ที่เลือก ไปทับไฟล์ active_map
 def handle_load_map(req):
+    global map_server_process
     rospy.loginfo(f"🗺️ Loading map: {req.name}")
     name = req.name
     src_yaml = os.path.join(MAP_FOLDER, f"{name}.yaml")
@@ -46,27 +47,36 @@ def handle_load_map(req):
         return LoadMapResponse(False, f"Map '{name}' not found")
 
     try:
-        # 🔧 แก้ไข: ใช้ shutil.copy เพื่อความปลอดภัยและประสิทธิภาพที่ดีกว่า
         shutil.copy(src_yaml, dest_yaml)
         shutil.copy(src_pgm, dest_pgm)
         rospy.loginfo(f"Copied '{name}' to '{ACTIVE_MAP_NAME}'")
 
-        # --- ✨ เพิ่ม: ส่วนแก้ไขเนื้อหาไฟล์ YAML ---
-        # 1. เปิดและอ่านไฟล์ active_map.yaml
         with open(dest_yaml, 'r') as file:
             map_data = yaml.safe_load(file)
 
-        # 2. แก้ไขค่าของ key 'image'
         new_image_name = f"{ACTIVE_MAP_NAME}.pgm"
         map_data['image'] = new_image_name
         rospy.loginfo(f"Updating image path in YAML to: {new_image_name}")
 
-        # 3. เขียนข้อมูลที่แก้ไขแล้วกลับลงไปในไฟล์เดิม
         with open(dest_yaml, 'w') as file:
             yaml.dump(map_data, file, default_flow_style=False)
-        # -----------------------------------------
 
-        rospy.loginfo(f"🗺️ Loaded map: {name}")
+        # ✨ แก้ไข: หยุด map_server ตัวเก่าและลบออกจาก List
+        if map_server_process in running_processes:
+            running_processes.remove(map_server_process)
+        if map_server_process:
+            rospy.loginfo("Stopping existing map_server process...")
+            map_server_process.terminate()
+            map_server_process.wait()
+        
+        map_server_command = [
+            'rosrun', 'map_server', 'map_server', dest_yaml
+        ]
+        rospy.loginfo(f"🚀 Starting new map_server process for {ACTIVE_MAP_NAME}.yaml")
+        map_server_process = subprocess.Popen(map_server_command)
+        running_processes.append(map_server_process) 
+        
+        rospy.loginfo(f"🗺️ Loaded map: {name} and published to /map topic.")
         return LoadMapResponse(True, f"Map '{name}' loaded successfully")
         
     except Exception as e:
@@ -74,7 +84,6 @@ def handle_load_map(req):
         return LoadMapResponse(False, str(e))
 
 # -------------- [GET MAP FILE] -----------------
-# อ่านไฟล์ .png และ .yaml แล้วส่งกลับในรูปแบบ base64 ไปยัง ptR1 App
 def handle_get_map_file(req):
     rospy.loginfo(f" 🗺️ Getting map file: {req.name}")
     map_name = req.name
@@ -94,7 +103,6 @@ def handle_get_map_file(req):
         with open(image_path, 'rb') as f:
             encoded_image = base64.b64encode(f.read()).decode('utf-8')
         
-         # อ่านไฟล์ yaml เป็น string
         with open(yaml_path, 'r') as f:
             yaml_content = f.read()
 
@@ -112,32 +120,26 @@ def handle_get_map_file(req):
             yaml_data=""
         )
 
-
+# ----------------- [SAVE MAP] -----------------
 def handle_save_map(req):
     name = req.name
-    yaml_path = os.path.join(MAP_FOLDER, f"{name}.yaml")
     pgm_path = os.path.join(MAP_FOLDER, f"{name}.pgm")
     png_path = os.path.join(MAP_FOLDER, f"{name}.png")
 
     rospy.loginfo(f"💾 Saving map to {name}")
 
-
     try:
-        
-        # ใช้ rosrun map_server map_saver
         subprocess.check_call([
             'rosrun', 'map_server', 'map_saver',
-            '-f', os.path.join(MAP_FOLDER, name)
+            '-f', os.path.join(MAP_FOLDER, name),
+            'map:=/rb/slam/map'
         ])
-        # แปลง .pgm เป็น .png ด้วย ImageMagick
         subprocess.check_call([
             'convert', pgm_path, png_path
         ])
         
-
         return SaveMapResponse(
-            success=True,
-            #message=f"Map saved and converted to png_path"       
+            success=True,     
             message=f"Map saved and converted to {png_path}"
         )
     except subprocess.CalledProcessError as e:
@@ -146,33 +148,83 @@ def handle_save_map(req):
             message=str(e)
         )
 
+# ----------------- [START SLAM] -----------------
 def handle_start_slam(req):
-    global slam_process
+    global running_processes
 
-    rospy.loginfo("🧭 Starting SLAM...")
+    handle_stop_slam(None) 
+    
+    rospy.loginfo("🧭 Starting SLAM nodes directly from Python script...")
 
     try:
-        slam_process = subprocess.Popen([
-            'roslaunch', 'your_slam_pkg', 'your_slam_launch_file.launch'
-        ])
-        return StartSLAMResponse(success=True, message="SLAM started")
+        params_to_set = {
+            '/slam_toolbox/odom_frame': 'odom',
+            '/slam_toolbox/map_frame': 'map',
+            '/slam_toolbox/base_frame': 'base_link',
+            '/slam_toolbox/scan_topic': 'scan',
+            '/slam_toolbox/use_scan_matching': 'true',
+            '/slam_toolbox/max_laser_range': '10.0'
+        }
+        for param, value in params_to_set.items():
+            subprocess.run(['rosparam', 'set', param, value], check=True)
+        
+        rospy.loginfo(f"Set {len(params_to_set)} parameters for slam_toolbox.")
+
+        slam_command = [
+            'rosrun', 
+            'slam_toolbox',
+            'async_slam_toolbox_node',
+            'scan:=/scan',
+            'map:=/rb/slam/map'
+        ]
+
+        process = subprocess.Popen(slam_command)
+        running_processes.append(process)
+        rospy.loginfo("Started SLAM node (slam_toolbox).")
+        return StartSLAMResponse(success=True, message="SLAM nodes started successfully.")
+
     except Exception as e:
+        rospy.logerr(f"Failed to start SLAM nodes: {e}")
+        handle_stop_slam(None)
         return StartSLAMResponse(success=False, message=str(e))
 
+# ----------------- [STOP SLAM] -----------------
 def handle_stop_slam(req):
-    global slam_process
+    global running_processes
 
-    if slam_process is None:
-        return StopSLAMResponse(success=False, message="No SLAM process running")
+    if not running_processes:
+        if req is not None:
+             rospy.loginfo("No managed processes were running.")
+        return StopSLAMResponse(success=True, message="No managed processes were running.")
 
+    rospy.loginfo(f"Stopping {len(running_processes)} managed processes...")
+    
     try:
-        slam_process.terminate()
-        slam_process.wait(timeout=5)
-        slam_process = None
-        rospy.loginfo("🛑 SLAM stopped.")
-        return StopSLAMResponse(success=True, message="SLAM process terminated")
+        for process in running_processes:
+            process.terminate()
+            process.wait(timeout=5)
+        
+        running_processes = []
+        rospy.loginfo("All managed processes terminated.")
+        return StopSLAMResponse(success=True, message="All managed processes terminated successfully.")
+    
+    except subprocess.TimeoutExpired:
+        rospy.logerr("Timeout expired while waiting for a process to terminate. Forcing kill.")
+        for process in running_processes:
+            process.kill()
+        running_processes = []
+        return StopSLAMResponse(success=False, message="Timeout expired, processes were killed.")
+
     except Exception as e:
+        rospy.logerr(f"Failed to stop SLAM processes: {str(e)}")
         return StopSLAMResponse(success=False, message=f"Failed to stop SLAM: {str(e)}")
+
+# -------------- [SHUTDOWN HOOK] -----------------
+def shutdown_hook():
+    rospy.loginfo("Shutdown request received...")
+    if running_processes:
+        handle_stop_slam(None)
+    rospy.loginfo("Goodbye!")
 
 # ----------------- [MAIN NODE] -----------------
 def map_manager_server():
@@ -185,8 +237,9 @@ def map_manager_server():
     rospy.Service('/map_manager/start_slam', StartSLAM, handle_start_slam)
     rospy.Service('/map_manager/stop_slam', StopSLAM, handle_stop_slam) 
 
+    rospy.on_shutdown(shutdown_hook)
 
-    rospy.loginfo("✅ Map Manager Services Ready")
+    rospy.loginfo("Map Manager Services Ready")
     rospy.spin()
 
 if __name__ == '__main__':

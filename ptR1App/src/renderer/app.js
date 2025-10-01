@@ -22,7 +22,8 @@ import { FrameProcessor } from './modules/FrameProcessor.js';
 import { OverlayCanvas } from './modules/OverlayCanvas.js';
 
 import {resetLiveMapView,processLiveMapData, initLiveMap, drawLiveMap, updateLiveRobotPose } from './modules/mapLive.js';
-import * as mapView from './modules/mapView.js'; // Import ทุกอย่างจาก mapView
+import * as mapView from './modules/mapView.js'; 
+import { updateLaserScan } from './modules/laserScanState.js';
 
 
 let recorder = null;
@@ -332,7 +333,7 @@ document.addEventListener('DOMContentLoaded', async() => {
   }
 });
 
-// ✅ ฟังก์ชันส่ง Drive command เฉพาะตอน MANUAL ON
+// ฟังก์ชันส่ง Drive command เฉพาะตอน MANUAL ON
 
 const pressedKeys = new Set();
 const intervalMap = new Map();
@@ -435,7 +436,7 @@ const sendServoControl = (event) => {
   window.robotControl.sendServoCommand(command);
 };
 
-window.electronAPI.onLiveMap((mapData) => {
+window.electronAPI.onSlamMap((mapData) => {
   // 1. ประมวลผลและให้ mapLive.js เก็บ state
   processLiveMapData(mapData);
   
@@ -459,6 +460,7 @@ window.electronAPI.onRobotPosAmcl((poseData) => {
   if (poseData.position && poseData.orientation) {
     updateRobotPose(poseData.position, poseData.orientation);
     renderDashboardMap();
+    renderStaticMapCanvas();
   }
 });
 
@@ -765,6 +767,25 @@ window.electronAPI.onMapSaveResult((result) => {
       // อาจจะเรียกใช้ฟังก์ชัน sync maps ที่มีอยู่แล้ว
       document.getElementById('sync-maps-btn').click(); 
     }
+});
+
+window.electronAPI.onLaserScan((scanData) => {
+  updateLaserScan(scanData);
+
+  // ตรวจสอบก่อนว่า Canvas ไหนกำลังแสดงอยู่ แล้วค่อยสั่งวาดเฉพาะอันนั้น
+  const homeCanvas = document.getElementById('homeMapCanvas');
+  const staticMapCanvas = document.getElementById('staticMapCanvas');
+  const liveMapCanvas = document.getElementById('liveMapCanvas'); // เผื่อสำหรับอนาคต
+
+  if (homeCanvas && homeCanvas.offsetParent !== null) {
+      renderDashboardMap();
+  }
+  
+  // ตรวจสอบว่า staticMapCanvas ไม่ได้ถูกซ่อนด้วย class 'hidden'
+  if (staticMapCanvas && !staticMapCanvas.classList.contains('hidden')) {
+      renderStaticMapCanvas();
+  }
+
 });
 
 function switchView(viewName) {

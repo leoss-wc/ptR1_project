@@ -5,6 +5,7 @@ import { activeMap } from './mapState.js';
 import { robotPose,robotTrail } from './robotState.js';
 import { goalPoint,isPatrolling , patrolPath} from './patrolState.js';
 import { plannedPath } from './planState.js';
+import { latestScan } from './laserScanState.js';
 
 let canvas, ctx, mapImg;
 let zoom = 1.0;
@@ -70,16 +71,16 @@ function drawRobot() {
 }
 
 function drawGoal() {
-  if (!goalPoint || !activeMap?.meta || !mapImg) {
-    //console.log("mapHome: No goalPoint.");
+  if (!goalPoint?.position || !activeMap?.meta || !mapImg) {
     return;
   }
   const { resolution, origin } = activeMap.meta;
   const imgH = mapImg.height;
 
-  const px = (goalPoint.x - origin[0]) / resolution;
-  const py = imgH - (goalPoint.y - origin[1]) / resolution;
+  const { position, orientation } = goalPoint;
 
+  const px = (position.x - origin[0]) / resolution;
+  const py = imgH - (position.y - origin[1]) / resolution;
   const screenX = px * zoom + offset.x;
   const screenY = py * zoom + offset.y;
 
@@ -87,6 +88,22 @@ function drawGoal() {
   ctx.arc(screenX, screenY, 5, 0, 2 * Math.PI);
   ctx.fillStyle = 'red';
   ctx.fill();
+  if (orientation) {
+    const yaw = getYawFromQuaternion(orientation);
+    const arrowLength = 15;
+
+    ctx.save();
+    ctx.translate(screenX, screenY);
+    ctx.rotate(-yaw); // หมุนตามทิศทางของ Goal
+    ctx.beginPath();
+    ctx.moveTo(arrowLength, 0);
+    ctx.lineTo(0, -5);
+    ctx.lineTo(0, 5);
+    ctx.closePath();
+    ctx.fillStyle = 'red';
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 function drawRobotTrail() {
@@ -155,6 +172,7 @@ export function renderDashboardMap() {
     }
     drawRobot();
     drawGoal();
+    drawLaserScan();
   } else {
     // ✨ เพิ่ม: แสดงข้อความบอกสถานะถ้าแผนที่ยังไม่พร้อม
     ctx.fillStyle = 'gray';
@@ -336,4 +354,41 @@ function drawPatrolPath() {
   });
   ctx.stroke();
   ctx.setLineDash([]); // คืนค่าให้เป็นเส้นทึบสำหรับส่วนอื่น
+}
+
+function drawLaserScan() {
+  if (!latestScan || !robotPose.position || !activeMap.meta || !mapImg) return;
+
+  const { resolution, origin } = activeMap.meta;
+  const imgH = mapImg.height;
+  const robotYaw = getYawFromQuaternion(robotPose.orientation);
+
+  // แปลงตำแหน่งหุ่นยนต์เป็น Screen Coordinates
+  const robotPx = (robotPose.position.x - origin[0]) / resolution;
+  const robotPy = imgH - (robotPose.position.y - origin[1]) / resolution;
+  const robotScreenX = robotPx * zoom + offset.x;
+  const robotScreenY = robotPy * zoom + offset.y;
+
+  ctx.fillStyle = 'rgba(255, 0, 255, 0.7)'; // สีชมพูโปร่งแสง
+
+  latestScan.ranges.forEach((range, index) => {
+    if (range < 0.1 || range > 10.0) return; // กรองระยะที่ผิดพลาดออก
+
+    const angle = latestScan.angle_min + index * latestScan.angle_increment;
+    const totalAngle = robotYaw + angle;
+
+    // คำนวณตำแหน่งของจุดเลเซอร์ใน World Coordinates
+    const worldX = robotPose.position.x + range * Math.cos(totalAngle);
+    const worldY = robotPose.position.y + range * Math.sin(totalAngle);
+
+    // แปลง World Coordinates เป็น Screen Coordinates
+    const scanPx = (worldX - origin[0]) / resolution;
+    const scanPy = imgH - (worldY - origin[1]) / resolution;
+    const screenX = scanPx * zoom + offset.x;
+    const screenY = scanPy * zoom + offset.y;
+    
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, 1.5, 0, 2 * Math.PI); // วาดจุดเล็กๆ
+    ctx.fill();
+  });
 }
