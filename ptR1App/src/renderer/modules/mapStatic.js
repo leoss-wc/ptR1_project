@@ -4,6 +4,8 @@ import { activeMap } from './mapState.js';
 import * as mapView from './mapView.js'; 
 import { robotPose } from './robotState.js';
 import { latestScan } from './laserScanState.js';
+import { stopPatrol } from './patrol.js';
+import { yawToQuaternion, getYawFromQuaternion } from './utils.js';
 
 let canvas, ctx, mapImage;
 let isDrawing = false;
@@ -21,7 +23,6 @@ let mapHitCanvas, mapHitCtx; //ตัวแปรสำหรับ Canvas ท�
 
 let dimmerMaskImage = null;//ตัวแปรสำหรับเก็บภาพมาสก์ Dimmer ที่สร้างขึ้น
 
-let tempInitialPose = null; 
 
 export function initStaticMap() {
   canvas = document.getElementById('staticMapCanvas');
@@ -329,8 +330,7 @@ function setupCanvasEvents() {
         isSettingGoal = true;
         poseStartPosition = worldPoint; // เก็บจุดเริ่มต้น
         renderCanvas();
-    } else if (mode === 'pose') {
-      tempInitialPose = null; 
+    } else if (mode === 'pose') { 
       isSettingPose = true;
       poseStartPosition = worldPoint; // ใช้ worldPoint ที่คำนวณไว้แล้ว
       renderCanvas();
@@ -376,6 +376,8 @@ function setupCanvasEvents() {
             position: poseStartPosition,
             orientation: quaternion,
         };
+
+        stopPatrol();
         
         // อัปเดต State และส่งไป ROS
         setGoalPoint(goalPose);
@@ -551,7 +553,6 @@ export function renderCanvas() {
     
     drawLaserScan();
     drawRobot();
-    drawTempInitialPose();
   }
 
   // 5. คืนค่า Context จาก Pan/Zoom
@@ -749,14 +750,6 @@ function addMapToGallery(name, base64) {
     // 3. โหลดและแสดงรูปภาพต้นฉบับเพื่อ Preview
     mapImage = new Image();
     mapImage.onload = () => {
-      // คำนวณหาจุดกึ่งกลางและสร้าง "หุ่นยนต์ตัวอย่าง"
-            const meta = current_map_select.meta;
-            const centerX = meta.origin[0] + (mapImage.width / 2) * meta.resolution;
-            const centerY = meta.origin[1] + (mapImage.height / 2) * meta.resolution;
-            tempInitialPose = {
-                position: { x: centerX, y: centerY, z: 0 },
-                orientation: { x: 0, y: 0, z: 0, w: 1 } // หันหน้าไปทางแกน X (ทิศตะวันออก)
-            };
       resetStaticMapView(); 
       resetStaticMapView(); 
     };
@@ -813,16 +806,6 @@ function base64ToUint8Array(base64) {
         bytes[i] = binary_string.charCodeAt(i);
     }
     return bytes;
-}
-
-function yawToQuaternion(yaw) {
-  const halfYaw = yaw / 2.0;
-  return {
-    x: 0,
-    y: 0,
-    z: Math.sin(halfYaw),
-    w: Math.cos(halfYaw),
-  };
 }
 
 function getWorldCoordsFromEvent(e) {
@@ -895,40 +878,4 @@ function drawRobot() {
   ctx.fill();
   
   ctx.restore();
-}
-
-function getYawFromQuaternion(q) {
-    if (!q) return 0;
-    const { x, y, z, w } = q;
-    return Math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-}
-
-function drawTempInitialPose() {
-    if (!tempInitialPose || !activeMap.meta || !mapImage) return;
-
-    const { resolution, origin } = activeMap.meta;
-    const mapImgHeight = mapImage.height;
-
-    // แปลง World Coordinate เป็น Map Pixel Coordinate
-    const px = (tempInitialPose.position.x - origin[0]) / resolution;
-    const py = mapImgHeight - ((tempInitialPose.position.y - origin[1]) / resolution);
-    const yaw = getYawFromQuaternion(tempInitialPose.orientation);
-
-    ctx.save();
-    ctx.translate(px, py);
-    ctx.rotate(-yaw);
-
-    const scale = 1.0 / mapView.viewState.scale;
-    ctx.beginPath();
-    ctx.moveTo(10 * scale, 0);
-    ctx.lineTo(-5 * scale, -5 * scale);
-    ctx.lineTo(-5 * scale, 5 * scale);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255, 165, 0, 0.7)'; // สีส้ม โปร่งแสง
-    ctx.strokeStyle = 'white';
-    ctx.lineWidth = 0.5 * scale;
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.restore();
 }

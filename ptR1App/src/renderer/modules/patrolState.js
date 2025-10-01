@@ -1,3 +1,4 @@
+import { yawToQuaternion } from './utils.js';
 // patrolState.js
 export let patrolPath = [];
 export let goalPoint = null;
@@ -5,16 +6,6 @@ export let isPatrolling = false;
 export let currentGoalIndex = -1;
 export let isLooping = false;
 
-// ✨ เพิ่ม: ฟังก์ชันสำหรับแปลงมุม Yaw เป็น Quaternion
-function yawToQuaternion(yaw) {
-  const halfYaw = yaw / 2.0;
-  return {
-    x: 0,
-    y: 0,
-    z: Math.sin(halfYaw),
-    w: Math.cos(halfYaw),
-  };
-}
 
 export function setPatrolPath(path) {
   patrolPath = [...path];
@@ -84,32 +75,50 @@ export function stopPatrolState() {
   console.log("Patrol stopped and reset.");
 }
 
-// 🔧 แก้ไข: คำนวณทิศทางสำหรับ Goal ถัดๆ ไป
 export function moveToNextGoal() {
   const previousIndex = currentGoalIndex;
 
-  // --- หา Index ของ Goal ถัดไป ---
   let nextIndex;
-  if (currentGoalIndex < patrolPath.length - 1) {
+  // --- กรณีถึงจุดสุดท้าย ---
+  if (currentGoalIndex >= patrolPath.length - 1) {
+    if (isLooping) {
+        //  START: Logic ใหม่สำหรับจัดการ Loop
+        const lastIndex = patrolPath.length - 1;
+        // ตรวจสอบว่ามี Path มากกว่า 1 จุด และจุดแรกกับจุดสุดท้ายเป็นตำแหน่งเดียวกันหรือไม่
+        if (patrolPath.length > 1 &&
+            patrolPath[0].x === patrolPath[lastIndex].x &&
+            patrolPath[0].y === patrolPath[lastIndex].y) 
+        {
+            // ถ้าใช่ ให้ข้ามไปที่จุดที่ 2 (index 1) เลย
+            nextIndex = 1;
+            console.log("Closed loop detected. Skipping to index 1.");
+        } else {
+            // ถ้าไม่ใช่ Loop แบบปิด ให้กลับไปที่จุดแรกตามปกติ
+            nextIndex = 0;
+            console.log("Looping back to the first goal (index 0).");
+        }
+        // ✨ END: Logic ใหม่
+    } else {
+      // ถ้าไม่วน Loop ให้หยุด
+      stopPatrolState();
+      return null;
+    }
+  } 
+  // --- กรณียังไม่ถึงจุดสุดท้าย ---
+  else {
     nextIndex = currentGoalIndex + 1;
-  } else if (isLooping) {
-    nextIndex = 0;
-  } else {
-    stopPatrolState();
-    return null;
   }
-  currentGoalIndex = nextIndex;
   
-  // --- คำนวณทิศทาง ---
+  currentGoalIndex = nextIndex;
+
   const currentPosition = patrolPath[previousIndex];
   const nextPosition = patrolPath[nextIndex];
   let orientation = { x: 0, y: 0, z: 0, w: 1 };
 
-  // คำนวณทิศทางจากจุด "ปัจจุบัน" ไปยังจุด "ถัดไป"
   const dx = nextPosition.x - currentPosition.x;
   const dy = nextPosition.y - currentPosition.y;
 
-  if (Math.hypot(dx, dy) > 0.01) { // ป้องกันการคำนวณจากจุดเดียวกัน
+  if (Math.hypot(dx, dy) > 0.01) {
       const yaw = Math.atan2(dy, dx);
       orientation = yawToQuaternion(yaw);
   }
