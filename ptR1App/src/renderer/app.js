@@ -467,16 +467,27 @@ window.electronAPI.onPlannedPath((pathData) => {
 });
 
 function renderLoop(currentTime) {
-  // บรรทัดนี้จะทำให้ loop ทำงานต่อไปเรื่อยๆ ตราบใดที่ยังไม่ถูกยกเลิก
+  // Get the canvas element.
+  const liveMapCanvas = document.getElementById('liveMapCanvas');
+
+  // 🛑 SELF-STOPPING GUARD: If the canvas is hidden or doesn't exist,
+  // stop the render loop immediately by not requesting the next frame.
+  if (!liveMapCanvas || liveMapCanvas.classList.contains('hidden')) {
+    liveMapRenderId = null; // Ensure the state reflects that the loop is stopped.
+    return;
+  }
+
+  // Continue the loop by requesting the next animation frame.
   liveMapRenderId = requestAnimationFrame(renderLoop);
   
+  // Throttle the drawing to the specified FPS.
   const elapsed = currentTime - lastFrameTime;
   if (elapsed > fpsInterval) {
+    // Adjust lastFrameTime for more accurate throttling.
     lastFrameTime = currentTime - (elapsed % fpsInterval);
-    const liveMapCanvas = document.getElementById('liveMapCanvas');
-    if (liveMapCanvas && !liveMapCanvas.classList.contains('hidden')) {
-      drawLiveMap(); 
-    }
+    
+    // Draw the map. No need to check for visibility again.
+    drawLiveMap(); 
   }
 }
 
@@ -489,10 +500,13 @@ function stopLiveMapRender() {
   }
 }
 function startLiveMapRender() {
-  // ถ้ายังไม่มีการเรนเดอร์อยู่ ให้เริ่มใหม่
+  // Only start a new loop if one isn't already running.
   if (!liveMapRenderId) {
     console.log("Starting Live Map render loop.");
-    renderLoop();
+    // Initialize the timer to start throttling correctly from the first frame.
+    lastFrameTime = performance.now();
+    // Use requestAnimationFrame to start the loop smoothly.
+    liveMapRenderId = requestAnimationFrame(renderLoop);
   }
 }
 async function loadAndDisplayProfiles() {

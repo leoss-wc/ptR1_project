@@ -3,4 +3,5 @@
     <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
         <arg name="port" value="9090"/>
     </include>
+    <node name="map_server" pkg="map_server" type="map_server" args="$(find ptR1_navigation)/maps/active_map.yaml"/>
 </launch>

@@ -195,30 +195,27 @@ function bindUI() {
   });
 }
 
-function isClickInsideBounds(clickX, clickY) {
-  // 1. ตรวจสอบว่า Canvas สำหรับตรวจสอบพร้อมใช้งานหรือไม่
-  if (!mapHitCtx) return false;
+// ในไฟล์ mapStatic.js
+function isClickInsideBounds(worldPoint) {
+  // เพิ่มการตรวจสอบว่า worldPoint ไม่ใช่ null หรือ undefined
+  if (!activeMap.meta || !mapImage || !worldPoint) return false;
 
-  // 2. แปลงพิกัดบนหน้าจอ (Screen) เป็นพิกัดบน "รูปภาพแผนที่" (Image Pixel)
-  // ของเดิม: const px = Math.floor((clickX - offsetX) / zoom);
-  const px = Math.floor((clickX - mapView.viewState.offsetX) / mapView.viewState.scale); 
-  // ของเดิม: const py = Math.floor((clickY - offsetY) / zoom);
-  const py = Math.floor((clickY - mapView.viewState.offsetY) / mapView.viewState.scale);
+  const { origin, resolution } = activeMap.meta;
+  const mapWidthInMeters = mapImage.width * resolution;
+  const mapHeightInMeters = mapImage.height * resolution;
 
-  // 3. ตรวจสอบว่าพิกัดที่คำนวณได้อยู่นอกขอบเขตของรูปภาพหรือไม่
-  if (px < 0 || px >= mapHitCanvas.width || py < 0 || py >= mapHitCanvas.height) {
-    return false;
+  const minX = origin[0];
+  const maxX = origin[0] + mapWidthInMeters;
+  const minY = origin[1];
+  const maxY = origin[1] + mapHeightInMeters;
+
+  // ตรวจสอบว่า worldPoint ที่คำนวณมาแล้ว อยู่ในขอบเขตหรือไม่
+  if (worldPoint.x >= minX && worldPoint.x <= maxX &&
+      worldPoint.y >= minY && worldPoint.y <= maxY) {
+    return true;
   }
 
-  // 4. ดึงข้อมูลสี (RGBA) จากพิกัดนั้นบน Canvas อ้างอิง
-  const pixelData = mapHitCtx.getImageData(px, py, 1, 1).data;
-  const colorValue = pixelData[0]; // สำหรับภาพ Grayscale ค่า R, G, B จะเท่ากัน
-
-  // 5. กำหนดค่า Threshold สำหรับพื้นที่ว่าง (ปกติสีขาวจะมีค่าใกล้ 255)
-  const freeSpaceThreshold = 250; 
-  
-  // 6. คืนค่า true ถ้าสีของพิกเซลนั้นสว่างกว่าค่าที่กำหนด (เป็นพื้นที่ว่าง)
-  return colorValue > freeSpaceThreshold;
+  return false;
 }
 
 function preprocessMapData(sourceImage) {
@@ -296,189 +293,54 @@ function drawBoundaryMask() {
   ctx.rotate(-Math.PI / 2);
   ctx.translate(-mapImage.height, 0);
   
-  // 3. สร้างรูปทรงของรู (เป็นพิกัดพิกเซลของแผนที่)
   ctx.moveTo(0, 0);
   ctx.lineTo(mapImage.width, 0);
   ctx.lineTo(mapImage.width, mapImage.height);
   ctx.lineTo(0, mapImage.height);
   ctx.closePath();
-  
-  // 4. คืนค่าการแปลงค่าทั้งหมดกลับสู่ปกติ
+
   ctx.restore(); 
 
-  // 5. เติมสีโดยใช้ 'evenodd' rule ซึ่งจะเว้นพื้นที่รูที่ถูกแปลงค่าไว้
+
   ctx.fill("evenodd");
 }
-/*
-function setupCanvasEvents() {
-  canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
-    if (!isClickInsideBounds(clickX, clickY)) return;
-    if (mode === 'draw') {
-      if (isHoveringFirstPoint && patrolPath.length > 1) {
-        patrolPath.push({ ...patrolPath[0] });
-        renderCanvas();
-        cancelMode();
-      } else {
-        isDrawing = true;
-        addPathPoint(e); // จะเรียกใช้ addPathPoint ที่ถูกต้อง
-        renderCanvas();
-      }
-    } else if (mode === 'goal') {
-      if (!isClickInsideBounds(clickX, clickY)) return;
-      setGoalPointOnClick(e);
-    }else if (mode === 'pose') {
-      isSettingPose = true;
-      poseStartPosition = getWorldCoordsFromEvent(e);
-      renderCanvas(); // วาดจุดเริ่มต้น
-    }else {
-      isDrawing = false;
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-    }
-  });
-  canvas.addEventListener('mouseup', (e) => {
-    if (isSettingPose) {
-      const endPoint = getWorldCoordsFromEvent(e);
-      
-      // คำนวณมุมจากจุดเริ่มต้นไปยังจุดที่ปล่อยเมาส์
-      const dx = endPoint.x - poseStartPosition.x;
-      const dy = endPoint.y - poseStartPosition.y;
-      const yaw = Math.atan2(dy, dx);
-      
-      const quaternion = yawToQuaternion(yaw);
-      
-      const poseData = {
-        position: poseStartPosition,
-        orientation: quaternion,
-      };
-
-      // ส่งข้อมูลไปให้ Backend
-      window.electronAPI.setInitialPose(poseData);
-      
-      // ออกจากโหมด
-      isSettingPose = false;
-      poseStartPosition = null;
-      cancelMode();
-    }
-    isDrawing = false;
-    isDragging = false;
-  });
-  canvas.addEventListener('mouseleave', () => {
-    isDrawing = false;
-    isDragging = false;
-    if (isHoveringFirstPoint) {
-      isHoveringFirstPoint = false;
-      renderCanvas();
-    }
-  });
-  canvas.addEventListener('mousemove', (e) => {
-
-    const rect = canvas.getBoundingClientRect();
-    currentMousePos.x = e.clientX - rect.left;
-    currentMousePos.y = e.clientY - rect.top;
-
-    if (isSettingPose) {
-      renderCanvas(); // วาดใหม่เพื่อให้เห็นลูกศรตามเมาส์
-    }
-    if (mode === 'draw') {
-        if (isDrawing) {
-            addPathPoint(e);
-            renderCanvas();
-        } else if (patrolPath.length > 0 && activeMap.meta) {
-            // Hover logic (เหมือนเดิม)
-            const snapRadius = 10 / zoom;
-            const firstPoint = patrolPath[0];
-            const { resolution, origin } = activeMap.meta;
-            const firstPointMapX = (firstPoint.x - origin[0]) / resolution;
-            const firstPointMapY = mapImage.height - (firstPoint.y - origin[1]) / resolution;
-            const rect = canvas.getBoundingClientRect();
-            const mouseScreenX = e.clientX - rect.left;
-            const mouseScreenY = e.clientY - rect.top;
-            const mouseMapX = (mouseScreenX - offsetX) / zoom;
-            const mouseMapY = (mouseScreenY - offsetY) / zoom;
-            const distance = Math.sqrt(Math.pow(mouseMapX - firstPointMapX, 2) + Math.pow(mouseMapY - firstPointMapY, 2));
-            const previouslyHovering = isHoveringFirstPoint;
-            isHoveringFirstPoint = distance < snapRadius;
-            if (previouslyHovering !== isHoveringFirstPoint) {
-                canvas.style.cursor = isHoveringFirstPoint ? 'pointer' : 'crosshair';
-                renderCanvas();
-            }
-        }
-    }
-    if (isDragging) {
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      offsetX += dx;
-      offsetY += dy;
-      renderCanvas();
-    }
-
-  });
-  canvas.addEventListener('wheel', (e) => {
-    if (!mapImage) return;
-    e.preventDefault();
-    const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
-    const mapXBeforeZoom = (mouseX - offsetX) / zoom;
-    const mapYBeforeZoom = (mouseY - offsetY) / zoom;
-    const zoomFactor = e.deltaY < 0 ? 1.2 : 1 / 1.2;
-    zoom *= zoomFactor;
-    offsetX = mouseX - mapXBeforeZoom * zoom;
-    offsetY = mouseY - mapYBeforeZoom * zoom;
-    renderCanvas();
-  });
-  window.addEventListener('resize', () => {
-    if(canvas.classList.contains('hidden')) return;
-    resetStaticMapView();
-  });
-  canvas.addEventListener('contextmenu', (e) => {
-    if (mode !== 'none') {
-      e.preventDefault();
-      cancelMode();
-    }
-  });
-}
-  */
 
 function setupCanvasEvents() {
   canvas.addEventListener('mousedown', (e) => {
-    if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
-      // --- Logic สำหรับโหมดพิเศษ (เหมือนเดิม) ---
-      const rect = canvas.getBoundingClientRect();
-      const clickX = e.clientX - rect.left;
-      const clickY = e.clientY - rect.top;
-      if (!isClickInsideBounds(clickX, clickY)) return;
+  if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
+    
+    // --- ✅ ส่วนที่แก้ไข ---
+    // 1. คำนวณ worldPoint ก่อนเป็นอันดับแรก
+    const worldPoint = getWorldCoordsFromEvent(e);
 
-      if (mode === 'draw') {
-        if (isHoveringFirstPoint && patrolPath.length > 1) { 
+    // 2. ส่ง worldPoint ไปให้ isClickInsideBounds ตรวจสอบ
+    if (!isClickInsideBounds(worldPoint)) return;
+
+    // 3. นำ worldPoint ที่คำนวณไว้แล้วไปใช้งานต่อได้เลย
+    if (mode === 'draw') {
+      if (isHoveringFirstPoint && patrolPath.length > 1) { 
         patrolPath.push({ ...patrolPath[0] });
         renderCanvas();
         cancelMode(); 
       } else { 
-        isDrawing = true; 
-        addPathPoint(e); 
+        patrolPath.push(worldPoint); // ใช้ worldPoint ที่คำนวณไว้แล้ว
         renderCanvas(); 
       }
-
-      } else if (mode === 'goal') {
-        setGoalPointOnClick(e);
-      } else if (mode === 'pose') {
-        isSettingPose = true;
-        poseStartPosition = getWorldCoordsFromEvent(e);
-        renderCanvas();
-      }
-    } else {
-      // --- ✨ เมื่อเป็นโหมดปกติ ให้เรียกใช้ Pan Logic จาก mapView ---
-      mapView.handleMouseDown(e);
+    } else if (mode === 'goal') {
+      goalPoint = worldPoint; // ใช้ worldPoint ที่คำนวณไว้แล้ว
+      window.electronAPI.sendSingleGoal(goalPoint);
+      cancelMode();
+    } else if (mode === 'pose') {
+      isSettingPose = true;
+      poseStartPosition = worldPoint; // ใช้ worldPoint ที่คำนวณไว้แล้ว
+      renderCanvas();
     }
-  });
+    // --- สิ้นสุดส่วนที่แก้ไข ---
+
+  } else {
+    mapView.handleMouseDown(e);
+  }
+});
 
   canvas.addEventListener('mouseup', (e) => {
     if (mode === 'pose' && isSettingPose) {
@@ -512,49 +374,49 @@ function setupCanvasEvents() {
   });
 
   canvas.addEventListener('mousemove', (e) => {
-    // อัปเดตตำแหน่งเมาส์ปัจจุบันเสมอ
-    const rect = canvas.getBoundingClientRect();
-    currentMousePos.x = e.clientX - rect.left;
-    currentMousePos.y = e.clientY - rect.top;
+  // อัปเดตตำแหน่งเมาส์ปัจจุบันเสมอ
+  const rect = canvas.getBoundingClientRect();
+  currentMousePos.x = e.clientX - rect.left;
+  currentMousePos.y = e.clientY - rect.top;
 
-    // แยก Logic การทำงานตาม mode อย่างชัดเจน
-    if (mode === 'draw') {
-      if (isDrawing) {
-        // ถ้ากำลังวาด: เพิ่มจุดและวาดใหม่
-        addPathPoint(e);
-        renderCanvas();
-      } else if (patrolPath.length > 0 && activeMap.meta) {
-        const snapRadius = 10 / mapView.viewState.scale;
-        const firstPoint = patrolPath[0];
-        const { resolution, origin } = activeMap.meta;
-        
-        // --- 🔧 แก้ไขสูตรคำนวณ 2 บรรทัดนี้ ---
-        const firstPointPy = (firstPoint.x - origin[0]) / resolution; // world x -> pixel y
-        const firstPointPx = mapImage.width - ((firstPoint.y - origin[1]) / resolution); // world y -> pixel x
-        
-        const mouseMapX = (currentMousePos.x - mapView.viewState.offsetX) / mapView.viewState.scale;
-        const mouseMapY = (currentMousePos.y - mapView.viewState.offsetY) / mapView.viewState.scale;
-        
-        // --- 🔧 อัปเดตตัวแปรที่ใช้คำนวณ distance ---
-        const distance = Math.sqrt(Math.pow(mouseMapX - firstPointPx, 2) + Math.pow(mouseMapY - firstPointPy, 2));
-        const previouslyHovering = isHoveringFirstPoint;
-        isHoveringFirstPoint = distance < snapRadius;
+  if (mode === 'draw') {
+    if (isDrawing) {
+      addPathPoint(e);
+      renderCanvas();
+    } else if (patrolPath.length > 0 && activeMap.meta) {
+      // --- ✅ เริ่มส่วนที่แก้ไข ---
+      const snapRadius = 10 / mapView.viewState.scale;
+      const firstPoint = patrolPath[0];
+      const { resolution, origin } = activeMap.meta;
+      
+      // 1. แปลงพิกัด "จุดแรก" (World) ให้เป็น "พิกัดพิกเซลบนแผนที่" (Map Pixel) ด้วยสูตรดั้งเดิม
+      const firstPointPx = (firstPoint.x - origin[0]) / resolution;
+      const firstPointPy = mapImage.height - ((firstPoint.y - origin[1]) / resolution);
 
-        if (previouslyHovering !== isHoveringFirstPoint) {
-            canvas.style.cursor = isHoveringFirstPoint ? 'pointer' : 'crosshair';
-            renderCanvas();
-        }
+      // 2. แปลงพิกัด "เมาส์" (Screen) ให้เป็น "พิกัดพิกเซลบนแผนที่" (Map Pixel)
+      const mousePx = (currentMousePos.x - mapView.viewState.offsetX) / mapView.viewState.scale;
+      const mousePy = (currentMousePos.y - mapView.viewState.offsetY) / mapView.viewState.scale;
+
+      // 3. คำนวณระยะห่างในระบบพิกัดเดียวกัน
+      const distance = Math.sqrt(Math.pow(mousePx - firstPointPx, 2) + Math.pow(mousePy - firstPointPy, 2));
+      // --- ✅ สิ้นสุดส่วนที่แก้ไข ---
+      
+      const previouslyHovering = isHoveringFirstPoint;
+      isHoveringFirstPoint = distance < snapRadius;
+
+      if (previouslyHovering !== isHoveringFirstPoint) {
+          canvas.style.cursor = isHoveringFirstPoint ? 'pointer' : 'crosshair';
+          renderCanvas();
       }
-    } else if (mode === 'pose') {
-      // ถ้าอยู่ในโหมด pose: วาดลูกศรตามเมาส์
-      if (isSettingPose) {
-        renderCanvas();
-      }
-    } else {
-      // ถ้าเป็นโหมดปกติ (none): ให้ Pan แผนที่
-      mapView.handleMouseMove(e);
     }
-  });
+  } else if (mode === 'pose') {
+    if (isSettingPose) {
+      renderCanvas();
+    }
+  } else {
+    mapView.handleMouseMove(e);
+  }
+});
 
 
   window.addEventListener('resize', () => {
@@ -585,22 +447,10 @@ function cancelMode() {
 }
 
 function addPathPoint(e) {
-  if (!activeMap.meta || !mapImage || mapImage.height === 0) return;
-  const rect = canvas.getBoundingClientRect();
-  const { resolution, origin } = activeMap.meta;
-
-  const clickX = e.clientX - rect.left;
-  const clickY = e.clientY - rect.top;
-
-  const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
-  const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
-
-  const worldPoint = {
-        x: origin[0] + (px * resolution),
-        y: origin[1] + ((mapImage.height - py) * resolution)
-    };
-
-  patrolPath.push(worldPoint);
+  const worldPoint = getWorldCoordsFromEvent(e);
+  if (worldPoint && isClickInsideBounds(e.clientX, e.clientY)) {
+    patrolPath.push(worldPoint);
+  }
 }
 
 export function renderCanvas() {
@@ -612,26 +462,20 @@ export function renderCanvas() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
 
-  // 2. บันทึกสถานะเริ่มต้นของ Canvas ก่อนทำการแปลงใดๆ
+  // 2. บันทึกสถานะ และจัดการ Pan/Zoom
   ctx.save();
-
-  // 3. ใช้ mapView จัดการ Pan และ Zoom (จะมีการ translate และ scale context)
   ctx.translate(mapView.viewState.offsetX, mapView.viewState.offsetY);
   ctx.scale(mapView.viewState.scale, mapView.viewState.scale);
 
-  // 4. หมุนมุมมองทั้งหมด -90 องศา เพื่อให้แผนที่ตั้งตรง
-  ctx.rotate(-Math.PI / 2);
-  ctx.translate(-mapImage.height, 0); // ย้ายภาพกลับเข้ามาในกรอบหลังหมุน
-
-  // --- ณ จุดนี้ ระบบพิกัดพร้อมแล้ว ทุกอย่างที่วาดหลังจากนี้จะถูกแปลงโดยอัตโนมัติ ---
-
-  // 5. วาดแผนที่ (ที่ยังเอียงอยู่) ลงบนมุมมองที่ถูกหมุน -> ผลลัพธ์คือภาพที่ตั้งตรง
+  // --- ไม่มีการหมุนมุมมอง (NO ROTATION) ---
+  
+  // 3. วาดแผนที่ และ Dimmer Mask (ส่วนในแผนที่)
   ctx.drawImage(mapImage, 0, 0, mapImage.width, mapImage.height);
-
-   if (dimmerMaskImage && (mode === 'draw' || mode === 'goal')) {
+  if (dimmerMaskImage && (mode === 'draw' || mode === 'goal')) {
     ctx.drawImage(dimmerMaskImage, 0, 0, mapImage.width, mapImage.height);
   }
-  // 6. วาดทุกอย่างที่เหลือ (Path, Goal, etc.) โดยใช้ "พิกัดพิกเซลของแผนที่ดั้งเดิม"
+
+  // 4. วาด Path, Goal, etc.
   if (activeMap.meta) {
     const { resolution, origin } = activeMap.meta;
     const mapImgHeight = mapImage.height;
@@ -639,35 +483,31 @@ export function renderCanvas() {
     // --- วาดเส้น Path ---
     if (patrolPath.length > 1) {
       ctx.strokeStyle = 'orange';
-      ctx.lineWidth = 2 / mapView.viewState.scale; // ปรับความหนาเส้นตามการซูม
+      ctx.lineWidth = 2 / mapView.viewState.scale;
       ctx.beginPath();
       patrolPath.forEach((point, i) => {
-        // แปลง World Coords -> Map Pixel Coords (สูตรดั้งเดิม)
         const px = (point.x - origin[0]) / resolution;
         const py = mapImgHeight - ((point.y - origin[1]) / resolution);
-        // วาดลงไปตรงๆ ที่ px, py (Context ที่ถูกแปลงแล้วจะจัดการตำแหน่งบนจอให้เอง)
         i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
       });
       ctx.stroke();
     }
-
+    
     // --- วาดจุดบน Path ---
     patrolPath.forEach((point, i) => {
         const px = (point.x - origin[0]) / resolution;
         const py = mapImgHeight - ((point.y - origin[1]) / resolution);
         const radius = (i === 0 && isHoveringFirstPoint ? 8 : 6) / mapView.viewState.scale;
-        
         ctx.beginPath();
         ctx.arc(px, py, radius, 0, 2 * Math.PI);
         ctx.fillStyle = (i === 0 && isHoveringFirstPoint) ? '#00FF00' : 'cyan';
         ctx.fill();
     });
 
-    // --- วาด Goal Point ---
+    // --- วาด Goal ---
     if (goalPoint) {
       const px = (goalPoint.x - origin[0]) / resolution;
       const py = mapImgHeight - ((goalPoint.y - origin[1]) / resolution);
-      
       ctx.beginPath();
       ctx.arc(px, py, 6 / mapView.viewState.scale, 0, 2 * Math.PI);
       ctx.fillStyle = 'red';
@@ -678,33 +518,59 @@ export function renderCanvas() {
     }
   }
 
-  // 7. คืนค่า Canvas กลับสู่สถานะเริ่มต้น (ไม่มี Pan, Zoom, หรือ Rotation)
+  // 5. คืนค่า Context จาก Pan/Zoom
   ctx.restore();
+
+  // --- ณ จุดนี้ เรากลับมาวาดใน "พิกัดหน้าจอ" (Screen Space) ตามปกติ ---
+
+  // 6. วาด Dimmer Mask (ส่วนนอกแผนที่)
   if (mode === 'draw' || mode === 'goal') {
     drawBoundaryMask();
   }
 
-  // --- ณ จุดนี้ เรากลับมาวาดใน "พิกัดหน้าจอ" (Screen Space) ตามปกติ ---
-  
-  // 8. วาดลูกศร Initial Pose (ซึ่งต้องสัมพันธ์กับตำแหน่งเมาส์บนหน้าจอ)
-  if (isSettingPose && poseStartPosition) {
-    // แปลงจุดเริ่มต้น (World Coords) ให้ออกมาเป็นพิกัดบนหน้าจอ (Screen Coords)
+  if (mode === 'draw' && patrolPath.length > 0) {
+    const lastPoint = patrolPath[patrolPath.length - 1];
     const { resolution, origin } = activeMap.meta;
+    
+    // แปลงจุดสุดท้าย (World) -> Screen Coords
+    const lastPx = (lastPoint.x - origin[0]) / resolution;
+    const lastPy = mapImage.height - (lastPoint.y - origin[1]) / resolution;
+    const lastScreenX = lastPx * mapView.viewState.scale + mapView.viewState.offsetX;
+    const lastScreenY = lastPy * mapView.viewState.scale + mapView.viewState.offsetY;
+
+    // จุดสิ้นสุดคือตำแหน่งเมาส์ปัจจุบัน (ซึ่งเป็น Screen Coords อยู่แล้ว)
+    const mouseScreenX = currentMousePos.x;
+    const mouseScreenY = currentMousePos.y;
+
+    // วาดเส้นประนำสายตา
+    ctx.save();
+    ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)'; // สีฟ้าโปร่งแสง
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ
+    ctx.beginPath();
+    ctx.moveTo(lastScreenX, lastScreenY);
+    ctx.lineTo(mouseScreenX, mouseScreenY);
+    ctx.stroke();
+    ctx.restore();
+  }
+  
+  // 7. วาดลูกศร Initial Pose
+  if (isSettingPose && poseStartPosition) {
+    const { resolution, origin } = activeMap.meta;
+    
+    // แปลงจุดเริ่มต้น (World) -> Map Pixel (ดั้งเดิม)
     const startPx = (poseStartPosition.x - origin[0]) / resolution;
     const startPy = mapImage.height - ((poseStartPosition.y - origin[1]) / resolution);
     
-    // คำนวณตำแหน่งบนจอโดยจำลองการแปลงทั้งหมด
-    const rotatedX = startPy;
-    const rotatedY = -startPx + mapImage.height;
-    
-    const startScreenX = rotatedX * mapView.viewState.scale + mapView.viewState.offsetX;
-    const startScreenY = rotatedY * mapView.viewState.scale + mapView.viewState.offsetY;
+    // แปลง Map Pixel -> Screen Coords
+    const startScreenX = startPx * mapView.viewState.scale + mapView.viewState.offsetX;
+    const startScreenY = startPy * mapView.viewState.scale + mapView.viewState.offsetY;
 
     // จุดสิ้นสุดคือตำแหน่งเมาส์ปัจจุบัน
     const endScreenX = currentMousePos.x;
     const endScreenY = currentMousePos.y;
 
-    // วาดลูกศร
+    // วาดเส้นและหัวลูกศร
     ctx.save();
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.9)';
     ctx.fillStyle = 'rgba(0, 255, 0, 0.7)';
@@ -713,7 +579,7 @@ export function renderCanvas() {
     ctx.moveTo(startScreenX, startScreenY);
     ctx.lineTo(endScreenX, endScreenY);
     ctx.stroke();
-    // ... (โค้ดวาดหัวลูกศร) ...
+    
     const angle = Math.atan2(endScreenY - startScreenY, endScreenX - startScreenX);
     const headlen = 10;
     ctx.beginPath();
@@ -725,8 +591,11 @@ export function renderCanvas() {
     ctx.fill();
     ctx.restore();
   }
-}
 
+
+
+
+}
 function loadLocalMapsToGallery() {
   window.electronAPI.getLocalMaps().then((maps) => {
     const gallery = document.getElementById('map-gallery');
@@ -773,16 +642,15 @@ async function autoCropMapImage(sourceImage, meta) {
   cropCanvas.height = cropHeight;
   const cropCtx = cropCanvas.getContext('2d');
   cropCtx.drawImage(sourceImage, minX, minY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
   const finalImage = new Image();
   finalImage.src = cropCanvas.toDataURL();
   await new Promise(resolve => finalImage.onload = resolve);
-
 
   const newMeta = JSON.parse(JSON.stringify(meta));
   newMeta.origin[0] = meta.origin[0] + minX * meta.resolution;
   newMeta.origin[1] = meta.origin[1] + (sourceImage.height - maxY - 1) * meta.resolution;
 
-  // 5. คืนค่าเป็นรูปภาพและ metadata ที่ผ่านการหมุนแล้ว
    return { croppedImage: finalImage, newMeta };
 }
 
@@ -816,24 +684,14 @@ function addMapToGallery(name, base64) {
 }
 
 function setGoalPointOnClick(e) {
-  if (!activeMap.meta || !mapImage || mapImage.height === 0) return;
-  const rect = canvas.getBoundingClientRect();
-  const clickX = e.clientX - rect.left;
-  const clickY = e.clientY - rect.top;
-
-  const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
-  const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
-  
-  // --- 🔧 ใช้สูตรคำนวณใหม่ทั้งหมด ---
-  goalPoint = {
-    x: activeMap.meta.origin[0] + (px * activeMap.meta.resolution),
-    y: activeMap.meta.origin[1] + ((mapImage.height - py) * activeMap.meta.resolution)
-  };
-  
-  window.electronAPI.sendSingleGoal(goalPoint);
-  cancelMode();
-  renderCanvas();
+  const worldPoint = getWorldCoordsFromEvent(e);
+  if (worldPoint && isClickInsideBounds(e.clientX, e.clientY)) {
+    goalPoint = worldPoint;
+    window.electronAPI.sendSingleGoal(goalPoint);
+    cancelMode();
+  }
 }
+
 
 function createDimmerMask(imageData) {
   if (!imageData) return;
@@ -898,13 +756,15 @@ function yawToQuaternion(yaw) {
 }
 
 function getWorldCoordsFromEvent(e) {
-  if (!activeMap.meta || !mapImage || mapImage.height === 0) return null;
+  if (!activeMap.meta || !mapImage) return null;
   const rect = canvas.getBoundingClientRect();
   const clickX = e.clientX - rect.left;
   const clickY = e.clientY - rect.top;
 
   const px = (clickX - mapView.viewState.offsetX) / mapView.viewState.scale;
   const py = (clickY - mapView.viewState.offsetY) / mapView.viewState.scale;
+  
+  // --- ✅ กลับมาใช้สูตรดั้งเดิมที่ถูกต้อง ---
   return {
     x: activeMap.meta.origin[0] + (px * activeMap.meta.resolution),
     y: activeMap.meta.origin[1] + ((mapImage.height - py) * activeMap.meta.resolution)
