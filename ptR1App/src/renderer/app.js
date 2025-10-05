@@ -3,8 +3,7 @@ console.log('👷 app.js started');
 import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
-import { initStaticMap } from './modules/mapStatic.js';
-import { renderCanvas as renderStaticMapCanvas } from './modules/mapStatic.js';
+import {renderObjects, renderScan, initStaticMap, renderAllLayers} from './modules/mapStatic.js';
 
 
 import { renderDashboardMap, initHomeMap} from './modules/mapHome.js';
@@ -129,13 +128,14 @@ document.addEventListener('DOMContentLoaded', async() => {
     document.querySelector('.canvas-controls').classList.add('hidden');
     startLiveMapRender();
   });
+
   const mapWrapper = document.querySelector('.map-wrapper');
     if (mapWrapper) {
-      // ส่ง container และ callback ของทั้งสอง map ไปให้ mapView จัดการ
+      //ส่ง renderAllLayers เป็น callback สำหรับการ Pan/Zoom
       mapView.initMapViewController(
         mapWrapper,
-        renderStaticMapCanvas, // Callback สำหรับ Static Map
-        drawLiveMap           // Callback สำหรับ Live Map
+        renderAllLayers, // Callback สำหรับ Static Map
+        drawLiveMap      // Callback สำหรับ Live Map
       );
     }
     document.getElementById('reset-live-view-btn').addEventListener('click', () => {
@@ -460,7 +460,7 @@ window.electronAPI.onRobotPosAmcl((poseData) => {
   if (poseData.position && poseData.orientation) {
     updateRobotPose(poseData.position, poseData.orientation);
     renderDashboardMap();
-    renderStaticMapCanvas();
+    renderObjects();
   }
 });
 
@@ -783,7 +783,7 @@ window.electronAPI.onLaserScan((scanData) => {
   
   // ตรวจสอบว่า staticMapCanvas ไม่ได้ถูกซ่อนด้วย class 'hidden'
   if (staticMapCanvas && !staticMapCanvas.classList.contains('hidden')) {
-      renderStaticMapCanvas();
+      renderScan();
   }
 
 });

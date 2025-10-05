@@ -96,6 +96,7 @@ parentPort.on('message', (message) => {
 
 // 🌐 ฟังก์ชันเชื่อมต่อ ROSBridge
 function connectROSBridge(url) {
+  console.log('Server : Connecting to ROSBridge at ', url);
   rosAutoConnected = true;
   
   
@@ -265,7 +266,6 @@ function subscribeMapData() {
     });
   });
 }
-
 function subscribeSlamMapData() {
   const slamMapTopic = new ROSLIB.Topic({
     ros: ros,
@@ -283,8 +283,6 @@ function subscribeSlamMapData() {
     });
   });
 }
-
-
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
 
@@ -292,7 +290,7 @@ function subscribeRobotPoseSlam() {
 
   const simplePoseTopic = new ROSLIB.Topic({
     ros: ros,
-    name: '/robot_pose_simple',
+    name: '/robot_pose_sample',
     messageType: 'geometry_msgs/PoseStamped'
   });
 

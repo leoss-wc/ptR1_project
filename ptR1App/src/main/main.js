@@ -209,7 +209,9 @@ ipcMain.on('set-manual-mode', (event, { state }) => {
     console.log(`Main: Switching MANUAL MODE ON → Send: 0x${command.toString(16)}`);
     rosWorker.postMessage({ type: 'sendCmd', command });
   } else {
-    console.log('Main: Switching MANUAL MODE OFF → (no command sent)');
+    const command = 0x05000000;
+        console.log(`Main: Switching MANUAL MODE OFF → Send: 0x${command.toString(16)}`);
+    rosWorker.postMessage({ type: 'sendCmd', command });
     // ไม่ส่งอะไร
   }
 });

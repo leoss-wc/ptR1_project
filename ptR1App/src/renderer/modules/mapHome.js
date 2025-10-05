@@ -6,6 +6,7 @@ import { robotPose,robotTrail } from './robotState.js';
 import { goalPoint,isPatrolling , patrolPath} from './patrolState.js';
 import { plannedPath } from './planState.js';
 import { latestScan } from './laserScanState.js';
+import { getYawFromQuaternion } from './utils.js';
 
 let canvas, ctx, mapImg;
 let zoom = 1.0;
@@ -35,11 +36,6 @@ export function initHomeMap(canvasElement) {
   initCanvasControls();
 }
 
-
-function getYawFromQuaternion(q) {
-  const { x, y, z, w } = q;
-  return Math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z));
-}
 
 function drawRobot() {
   if (!robotPose?.position || !activeMap?.meta || !mapImg){
@@ -363,18 +359,15 @@ function drawLaserScan() {
   const imgH = mapImg.height;
   const robotYaw = getYawFromQuaternion(robotPose.orientation);
 
-  // แปลงตำแหน่งหุ่นยนต์เป็น Screen Coordinates
-  const robotPx = (robotPose.position.x - origin[0]) / resolution;
-  const robotPy = imgH - (robotPose.position.y - origin[1]) / resolution;
-  const robotScreenX = robotPx * zoom + offset.x;
-  const robotScreenY = robotPy * zoom + offset.y;
+  ctx.fillStyle = 'rgba(255, 0, 255, 0.7)';
 
-  ctx.fillStyle = 'rgba(255, 0, 255, 0.7)'; // สีชมพูโปร่งแสง
+  for (let i = 0; i < latestScan.ranges.length; i++) {
+    const range = latestScan.ranges[i];
+    
+    // กรองระยะที่ผิดพลาดออก
+    if (range < 0.1 || range > 10.0) continue; 
 
-  latestScan.ranges.forEach((range, index) => {
-    if (range < 0.1 || range > 10.0) return; // กรองระยะที่ผิดพลาดออก
-
-    const angle = latestScan.angle_min + index * latestScan.angle_increment;
+    const angle = latestScan.angle_min + i * latestScan.angle_increment;
     const totalAngle = robotYaw + angle;
 
     // คำนวณตำแหน่งของจุดเลเซอร์ใน World Coordinates
@@ -386,9 +379,6 @@ function drawLaserScan() {
     const scanPy = imgH - (worldY - origin[1]) / resolution;
     const screenX = scanPx * zoom + offset.x;
     const screenY = scanPy * zoom + offset.y;
-    
-    ctx.beginPath();
-    ctx.arc(screenX, screenY, 1.5, 0, 2 * Math.PI); // วาดจุดเล็กๆ
-    ctx.fill();
-  });
+    ctx.fillRect(screenX, screenY, 2, 2); // วาดสี่เหลี่ยมขนาด 2x2 pixels
+  }
 }

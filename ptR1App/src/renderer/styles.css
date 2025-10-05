@@ -350,14 +350,36 @@ input:checked + .slider:before {
   position: relative;
   max-width: 800px;
   margin: auto;
+  background-color: #333; 
 }
 
 .map-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   display: block;
   background: #000;
   border-radius: 3px;
+}
+
+/* ทำให้ Layer กลางและบนโปร่งใส และไม่รับ Event การคลิก
+  เพื่อให้ Event ทะลุผ่านไปยัง Layer ที่เราต้องการได้
+*/
+#map-background-layer,
+#map-objects-layer {
+  background-color: transparent;
+  pointer-events: none; /* ทำให้เมาส์ทะลุผ่าน Layer นี้ไป */
+}
+
+/*
+  กำหนดให้ Layer บนสุด (scan-layer) เป็นตัวรับ Event ทั้งหมด
+  (เพราะเราผูก Event Listener ไว้กับ Canvas นี้ในโค้ด JavaScript)
+*/
+#map-scan-layer {
+  background-color: transparent;
+  pointer-events: auto; /* รับ Event เมาส์ตามปกติ */
 }
 
 

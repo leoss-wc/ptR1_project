@@ -14,9 +14,9 @@ let redrawLiveCallback = null;
 let redrawStaticCallback = null;
 
 // ฟังก์ชันสำหรับตั้งค่าการซูมและ callback
-export function initMapViewController(container, staticCb, liveCb) {
-  redrawStaticCallback = staticCb;
-  redrawLiveCallback = liveCb;
+export function initMapViewController(container, staticRedrawAllCb, liveRedrawAllCb) {
+  redrawStaticCallback = staticRedrawAllCb;
+  redrawLiveCallback = liveRedrawAllCb;
 
   container.addEventListener('wheel', (e) => {
     e.preventDefault();
@@ -26,11 +26,14 @@ export function initMapViewController(container, staticCb, liveCb) {
     const mouseY = e.clientY - rect.top;
     const mapX = (mouseX - viewState.offsetX) / viewState.scale;
     const mapY = (mouseY - viewState.offsetY) / viewState.scale;
+    
     if (e.deltaY < 0) { viewState.scale *= scaleAmount; }
     else { viewState.scale /= scaleAmount; }
+
     viewState.offsetX = mouseX - mapX * viewState.scale;
     viewState.offsetY = mouseY - mapY * viewState.scale;
 
+    // เรียก callback ที่ถูกต้อง
     if (redrawStaticCallback) redrawStaticCallback();
     if (redrawLiveCallback) redrawLiveCallback();
   });
@@ -53,9 +56,12 @@ export function handleMouseMove(e) {
   viewState.offsetY += dy;
   lastX = e.clientX;
   lastY = e.clientY;
+  
+  // เรียก callback ที่ถูกตั้งค่าไว้ตอน init
   if (redrawStaticCallback) redrawStaticCallback();
   if (redrawLiveCallback) redrawLiveCallback();
 }
+
 
 export function handleMouseUp(e) {
   isDragging = false;

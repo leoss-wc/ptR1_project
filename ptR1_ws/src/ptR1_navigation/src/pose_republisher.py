@@ -13,14 +13,14 @@ def main():
     listener = tf2_ros.TransformListener(tf_buffer)
 
     # สร้าง Publisher ไปยัง Topic ใหม่ของเรา
-    pose_publisher = rospy.Publisher('/robot_pose_simple', PoseStamped, queue_size=1)
+    pose_publisher = rospy.Publisher('/robot_pose_sample', PoseStamped, queue_size=1)
 
     rate = rospy.Rate(3) # 3 Hz
 
     while not rospy.is_shutdown():
         try:
             # ขอ Transform ล่าสุดจาก map -> base_footprint
-            transform = tf_buffer.lookup_transform('map', 'base_footprint', rospy.Time(0))
+            transform = tf_buffer.lookup_transform('map', 'base_link', rospy.Time(0))
 
             # สร้างข้อความ PoseStamped
             pose_msg = PoseStamped()

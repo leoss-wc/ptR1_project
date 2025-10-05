@@ -189,6 +189,7 @@ include_directories(
    src/img_ws.py
    src/send_uint32_once.py
    src/mecanum_velocity_node.py
+   src/teleop_keyboard.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 
