@@ -5,6 +5,7 @@ import base64
 import subprocess
 import yaml
 import shutil
+import roslaunch
 
 from ptR1_navigation.srv import ListMaps, ListMapsResponse
 from ptR1_navigation.srv import LoadMap, LoadMapResponse
@@ -16,6 +17,7 @@ from ptR1_navigation.srv import StopSLAM, StopSLAMResponse
 #รวมการจัดการ Process ไว้ที่นี่ที่เดียว
 running_processes = []
 map_server_process = None #เก็บ Popen object ของ map_server แยกไว้เพื่อ stop/start ได้ง่าย 
+slam_launch_process = None
 
 MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
 ACTIVE_MAP_NAME = "active_map"

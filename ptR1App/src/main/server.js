@@ -85,6 +85,13 @@ parentPort.on('message', (message) => {
           subscribeRobotPoseSlam();
         }
         break;
+      case 'deleteMap':
+        callDeleteMapService(message.mapName);
+        break;
+      case 'resetSLAM':
+        callResetSLAMService();
+        break;
+
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -94,7 +101,7 @@ parentPort.on('message', (message) => {
 });
 
 
-// 🌐 ฟังก์ชันเชื่อมต่อ ROSBridge
+// ฟังก์ชันเชื่อมต่อ ROSBridge
 function connectROSBridge(url) {
   console.log('Server : Connecting to ROSBridge at ', url);
   rosAutoConnected = true;
@@ -189,7 +196,7 @@ function sendRelayViaCommand(relayId, command) {
 }
 
 
-// 📤 ส่งคำสั่ง UInt32 Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
+// ส่งคำสั่ง UInt32 Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
 function sendCommand(command) {
   if (!ros || !ros.isConnected) {
     console.error('Server : ❌ Cannot send command: ROSBridge is not connected.');
@@ -211,7 +218,7 @@ function sendCommand(command) {
   cmdEditTopic.publish(message);
 }
 
-// 📤 ส่งคำสั่ง UInt16 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของล้อ
+//ส่งคำสั่ง UInt16 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของล้อ
 function sendDrive(command) {
   const uint16Value = command & 0xFFFF; // ให้แน่ใจว่าอยู่ในช่วง 16-bit
   console.log(`Server : Sending uint16 Command: ${uint16Value}`);
@@ -228,7 +235,7 @@ function sendDrive(command) {
   cmdVelTopic.publish(message);
 }
 
-// 📤 ส่งคำสั่ง UInt8 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของ servo
+//ส่งคำสั่ง UInt8 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของ servo
 function sendServo(command) {
   const uint8Value = command & 0xFF; // ให้แน่ใจว่าอยู่ในช่วง 8-bit
   console.log(`Server : Sending uint8 Command: ${uint8Value}`);
@@ -244,7 +251,7 @@ function sendServo(command) {
 
   cmdVelTopic.publish(message);
 }
-// 🗺️ Subscribe ข้อมูลแผนที่จาก ROS
+//Subscribe ข้อมูลแผนที่จาก ROS
 function subscribeMapData() {
   const mapTopic = new ROSLIB.Topic({
     ros: ros,
@@ -286,7 +293,7 @@ function subscribeSlamMapData() {
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
 
-  console.log('Server: Subscribing to simplified pose topic /robot_pose_simple...');
+  console.log('Server: Subscribing to simplified pose topic /robot_pose_sample...');
 
   const simplePoseTopic = new ROSLIB.Topic({
     ros: ros,
@@ -639,8 +646,8 @@ function callStartSLAMService() {
 
   const service = new ROSLIB.Service({
     ros: ros,
-    name: '/start_slam',
-    serviceType: 'std_srvs/Trigger'  // หรือเปลี่ยนตามของคุณ
+    name: '/map_manager/start_slam',
+    serviceType: 'ptR1_navigation/StartSLAM' 
   });
 
   const request = new ROSLIB.ServiceRequest({});
@@ -660,7 +667,7 @@ function callStartSLAMService() {
 function callStopSLAMService() {
   const service = new ROSLIB.Service({
     ros: ros,
-    name: '/map_manager/stop_slam',
+    name: '/map_manager/stop_processes',
     serviceType: 'ptR1_navigation/StopSLAM'
   });
 
@@ -858,7 +865,42 @@ function callStopStreamService() {
   });
 }
 
+function callDeleteMapService(mapName) {
+  if (!ros || !ros.isConnected) {
+    // ส่งผลลัพธ์กลับไปที่ UI ผ่าน main process
+    parentPort.postMessage({ type: 'map-delete-result', data: { success: false, message: 'ROSBridge not connected' } });
+    return;
+  }
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/map_manager/delete_map',
+    serviceType: 'ptR1_navigation/DeleteMap' // <--- ใช้ Service Type ที่ถูกต้อง
+  });
+  const request = new ROSLIB.ServiceRequest({ name: mapName });
+  service.callService(request, (result) => {
+    parentPort.postMessage({ type: 'map-delete-result', data: result });
+  }, (err) => {
+    parentPort.postMessage({ type: 'map-delete-result', data: { success: false, message: err.toString() } });
+  });
+}
 
+function callResetSLAMService() {
+  if (!ros || !ros.isConnected) {
+    parentPort.postMessage({ type: 'slam-reset-result', data: { success: false, message: 'ROSBridge not connected' } });
+    return;
+  }
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/map_manager/reset_slam',
+    serviceType: 'ptR1_navigation/ResetSLAM' // <--- ใช้ Service Type ที่ถูกต้อง
+  });
+  const request = new ROSLIB.ServiceRequest({});
+  service.callService(request, (result) => {
+    parentPort.postMessage({ type: 'slam-reset-result', data: result });
+  }, (err) => {
+    parentPort.postMessage({ type: 'slam-reset-result', data: { success: false, message: err.toString() } });
+  });
+}
 
 setTimeout((url) => {
   if (!rosAutoConnected) {

@@ -106,7 +106,9 @@ document.addEventListener('DOMContentLoaded', async() => {
   }
   // Map Mode Toggle (Static/Live)
   document.getElementById('btn-static-map').addEventListener('click', () => {
-    document.getElementById('staticMapCanvas').classList.remove('hidden');
+    document.getElementById('map-background-layer').classList.remove('hidden');
+    document.getElementById('map-objects-layer').classList.remove('hidden');
+    document.getElementById('map-scan-layer').classList.remove('hidden');
     document.getElementById('liveMapCanvas').classList.add('hidden');
     document.getElementById('btn-static-map').classList.add('active');
     document.getElementById('btn-live-map').classList.remove('active');
@@ -118,7 +120,11 @@ document.addEventListener('DOMContentLoaded', async() => {
 
   });
   document.getElementById('btn-live-map').addEventListener('click', () => {
-    document.getElementById('staticMapCanvas').classList.add('hidden');
+    document.getElementById('map-background-layer').classList.add('hidden');
+    document.getElementById('map-objects-layer').classList.add('hidden');
+    document.getElementById('map-scan-layer').classList.add('hidden');
+
+    
     document.getElementById('liveMapCanvas').classList.remove('hidden');
     document.getElementById('btn-static-map').classList.remove('active');
     document.getElementById('btn-live-map').classList.add('active');
@@ -774,7 +780,7 @@ window.electronAPI.onLaserScan((scanData) => {
 
   // ตรวจสอบก่อนว่า Canvas ไหนกำลังแสดงอยู่ แล้วค่อยสั่งวาดเฉพาะอันนั้น
   const homeCanvas = document.getElementById('homeMapCanvas');
-  const staticMapCanvas = document.getElementById('staticMapCanvas');
+  const staticMapLayer = document.getElementById('map-scan-layer'); 
   const liveMapCanvas = document.getElementById('liveMapCanvas'); // เผื่อสำหรับอนาคต
 
   if (homeCanvas && homeCanvas.offsetParent !== null) {
@@ -782,7 +788,7 @@ window.electronAPI.onLaserScan((scanData) => {
   }
   
   // ตรวจสอบว่า staticMapCanvas ไม่ได้ถูกซ่อนด้วย class 'hidden'
-  if (staticMapCanvas && !staticMapCanvas.classList.contains('hidden')) {
+  if (staticMapLayer && !staticMapLayer.classList.contains('hidden')) {
       renderScan();
   }
 

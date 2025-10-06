@@ -261,7 +261,7 @@ ipcMain.on('connect-rosbridge', (event, ip) => {
   console.log(`Main: 🔌 Connecting to ROSBridge at ${url}`);
 });
 
-// ✨ เพิ่ม IPC handlers
+//เพิ่ม IPC handlers
 ipcMain.on('start-stream', () => {
   rosWorker?.postMessage({ type: 'startStream' });
 });
@@ -359,6 +359,14 @@ ipcMain.on('start-slam', () => {
 
 ipcMain.on('stop-slam', () => {
   if (rosWorker) rosWorker.postMessage({ type: 'stopSLAM' });
+});
+
+ipcMain.on('delete-map', (_, mapName) => {
+  if (rosWorker) rosWorker.postMessage({ type: 'deleteMap', mapName });
+});
+
+ipcMain.on('reset-slam', () => {
+  if (rosWorker) rosWorker.postMessage({ type: 'resetSLAM' });
 });
 
 ipcMain.on('resume-patrol', (_, { path, index }) => {

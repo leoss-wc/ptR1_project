@@ -49,10 +49,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onSlamMap: (callback) => ipcRenderer.on('slam-map-data', (_event, value) => callback(value)),
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),
+  deleteMap: (mapName) => ipcRenderer.send('delete-map', mapName),
+  onMapDeleteResult: (callback) => ipcRenderer.on('map-delete-result', (_, result) => callback(result)),
 
   // Robot pose and planned path api
   onRobotPosSlam: (callback) => ipcRenderer.on('robot-pose-slam', (event, ...args) => callback(...args)),
   onRobotPosAmcl: (callback) => ipcRenderer.on('robot-pose-amcl', (event, ...args) => callback(...args)),
+  resetSLAM: () => ipcRenderer.send('reset-slam'),
+  onSLAMResetResult: (callback) => ipcRenderer.on('slam-reset-result', (_, result) => callback(result)),
 
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onPlannedPath: (callback) => ipcRenderer.on('planned-path', (event, ...args) => callback(...args)),
