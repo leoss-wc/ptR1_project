@@ -1,0 +1,12 @@
+odom_frame: odom
+map_frame: map
+base_frame: base_link
+scan_topic: /scan
+
+use_scan_matching: true
+max_laser_range: 10.0
+transform_timeout: 0.5
+    
+minimum_travel_distance: 0.2
+minimum_travel_heading: 0.17
+map_update_interval: 1.0

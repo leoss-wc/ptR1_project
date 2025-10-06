@@ -65,12 +65,19 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate services in the 'srv' folder
  add_service_files(
    FILES
-   ListMaps.srv
-   LoadMap.srv
-   GetMapFile.srv
-   SaveMap.srv
-   StartSLAM.srv
-   StopSLAM.srv
+    ListMaps.srv
+    LoadMap.srv
+    GetMapFile.srv
+    SaveMap.srv
+    StartSLAM.srv
+    StopSLAM.srv
+    DeleteMap.srv
+    ResetSLAM.srv
+    StartPatrol.srv
+    PausePatrol.srv
+    ResumePatrol.srv
+    StopPatrol.srv
+    ClearCostmaps.srv
  )
 
 ## Generate actions in the 'action' folder
@@ -83,7 +90,9 @@ find_package(catkin REQUIRED COMPONENTS
 ## Generate added messages and services with any dependencies listed here
  generate_messages(
   DEPENDENCIES
-  std_msgs #   nav_msgs#   # tf2_geometry_msgs #geometry_msgs
+  std_msgs 
+  geometry_msgs
+  #   nav_msgs#   # tf2_geometry_msgs #geometry_msgs
  )
 
 ################################################

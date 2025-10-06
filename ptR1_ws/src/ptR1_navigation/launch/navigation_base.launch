@@ -1,0 +1,41 @@
+<launch>
+
+<!--  base_sysptR1.launch 
+    rosserial สำหรับ Arduino Mega และ Nano
+    rosbridge_websocket 9090
+-->
+    <include file="$(find ptR1_navigation)/launch/base_sysptR1.launch" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="mag_tf"
+        args="0.03 0.02 0.24 0 0 0 base_link mag_link " />
+    
+    <node pkg="tf2_ros" type="static_transform_publisher" name="imu_tf"
+        args="0.09 0.01 0.24 0 0 0 base_link imu_link " />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_to_front_left_wheel"
+    args="0.105 0.0825 -0.04 0 0 0 base_link front_left_wheel_link" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_to_front_right_wheel"
+    args="0.105 -0.0825 -0.04 0 0 0 base_link front_right_wheel_link" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_to_rear_left_wheel"
+    args="-0.105 0.0825 -0.04 0 0 0 base_link rear_left_wheel_link" />
+
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_to_rear_right_wheel"
+    args="-0.105 -0.0825 -0.04 0 0 0 base_link rear_right_wheel_link" />
+
+        <!-- Static transform publisher for laser frame -->
+    <node pkg="tf2_ros" type="static_transform_publisher" name="base_link_to_laser"
+    args="0 0 0.3 0 0 0 base_link laser_frame "/>
+
+<!-- ใช้ ekf_localizationV2.yaml
+    Odometry ใช้ /wheel_odom_raspi
+ -->
+    <include file="$(find ptR1_navigation)/launch/ekfv3.launch" />
+    <include file="$(find ptR1_navigation)/launch/G2_lidar.launch" />
+ <!--
+    <include file="$(find ptR1_navigation)/launch/map_server.launch" />
+    <include file="$(find ptR1_navigation)/launch/amcl.launch" />
+    -->
+     <node name="map_manager_node" pkg="ptR1_navigation" type="map_manager_node.py" output="screen" />
+</launch>

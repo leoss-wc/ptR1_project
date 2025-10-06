@@ -1,0 +1,5 @@
+geometry_msgs/PoseStamped[] goals
+bool loop
+---
+bool success
+string message

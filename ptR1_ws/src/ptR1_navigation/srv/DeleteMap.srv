@@ -1,0 +1,6 @@
+# Request: ชื่อของแผนที่ที่ต้องการลบ
+string name
+---
+# Response: ผลลัพธ์การทำงาน
+bool success
+string message

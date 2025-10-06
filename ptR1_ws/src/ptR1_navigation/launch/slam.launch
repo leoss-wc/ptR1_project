@@ -1,0 +1,12 @@
+<launch>
+  <node name="slam_toolbox" pkg="slam_toolbox" type="async_slam_toolbox_node" output="screen">
+    
+    <rosparam file="$(find ptR1_navigation)/config/slam_config.yaml" command="load" />
+
+    <remap from="scan" to="/scan"/>
+    <remap from="map" to="/rb/slam/map"/>
+
+  </node>
+
+  <node pkg="ptR1_navigation" type="pose_republisher.py" name="pose_republisher" output="screen" />
+</launch>
