@@ -8,8 +8,9 @@ let rosbridgeURL = '';
 let reconnectTimer = null;
 let rosAutoConnected = false;
 
-let slamPoseSubscriber = false;
+let slamPoseSubscriber = null;
 let amclPoseSubscriber = null;
+let isSlamPoseInitialized = false; 
 
 const BUFFER_SIZE_VOLTAGE = 50;  // ค่าเฉลี่ยจาก 10 วินาที
 let voltageBuffer = [];
@@ -45,17 +46,8 @@ parentPort.on('message', (message) => {
       case 'saveMap':
         callSaveMapService(message.mapName);
         break;
-      case 'sendPatrolPath':
-        sendPatrolPathToROS(message.path);
-        break;
-      case 'sendStopPatrol':
-        sendStopPatrolCommand();
-        break;
       case 'sendSingleGoal':
         sendSingleGoalToMoveBase(message.data); 
-        break;
-      case 'resumePatrol':
-        resumePatrolFrom(message.path, message.index);
         break;
       case 'startSLAM':
         callStartSLAMService();
@@ -73,25 +65,46 @@ parentPort.on('message', (message) => {
         callStopStreamService();
         break;
       case 'switchPoseSubscriber':
+         case 'switchPoseSubscriber':
         console.log(`Server: Switching pose subscriber to mode: ${message.mode}`);
-        // หยุด subscriber ทั้งสองตัวก่อน
-        if (amclPoseSubscriber) amclPoseSubscriber.unsubscribe();
-        if (slamTfClient) slamTfClient.unsubscribe('base_footprint');
+        
+        if (amclPoseSubscriber) {
+          amclPoseSubscriber.unsubscribe();
+          amclPoseSubscriber = null;
+        }
+        // <<< CHANGED: แก้ไขการ unsubscribe ของ slam
+        if (slamPoseSubscriber) {
+          slamPoseSubscriber.unsubscribe();
+          slamPoseSubscriber = null;
+        }
 
         // เริ่มตัวที่ต้องการ
         if (message.mode === 'amcl') {
           subscribeAmclPose();
         } else if (message.mode === 'slam') {
+          // ไม่จำเป็นต้องเช็ค flag อีกต่อไป เพราะเราควบคุมการ subscribe จาก UI โดยตรง
           subscribeRobotPoseSlam();
         }
         break;
+
       case 'deleteMap':
         callDeleteMapService(message.mapName);
         break;
       case 'resetSLAM':
         callResetSLAMService();
         break;
-
+      case 'startPatrol':
+        callStartPatrolService(message.goals, message.loop);
+        break;
+      case 'pausePatrol':
+        callPausePatrolService();
+        break;
+      case 'resumePatrol':
+        callResumePatrolService();
+        break;
+      case 'stopPatrol':
+        callStopPatrolService();
+        break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -132,9 +145,6 @@ function connectROSBridge(url) {
     //subscribe function
     subscribeSensorData();
     subscribeMapData();
-    //subscribeRobotPose();
-    subscribeSlamMapData();
-    subscribeAmclPose()
     subscribePlannedPath();
     subscribeMoveBaseResult();
     subscribeLaserScanData();
@@ -257,15 +267,18 @@ function subscribeMapData() {
     ros: ros,
     name: '/map',
     messageType: 'nav_msgs/OccupancyGrid',
+    throttle_rate: 1000
   });
 
   mapTopic.subscribe((msg) => {
-    if (!slamPoseSubscriber) {
-      console.log('Server: First map message received, initializing TFClient now.');
-      slamPoseSubscriber = true;
+    if (!isSlamPoseInitialized) {
+      console.log('Server: First map message received, initializing SLAM pose subscription.');
+      isSlamPoseInitialized = true; // ตั้งค่า flag เป็น true เพื่อไม่ให้ทำงานซ้ำ
+      
+      // หน่วงเวลาเล็กน้อยเพื่อให้แน่ใจว่าระบบพร้อมก่อน subscribe
       setTimeout(() => {
         subscribeRobotPoseSlam();
-      }, 200); // Delay 200ms
+      }, 200);
     }
     parentPort.postMessage({
       type: 'live-map',
@@ -292,18 +305,21 @@ function subscribeSlamMapData() {
 }
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
+  console.log('Server: Subscribing to SLAM pose topic /robot_pose_sample...');
 
-  console.log('Server: Subscribing to simplified pose topic /robot_pose_sample...');
+  // ตรวจสอบและยกเลิก subscriber เก่า ถ้ามี
+  if (slamPoseSubscriber) {
+    slamPoseSubscriber.unsubscribe();
+  }
 
-  const simplePoseTopic = new ROSLIB.Topic({
+  // สร้าง Topic object ใหม่และ "เก็บค่า" ไว้ในตัวแปร slamPoseSubscriber
+  slamPoseSubscriber = new ROSLIB.Topic({
     ros: ros,
     name: '/robot_pose_sample',
     messageType: 'geometry_msgs/PoseStamped'
   });
 
-  simplePoseTopic.subscribe((msg) => {
-
-    // ข้อมูลอยู่ใน msg.pose
+  slamPoseSubscriber.subscribe((msg) => {
     const pos = msg.pose.position;
     const ori = msg.pose.orientation;
     
@@ -313,7 +329,6 @@ function subscribeRobotPoseSlam() {
     });
   });
 }
-
 function subscribeAmclPose() {
   if (!ros || !ros.isConnected) return;
   console.log('Server: Subscribing to AMCL pose topic /amcl_pose...');
@@ -344,7 +359,9 @@ function subscribeLaserScanData() {
   const scanTopic = new ROSLIB.Topic({
     ros: ros,
     name: '/scan', // ชื่อ Topic ของ Laser Scan โดยทั่วไป
-    messageType: 'sensor_msgs/LaserScan'
+    messageType: 'sensor_msgs/LaserScan',
+    throttle_rate : 2000 // ลดความถี่การส่งข้อมูลเหลือ 1 ครั้งต่อวินาที
+    
   });
 
   console.log('[Server] Subscribing to LaserScan topic: /scan');
@@ -459,13 +476,13 @@ function subscribeMoveBaseResult() {
   });
 }
 
-
 // Power
 function subscribeSensorData() {
   const sensorTopic = new ROSLIB.Topic({
     ros: ros,
     name: '/sensor/data',
     messageType: 'std_msgs/UInt32',
+    throttle_rate: 500
   });
 
   sensorTopic.subscribe((message) => {
@@ -684,47 +701,7 @@ function callStopSLAMService() {
     });
   });
 }
-function sendPatrolPathToROS(pathArray) {
-  if (!ros || !ros.isConnected) {
-    console.warn("ROS ยังไม่เชื่อมต่อ");
-    return;
-  }
 
-  const topic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/patrol_path',
-    messageType: 'geometry_msgs/PoseArray'
-  });
-
-  const poses = pathArray.map(pt => ({
-    position: { x: pt.x, y: pt.y, z: 0 },
-    orientation: { x: 0, y: 0, z: 0, w: 1 } // หรือคำนวณ quaternion
-  }));
-
-  const msg = new ROSLIB.Message({
-    header: { frame_id: 'map' },
-    poses: poses
-  });
-
-  topic.publish(msg);
-  console.log('📤 ส่ง PoseArray ไปยัง /patrol_path');
-}
-
-function sendStopPatrolCommand() {
-  if (!ros || !ros.isConnected) {
-  console.warn('Server : ❌ Cannot stop patrol – ROSBridge not connected.');
-  return;
-  }
-  const stopTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/stop_patrol',
-    messageType: 'std_msgs/Bool'
-  });
-
-  const msg = new ROSLIB.Message({ data: true });
-  stopTopic.publish(msg);
-  console.log('🛑 หยุดการลาดตระเวน');
-}
 function sendSingleGoalToMoveBase(data) {
   if (!ros || !ros.isConnected) return;
 
@@ -736,7 +713,6 @@ function sendSingleGoalToMoveBase(data) {
 
   const msg = new ROSLIB.Message({
     header: { frame_id: 'map' },
-    // ✨ ใช้ข้อมูลจาก data.pose
     pose: {
       position: data.pose.position,
       orientation: data.pose.orientation
@@ -747,35 +723,6 @@ function sendSingleGoalToMoveBase(data) {
   goalTopic.publish(msg);
 }
 
-function resumePatrolFrom(pathArray, startIndex) {
-  if (!ros || !ros.isConnected) return;
-
-  if (!Array.isArray(pathArray) || startIndex >= pathArray.length) {
-    console.warn("❌ Invalid resume path or index");
-    return;
-  }
-
-  const subPath = pathArray.slice(startIndex);
-
-  const topic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/patrol_path',
-    messageType: 'geometry_msgs/PoseArray'
-  });
-
-  const poses = subPath.map(pt => ({
-    position: { x: pt.x, y: pt.y, z: 0 },
-    orientation: { x: 0, y: 0, z: 0, w: 1 }
-  }));
-
-  const msg = new ROSLIB.Message({
-    header: { frame_id: 'map' },
-    poses: poses
-  });
-
-  topic.publish(msg);
-  console.log(`▶️ Resumed patrol from index ${startIndex} (${subPath.length} points)`);
-}
 function publishInitialPose(pose) {
   if (!ros || !ros.isConnected) {
     console.error('Server : ❌ Cannot send initial pose: ROSBridge is not connected.');
@@ -899,6 +846,48 @@ function callResetSLAMService() {
     parentPort.postMessage({ type: 'slam-reset-result', data: result });
   }, (err) => {
     parentPort.postMessage({ type: 'slam-reset-result', data: { success: false, message: err.toString() } });
+  });
+}
+
+function callStartPatrolService(goals, loop) {
+  if (!ros || !ros.isConnected) {
+    parentPort.postMessage({ type: 'patrol-start-result', data: { success: false, message: 'ROS is not connected.' } });
+    return;
+  }
+  const service = new ROSLIB.Service({
+    ros,
+    name: '/map_manager/start_patrol',
+    serviceType: 'ptR1_navigation/StartPatrol'
+  });
+  const request = new ROSLIB.ServiceRequest({ goals, loop });
+  service.callService(request, (result) => {
+    parentPort.postMessage({ type: 'patrol-start-result', data: result });
+  }, (err) => {
+    parentPort.postMessage({ type: 'patrol-start-result', data: { success: false, message: err.toString() } });
+  });
+}
+
+function callPausePatrolService() {
+  if (!ros || !ros.isConnected) return;
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/pause_patrol', serviceType: 'ptR1_navigation/PausePatrol' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    parentPort.postMessage({ type: 'patrol-pause-result', data: result });
+  });
+}
+
+function callResumePatrolService() {
+  if (!ros || !ros.isConnected) return;
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/resume_patrol', serviceType: 'ptR1_navigation/ResumePatrol' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    parentPort.postMessage({ type: 'patrol-resume-result', data: result });
+  });
+}
+
+function callStopPatrolService() {
+  if (!ros || !ros.isConnected) return;
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/stop_patrol', serviceType: 'ptR1_navigation/StopPatrol' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    parentPort.postMessage({ type: 'patrol-stop-result', data: result });
   });
 }
 

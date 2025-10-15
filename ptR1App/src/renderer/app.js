@@ -36,6 +36,7 @@ let lastFrameTime = 0;
 const targetFPS = 1; //live map  Frame Rate 
 const fpsInterval = 1000 / targetFPS;
 let liveMapRenderId = null;
+let currentlySelectedMapName = null;
 
 let mockMoveInterval = null;
 function startMockPathTest() {
@@ -123,8 +124,8 @@ document.addEventListener('DOMContentLoaded', async() => {
     document.getElementById('map-background-layer').classList.add('hidden');
     document.getElementById('map-objects-layer').classList.add('hidden');
     document.getElementById('map-scan-layer').classList.add('hidden');
-
     
+    document.getElementById('reset-slam-btn').classList.remove('hidden');
     document.getElementById('liveMapCanvas').classList.remove('hidden');
     document.getElementById('btn-static-map').classList.remove('active');
     document.getElementById('btn-live-map').classList.add('active');
@@ -157,6 +158,11 @@ document.addEventListener('DOMContentLoaded', async() => {
   document.getElementById('pause-patrol-btn').addEventListener('click', patrol.pausePatrol);
   document.getElementById('resume-patrol-btn').addEventListener('click', patrol.resumePatrol);
   document.getElementById('stop-patrol-btn').addEventListener('click', patrol.stopPatrol);
+
+  // --- ส่วนจัดการ SLAM ---
+    const resetSlamBtn = document.getElementById('reset-slam-btn');
+    const deleteMapBtn = document.getElementById('delete-map-btn'); 
+
   
   patrol.initPatrolManager();
 

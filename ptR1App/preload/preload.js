@@ -69,6 +69,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resumePatrol: (path, index) => ipcRenderer.send('resume-patrol', { path, index }),
   cancelCurrentGoal: () => ipcRenderer.send('send-stop-patrol'),
   onGoalResult: (callback) => ipcRenderer.on('goal-result', (_, data) => callback(data)),
+  startPatrol: (goals, loop) => ipcRenderer.send('start-patrol', { goals, loop }),
+  onPatrolStartResult: (callback) => ipcRenderer.on('patrol-start-result', (_, result) => callback(result)),
+  
+  pausePatrol: () => ipcRenderer.send('pause-patrol'),
+  onPatrolPauseResult: (callback) => ipcRenderer.on('patrol-pause-result', (_, result) => callback(result)),
+
+  resumePatrol: () => ipcRenderer.send('resume-patrol'),
+  onPatrolResumeResult: (callback) => ipcRenderer.on('patrol-resume-result', (_, result) => callback(result)),
+  
+  stopPatrol: () => ipcRenderer.send('stop-patrol'),
+  onPatrolStopResult: (callback) => ipcRenderer.on('patrol-stop-result', (_, result) => callback(result)),
+
 
 
   // SLAM related api

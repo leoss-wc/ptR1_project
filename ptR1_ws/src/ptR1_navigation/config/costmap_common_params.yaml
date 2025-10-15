@@ -6,7 +6,7 @@ footprint: [[-0.15, -0.125], [-0.15, 0.125], [0.15, 0.125], [0.15, -0.125]]
 # robot_radius: 0.2
 # → ถ้าใช้ robot_radius แทน footprint ต้อง comment footprint ออก
 
-transform_tolerance: 0.5  # เวลาที่ costmap จะรอ TF ข้อมูลตำแหน่งก่อนถือว่าข้อมูลขาด (วินาที)
+transform_tolerance: 0.3  # เวลาที่ costmap จะรอ TF ข้อมูลตำแหน่งก่อนถือว่าข้อมูลขาด (วินาที)
 
 resolution: 0.05          # ความละเอียดของกริดใน costmap (เมตร/เซลล์)
 # → ยิ่งต่ำเท่าไร (เช่น 0.03) จะยิ่งแม่นยำ แต่ใช้ RAM/CPU เพิ่มขึ้น
@@ -34,7 +34,7 @@ obstacle_layer:
 # Inflation Layer (สร้างระยะกันชนรอบ obstacle ด้วย cost ที่ค่อย ๆ ลดลง)
 inflation_layer:
   enabled: true                     # เปิดใช้งาน inflation
-  inflation_radius: 0.2            # รัศมีจาก obstacle ที่จะขยาย cost ออก (เมตร)
+  inflation_radius: 0.1            # รัศมีจาก obstacle ที่จะขยาย cost ออก (เมตร)
   cost_scaling_factor: 10.0        # ความชันของค่า cost → ค่าสูง = หลบมาก, ค่าต่ำ = ผ่านใกล้ obstacle ได้ง่ายขึ้น
 
 # Static Layer (แผนที่สิ่งกีดขวางแบบคงที่ที่โหลดจาก map server)

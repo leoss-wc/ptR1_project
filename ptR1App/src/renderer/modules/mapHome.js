@@ -311,11 +311,11 @@ function resizeCanvas() {
 
 function drawPatrolPath() {
   if (patrolPath.length < 2 || !activeMap?.meta || !mapImg) return;
-  // ✨ เพิ่ม: Log สำหรับตรวจสอบข้อมูลภายใน
-  console.log("--- Debugging drawPatrolPath ---");
-  console.log("First point in path:", patrolPath[0]);
-  console.log("Origin from meta:", activeMap.meta.origin);
-  console.log("---------------------------------");
+
+  // console.log("--- Debugging drawPatrolPath ---");
+  // console.log("First point in path:", patrolPath[0]);
+  // console.log("Origin from meta:", activeMap.meta.origin);
+  // console.log("---------------------------------");
 
   const { resolution, origin } = activeMap.meta;
   const imgH = mapImg.height;
@@ -326,8 +326,8 @@ function drawPatrolPath() {
   ctx.beginPath();
 
 
-  // ✨ DEBUG: เพิ่ม Log ตรวจสอบพิกัดที่คำนวณได้
-  console.log(`--- Drawing on Canvas (Size: ${canvas.width}x${canvas.height}) ---`);
+
+  //console.log(`--- Drawing on Canvas (Size: ${canvas.width}x${canvas.height}) ---`);
 
 
   patrolPath.forEach((point, index) => {

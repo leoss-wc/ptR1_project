@@ -333,18 +333,6 @@ ipcMain.on('save-map', (event, mapName) => {
   rosWorker.postMessage({ type: 'saveMap', mapName });
 });
 
-ipcMain.on('send-patrol-path', (_, pathArray) => {
-  if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendPatrolPath', path: pathArray });
-  }
-});
-
-ipcMain.on('send-stop-patrol', () => {
-  if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendStopPatrol' });
-  }
-});
-
 ipcMain.on('send-single-goal', (_, data) => {
   if (rosWorker) {
     rosWorker.postMessage({ type: 'sendSingleGoal', data });
@@ -357,6 +345,23 @@ ipcMain.on('start-slam', () => {
   }
 });
 
+ipcMain.on('start-patrol', (_, { goals, loop }) => {
+  if (rosWorker) rosWorker.postMessage({ type: 'startPatrol', goals, loop });
+});
+
+ipcMain.on('pause-patrol', () => {
+  if (rosWorker) rosWorker.postMessage({ type: 'pausePatrol' });
+});
+
+ipcMain.on('resume-patrol', () => {
+  if (rosWorker) rosWorker.postMessage({ type: 'resumePatrol' });
+});
+
+ipcMain.on('stop-patrol', () => {
+  if (rosWorker) rosWorker.postMessage({ type: 'stopPatrol' });
+});
+
+
 ipcMain.on('stop-slam', () => {
   if (rosWorker) rosWorker.postMessage({ type: 'stopSLAM' });
 });
@@ -367,10 +372,6 @@ ipcMain.on('delete-map', (_, mapName) => {
 
 ipcMain.on('reset-slam', () => {
   if (rosWorker) rosWorker.postMessage({ type: 'resetSLAM' });
-});
-
-ipcMain.on('resume-patrol', (_, { path, index }) => {
-  rosWorker.postMessage({ type: 'resumePatrol', path, index });
 });
 
 ipcMain.handle('get-map-meta', async (_, mapName) => {
@@ -586,6 +587,18 @@ app.whenReady().then(() => {
         case 'laser-scan-update':
           mainWindow?.webContents.send('laser-scan-data', message.data);
           break;
+        case 'patrol-start-result':
+            mainWindow?.webContents.send('patrol-start-result', message.data);
+            break;
+        case 'patrol-pause-result':
+            mainWindow?.webContents.send('patrol-pause-result', message.data);
+            break;
+        case 'patrol-resume-result':
+            mainWindow?.webContents.send('patrol-resume-result', message.data);
+            break;
+        case 'patrol-stop-result':
+            mainWindow?.webContents.send('patrol-stop-result', message.data);
+            break;
 
         default:
           console.warn('[main]: Unknown message from worker:', message);

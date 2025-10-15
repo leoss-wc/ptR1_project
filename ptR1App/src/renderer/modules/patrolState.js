@@ -1,134 +1,42 @@
-import { yawToQuaternion } from './utils.js';
-// patrolState.js
+// ./modules/patrolState.js
+
 export let patrolPath = [];
+export let isLooping = false;
+export let currentStatus = "Idle";
 export let goalPoint = null;
 export let isPatrolling = false;
-export let currentGoalIndex = -1;
-export let isLooping = false;
 
+let statusListeners = [];
 
-export function setPatrolPath(path) {
-  patrolPath = [...path];
+// ฟังก์ชันสำหรับให้ส่วนอื่นของ UI มาติดตามสถานะ
+export function addStatusListener(callback) {
+    statusListeners.push(callback);
 }
 
-export function setGoalPoint(pose) {
-  goalPoint = pose;
-}
-
-export function clearGoalPoint() {
-  goalPoint = null;
+// ฟังก์ชันสำหรับอัปเดตสถานะและแจ้งเตือน Listener ทั้งหมด
+export function updateStatus(newStatus) {
+    currentStatus = newStatus;
+    statusListeners.forEach(cb => cb(currentStatus));
 }
 
 export function setLooping(value) {
   isLooping = value;
   console.log(`Patrol looping mode set to: ${isLooping}`);
 }
-
-// 🔧 แก้ไข: คำนวณทิศทางสำหรับ Goal แรก
-export function startPatrolState() {
-  if (patrolPath.length === 0) {
-    console.warn("No patrol path set. Cannot start patrol.");
-    return;
-  }
-  isPatrolling = true;
-  currentGoalIndex = 0;
-
-  const firstPosition = patrolPath[0];
-  let orientation = { x: 0, y: 0, z: 0, w: 1 }; // ทิศทางเริ่มต้น
-
-  // ถ้ามีจุดถัดไป (จุดที่ 2) ให้คำนวณทิศทางจากจุดแรกไปหาจุดที่สอง
-  if (patrolPath.length > 1) {
-    const secondPosition = patrolPath[1];
-    const dx = secondPosition.x - firstPosition.x;
-    const dy = secondPosition.y - firstPosition.y;
-    const yaw = Math.atan2(dy, dx);
-    orientation = yawToQuaternion(yaw);
-  }
-
-  const firstPose = {
-    position: firstPosition,
-    orientation: orientation
-  };
-  setGoalPoint(firstPose);
-  console.log("Patrol started. Current goal index:", currentGoalIndex);
+// เพิ่มฟังก์ชันนี้เข้าไป
+export function clearDrawnPath() {
+    patrolPath.length = 0; // วิธีเคลียร์ array ที่เร็วและปลอดภัย
+    updateStatus("Idle"); // อาจจะรีเซ็ตสถานะด้วย
 }
 
-export function pausePatrolState() {
-  isPatrolling = false;
-  console.log("Patrol paused.");
+export function setGoalPoint(pose) {
+    goalPoint = pose;
 }
 
-export function resumePatrolState() {
-  if (currentGoalIndex === -1 || patrolPath.length === 0) {
-    console.warn("Cannot resume patrol. No current goal or patrol path set.");
-    return;
-  }
-  isPatrolling = true;
-  console.log("Patrol resumed.");
-  setGoalPoint(goalPoint); // ใช้ goalPoint เดิมที่ถูก pause ไว้
+export function clearGoalPoint() {
+    goalPoint = null;
 }
 
-export function stopPatrolState() {
-  isPatrolling = false;
-  currentGoalIndex = -1;
-  clearGoalPoint();
-  console.log("Patrol stopped and reset.");
-}
-
-export function moveToNextGoal() {
-  const previousIndex = currentGoalIndex;
-
-  let nextIndex;
-  // --- กรณีถึงจุดสุดท้าย ---
-  if (currentGoalIndex >= patrolPath.length - 1) {
-    if (isLooping) {
-        //  START: Logic ใหม่สำหรับจัดการ Loop
-        const lastIndex = patrolPath.length - 1;
-        // ตรวจสอบว่ามี Path มากกว่า 1 จุด และจุดแรกกับจุดสุดท้ายเป็นตำแหน่งเดียวกันหรือไม่
-        if (patrolPath.length > 1 &&
-            patrolPath[0].x === patrolPath[lastIndex].x &&
-            patrolPath[0].y === patrolPath[lastIndex].y) 
-        {
-            // ถ้าใช่ ให้ข้ามไปที่จุดที่ 2 (index 1) เลย
-            nextIndex = 1;
-            console.log("Closed loop detected. Skipping to index 1.");
-        } else {
-            // ถ้าไม่ใช่ Loop แบบปิด ให้กลับไปที่จุดแรกตามปกติ
-            nextIndex = 0;
-            console.log("Looping back to the first goal (index 0).");
-        }
-        // ✨ END: Logic ใหม่
-    } else {
-      // ถ้าไม่วน Loop ให้หยุด
-      stopPatrolState();
-      return null;
-    }
-  } 
-  // --- กรณียังไม่ถึงจุดสุดท้าย ---
-  else {
-    nextIndex = currentGoalIndex + 1;
-  }
-  
-  currentGoalIndex = nextIndex;
-
-  const currentPosition = patrolPath[previousIndex];
-  const nextPosition = patrolPath[nextIndex];
-  let orientation = { x: 0, y: 0, z: 0, w: 1 };
-
-  const dx = nextPosition.x - currentPosition.x;
-  const dy = nextPosition.y - currentPosition.y;
-
-  if (Math.hypot(dx, dy) > 0.01) {
-      const yaw = Math.atan2(dy, dx);
-      orientation = yawToQuaternion(yaw);
-  }
-  
-  const nextPose = {
-    position: nextPosition,
-    orientation: orientation
-  };
-
-  setGoalPoint(nextPose);
-  console.log(`Moving to next goal (index ${currentGoalIndex}) with calculated orientation.`);
-  return goalPoint;
+export function setPatrolling(status) {
+    isPatrolling = status;
 }

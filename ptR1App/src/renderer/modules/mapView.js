@@ -61,8 +61,6 @@ export function handleMouseMove(e) {
   if (redrawStaticCallback) redrawStaticCallback();
   if (redrawLiveCallback) redrawLiveCallback();
 }
-
-
 export function handleMouseUp(e) {
   isDragging = false;
   e.target.style.cursor = 'grab';
@@ -86,3 +84,4 @@ export function applyTransform(ctx) {
 export function restoreTransform(ctx) {
   ctx.restore();
 }
+

@@ -11,72 +11,102 @@
 #include <sensor_msgs/Imu.h>                // ใช้สำหรับส่งข้อมูลจาก IMU ไปยัง ROS
 #include <sensor_msgs/MagneticField.h>      // ใช้สำหรับส่งค่าของ Compass (สนามแม่เหล็ก)
 #include <std_msgs/String.h>                // ใช้สำหรับส่งข้อมูลเป็นข้อความ
+#include <tf/transform_broadcaster.h> 
+#include <nav_msgs/Odometry.h>
 
 #include <avr/io.h>                         // ไลบรารีควบคุม I/O ของ ATmega
 #include <avr/interrupt.h>                  // ไลบรารีสำหรับใช้ Interrupts
 #include <Wire.h>                            // ไลบรารีสำหรับ I2C communication
 #include <Servo.h>                          // ไลบรารีควบคุม Servo
 #include <math.h>                           // IMU normalized
-
-
-// ค่าคงที่ของ Timer
-#define TIMER_INTERVAL_MS_sensor 50  // Sampling interval for sensors (50ms = 20Hz)
-#define FREQ 16000000  // ความถี่ของ CPU (16MHz)
-#define PRESCALER 1024  // ค่าแบ่งสัญญาณของ Timer
+#include <stdlib.h>
 
 // การกำหนดพินของมอเตอร์ไดรเวอร์ (Motor Driver)
-#define md1_AIN2 35
-#define md1_AIN1 37
-#define md1_BIN1 41
-#define md1_BIN2 43
-#define md1_PWMA 12 
-#define md1_PWMB 13
+const uint8_t md1_AIN2  = 35;
+const uint8_t md1_AIN1  = 37;
+const uint8_t md1_BIN1  = 41;
+const uint8_t md1_BIN2  = 43;
+const uint8_t md1_PWMA  = 12;
+const uint8_t md1_PWMB  = 13;
 
-#define md1_STBY 39
+const uint8_t md1_STBY  = 39;
                     
-#define md2_AIN2 40 
-#define md2_AIN1 42 
-#define md2_BIN1 34 
-#define md2_BIN2 36 
-#define md2_PWMA 10
-#define md2_PWMB 11
+const uint8_t md2_AIN2 = 40;
+const uint8_t md2_AIN1 = 42;
+const uint8_t md2_BIN1 = 34;
+const uint8_t md2_BIN2 = 36;
+const uint8_t md2_PWMA = 10;
+const uint8_t md2_PWMB = 11;
 
-#define md2_STBY 38  // ขาสำหรับเปิดใช้งานมอเตอร์ (STBY)
+const uint8_t md2_STBY = 38;  // ขาสำหรับเปิดใช้งานมอเตอร์ (STBY)
 
 // Wheels mapping 
-#define FL_IN1 md1_AIN1
-#define FL_IN2 md1_AIN2
-#define FL_PWM md1_PWMA
+const uint8_t FL_IN1 = md1_AIN1;
+const uint8_t FL_IN2 = md1_AIN2;
+const uint8_t FL_PWM = md1_PWMA;
 
-#define FR_IN1   md2_AIN1
-#define FR_IN2   md2_AIN2
-#define FR_PWM   md2_PWMA
+const uint8_t FR_IN1 = md2_AIN1;
+const uint8_t FR_IN2 = md2_AIN2;
+const uint8_t FR_PWM = md2_PWMA;
 
-#define RL_IN1   md2_BIN1
-#define RL_IN2   md2_BIN2
-#define RL_PWM   md2_PWMB
+const uint8_t RL_IN1 = md2_BIN1;
+const uint8_t RL_IN2 = md2_BIN2;
+const uint8_t RL_PWM = md2_PWMB;
 
-#define RR_IN1   md1_BIN1
-#define RR_IN2   md1_BIN2
-#define RR_PWM   md1_PWMB
-
-
+const uint8_t RR_IN1 = md1_BIN1;
+const uint8_t RR_IN2 = md1_BIN2;
+const uint8_t RR_PWM = md1_PWMB;
 
 
-#define RELAY1 33    // pin relay 1
-#define RELAY2 32    // pin relay 2
+// Motor 1: Front-Left (FL)
+const uint8_t ENCODER_FL_A = 2;   // Hardware Interrupt Pin (INT.4) -> Port E, Bit 4 (PE4)
+const uint8_t ENCODER_FL_B = 4;  // Port G, Bit 5 (PG5)
 
-// ค่า Baud Rate ของ Serial Communication
-#define BAUD_RATE 250000
+// Motor 2: Rear-Right (RR)
+const uint8_t ENCODER_RR_A = 3;  // Hardware Interrupt Pin (INT.5) -> Port E, Bit 5 (PE5)
+const uint8_t ENCODER_RR_B = 5;  // Port E, Bit 3 (PE3)
+
+// Motor 3: Front-Right (FR)
+const uint8_t ENCODER_FR_A = 18;  // Hardware Interrupt Pin (INT.3) -> Port D, Bit 3 (PD3)
+const uint8_t ENCODER_FR_B = 22; // Port A, Bit 0 (PA0)
+
+// Motor 4: Rear-Left (RL)
+const uint8_t ENCODER_RL_A = 19; // Hardware Interrupt Pin (INT.2) -> Port D, Bit 2 (PD2)
+const uint8_t ENCODER_RL_B = 23; // Port A, Bit 1 (PA1)
+
+
+
+const uint8_t RELAY1 = 33;    // pin relay 1
+const uint8_t RELAY2 = 32;   // pin relay 2
+
+//Robot Physical Parameters
+const float WHEEL_RADIUS = 0.04;     // รัศมีล้อ (เมตร)
+const float L1 = 0.105;              // ระยะครึ่งหนึ่งของความยาวหุ่นยนต์ (เมตร)
+const float L2 = 0.0825;            // ระยะครึ่งหนึ่งของความกว้างหุ่นยนต์ (เมตร)
+const float PPR = 660.0;             // Pulses Per Revolution ของ Encoder
+const float MAX_LINEAR_SPEED = 0.5;   // ความเร็วไปข้างหน้า/ด้านข้างสูงสุด (m/s)
+const float MAX_ANGULAR_SPEED = 1.0;  // ความเร็วในการหมุนสูงสุด (rad/s)
+
+//Encoder Reset Thresholds
+const long MAX_POSITION_ENC = 20000000;
+const long ENCODER_MIDPOINT = 10000000;
+
+// --- Main Loop Timings ---
+const unsigned long ODOM_INTERVAL_MS = 40;         // คำนวณและส่ง Odometry ทุก 40ms (25 Hz)
+const unsigned long COMPASS_INTERVAL_MS = 100;     // อ่าน Compass ทุก 100ms (10 Hz)
+const unsigned long IMU_INTERVAL_MS = 50;          // อ่าน IMU ทุก 50ms (20 Hz)
+const unsigned long POWER_INTERVAL_MS = 1000;      // อ่าน Power Sensor ทุก 1000ms (1 Hz)
+const unsigned long DEBUG_INTERVAL_MS = 500;
+const unsigned int  ENCODER_DEBOUNCE_DELAY_US = 800; // ใช้ unsigned int สำหรับค่าที่ไม่ใหญ่มาก
 
 // ค่าคงที่ของ Compass Sensor (QMC5883L)
-#define QMC5883L_ADDRESS 0x0D
-#define MIN_X -1363
-#define MAX_X  665
-#define MIN_Y -1932
-#define MAX_Y  32
-#define MIN_Z -568
-#define MAX_Z -265
+const uint8_t QMC5883L_ADDRESS = 0x0D; // uint8_t หรือ byte เหมาะสำหรับ I2C address
+const int MIN_X = -1363;
+const int MAX_X = 665;
+const int MIN_Y = -1932;
+const int MAX_Y = 32;
+const int MIN_Z = -568;
+const int MAX_Z = -265;
 
 // Odometry
   float vx = 0.0, vy = 0.0, omega = 0.0;
@@ -95,16 +125,40 @@ const float SCALE_X = 0.8527;
 const float SCALE_Y = 0.8284;
 const float SCALE_Z = 1.6124;
 
-// พินของเซ็นเซอร์วัดกระแสและแรงดันไฟฟ้า
-#define CURRENT_SENSOR_PIN A9
-#define VOLTAGE_SENSOR_PIN A8
-// ค่าคงที่สำหรับเซ็นเซอร์วัดกระแสไฟฟ้า (ACS712-20A)
-#define ACS712_SENSITIVITY 0.100  // 0.100 V/A
-// ค่า offset ที่ได้จากการ calibrate (เช่น analogRead() ขณะไม่มีโหลด)
-#define ACS712_ZERO_RAW 511     
+// --- พินของเซ็นเซอร์วัดกระแสและแรงดันไฟฟ้า ---
+const uint8_t CURRENT_SENSOR_PIN = A9;
+const uint8_t VOLTAGE_SENSOR_PIN = A8;
 
-#define ADC_RESOLUTION 1024.0
-#define REFERENCE_VOLTAGE 5.0  // อ้างอิงแรงดันที่ 5V
+// --- ค่าคงที่สำหรับเซ็นเซอร์วัดกระแสไฟฟ้า (ACS712-20A) ---
+const float ACS712_SENSITIVITY = 0.100;    // 0.100 V/A
+const int   ACS712_ZERO_RAW    = 511;       // ค่า offset ที่ได้จากการ calibrate
+
+// --- ค่าอ้างอิงของ ADC ---
+const float ADC_RESOLUTION    = 1024.0;
+const float REFERENCE_VOLTAGE = 5.0;       // อ้างอิงแรงดันที่ 5V
+
+
+//Encoder Variables +++
+volatile long counter_FL = ENCODER_MIDPOINT;
+volatile long counter_FR = ENCODER_MIDPOINT;
+volatile long counter_RL = ENCODER_MIDPOINT;
+volatile long counter_RR = ENCODER_MIDPOINT;
+
+volatile byte prevA_FL;
+volatile byte prevA_FR;
+volatile byte prevA_RL;
+volatile byte prevA_RR;
+
+long prevFL = ENCODER_MIDPOINT;
+long prevFR = ENCODER_MIDPOINT;
+long prevRL = ENCODER_MIDPOINT;
+long prevRR = ENCODER_MIDPOINT;
+
+
+volatile unsigned long last_interrupt_time_FL = 0;
+volatile unsigned long last_interrupt_time_FR = 0;
+volatile unsigned long last_interrupt_time_RL = 0;
+volatile unsigned long last_interrupt_time_RR = 0;
 
 // พินของ Servo Motor
 const uint8_t SERVO1_PIN = 44;
@@ -112,16 +166,15 @@ const uint8_t SERVO2_PIN = 46;
 
 // ค่าเริ่มต้นของ Servo
 Servo servo1, servo2;
-const uint16_t MIN_POSITION = 1000;   // ตำแหน่งต่ำสุดของ Servo (us)
-const uint16_t MAX_POSITION = 2000;   // ตำแหน่งสูงสุดของ Servo (us)
+const uint16_t MIN_POSITION_SV = 1000;   // ตำแหน่งต่ำสุดของ Servo (us)
+const uint16_t MAX_POSITION_SV = 2000;   // ตำแหน่งสูงสุดของ Servo (us)
 uint16_t current_position_1 = 1500;  // ตำแหน่งเริ่มต้นของ Servo1 (90°)
 uint16_t current_position_2 = 1500;  // ตำแหน่งเริ่มต้นของ Servo2 (90°)
 uint16_t STEP_SIZE_X = 55;  // ขยับ 10 องศา ≈ 55us
 uint16_t STEP_SIZE_Y = 28;  // ขยับ 5 องศา ≈ 28us
 
 // Debugging
-#define DEBUG_BUFFER_SIZE 128
-char debug_buffer[DEBUG_BUFFER_SIZE];
+char debug_buffer[128];
 bool DEBUG_MODE_S2 = 1;   // เปิดใช้งาน Debug Mode
 bool debug_flag = 1;       // เปิดใช้งานการพิมพ์ข้อมูล Debug
 
@@ -142,25 +195,31 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg);
 
 // ROS Node และข้อความที่ใช้ใน ROS
 ros::NodeHandle nh;
-sensor_msgs::Imu imu_msg;
-sensor_msgs::Imu mag_msg;
+sensor_msgs::Imu imu_msg; 
 std_msgs::String debug_msgs;
 std_msgs::UInt32 sensor_data_msg;
-std_msgs::Float32 temp_msg;
 geometry_msgs::Twist cmd_vel_msg;
+nav_msgs::Odometry odom_msg;
 
 // ROS Publishers
-ros::Publisher mag_pub("/imu/mag", &mag_msg);
+ros::Publisher odom_pub("/odom", &odom_msg);
+ros::Publisher imu_pub("/imu/data", &imu_msg);
 ros::Publisher debug_pub("debug/data", &debug_msgs);
 ros::Publisher sensor_data_pub("/sensor/data", &sensor_data_msg);
-ros::Publisher imu_raw_pub("imu/data_raw", &imu_msg);
-ros::Publisher temp_pub("imu/temperature", &temp_msg);
 
 // ROS Subscribers
 ros::Subscriber<std_msgs::UInt16> sub_drive("/rb/cm/dr", DriveCallback);
 ros::Subscriber<std_msgs::UInt8> sub_servo("/rb/cm/sv", command_servo);
 ros::Subscriber<std_msgs::UInt32> sub_edit("/rb/cm/ed", commandEdit);
 ros::Subscriber<geometry_msgs::Twist> sub_cmd_vel("/cmd_vel", cmdVelCallback);
+
+tf::TransformBroadcaster broadcaster;
+geometry_msgs::TransformStamped odom_trans;
+char odom_frame[] = "odom";
+char base_link_frame[] = "base_link";
+double x_pos = 0.0;
+double y_pos = 0.0;
+double theta = 0.0; 
 
 // ตัวแปรเก็บสถานะของมอเตอร์
 unsigned long current_time;
@@ -180,21 +239,21 @@ uint16_t time_delay = 60;  // เวลาหน่วงสำหรับห�
  */
 void setup() {
     // ตั้งค่าการสื่อสาร Serial และ I2C
-    Serial.begin(BAUD_RATE);     // Serial หลักสำหรับ rosserial 250000
-    Serial1.begin(57600);        // Serial1 สำหรับการรับข้อมูลจาก Arduino อื่นๆ
+    Serial.begin(250000);     // Serial หลักสำหรับ rosserial 250000
     Serial2.begin(115200);       // Serial2 สำหรับ Debugging เพิ่มเติม
     Wire.begin();                // เริ่มใช้งาน I2C
     Wire.setClock(400000);       // ตั้งค่า I2C Speed เป็น 400kHz (Fast Mode)
 
     // ตั้งค่า ROS Node
-    nh.getHardware()->setBaud(BAUD_RATE);
+    nh.getHardware()->setBaud(250000);
     nh.initNode();
     
     // กำหนด Publisher สำหรับส่งข้อมูลไปยัง ROS
-    nh.advertise(mag_pub);
+    nh.advertise(imu_pub); 
     nh.advertise(debug_pub);
     nh.advertise(sensor_data_pub);
-    nh.advertise(imu_raw_pub);
+    nh.advertise(odom_pub);
+    broadcaster.init(nh);
 
     // กำหนด Subscriber สำหรับรับคำสั่งจาก ROS
     nh.subscribe(sub_drive);
@@ -219,6 +278,28 @@ void setup() {
     pinMode(md2_BIN2, OUTPUT);
     pinMode(md2_PWMA, OUTPUT);
     pinMode(md2_PWMB, OUTPUT);
+
+    //Encoder Pin Initialization
+    pinMode(ENCODER_FL_A, INPUT_PULLUP);
+    pinMode(ENCODER_FL_B, INPUT_PULLUP);
+    pinMode(ENCODER_FR_A, INPUT_PULLUP);
+    pinMode(ENCODER_FR_B, INPUT_PULLUP);
+    pinMode(ENCODER_RL_A, INPUT_PULLUP);
+    pinMode(ENCODER_RL_B, INPUT_PULLUP);
+    pinMode(ENCODER_RR_A, INPUT_PULLUP);
+    pinMode(ENCODER_RR_B, INPUT_PULLUP);
+    //Attach Interrupts for Encoders
+    attachInterrupt(digitalPinToInterrupt(ENCODER_FL_A), isr_FL, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_FR_A), isr_FR, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_RL_A), isr_RL, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_RR_A), isr_RR, CHANGE);
+
+    // อ่านค่าเริ่มต้นของขา A แต่ละตัวเก็บไว้ในตัวแปร prevA
+    // เพื่อให้การทำงานใน ISR ครั้งแรกถูกต้อง
+    prevA_FL = (PINE >> PINE4) & 1;
+    prevA_FR = (PIND >> PIND3) & 1;
+    prevA_RL = (PIND >> PIND2) & 1;
+    prevA_RR = (PINE >> PINE5) & 1;
 
 
     //Relay pinout
@@ -287,29 +368,26 @@ void setup() {
  */
 void loop() {
     // ใช้ตัวแปร static เพื่อติดตามเวลาที่ผ่านไปของแต่ละเซ็นเซอร์
+    static unsigned long lastOdomCalcTime = 0;
     static unsigned long lastCompassTime = 0;
     static unsigned long lastIMUTime = 0;
     static unsigned long lastPowerSensorTime = 0;
-    unsigned long now = millis(); // อ่านเวลาปัจจุบัน
+    static unsigned long lastDebugTime = 0;
+    unsigned long now = millis();
+    // Calculate and Publish Odometry Velocity
+    if (now - lastOdomCalcTime >= ODOM_INTERVAL_MS) {
+        calculateAndPublishOdometry();
+        lastOdomCalcTime = now;
 
-    while (Serial1.available()) {
-    char c = Serial1.read();
-    processSerialData(c);
     }
-
-    // อ่านค่าจาก Compass ทุกๆ 100ms (10Hz)
-    if ((now - lastCompassTime >= 10)&& use_imu_mag) {  
-        readCompass();
-        lastCompassTime = now;
-    }
-
-    // อ่านค่าจาก IMU ทุกๆ 20ms (50Hz)
-    if ((now - lastIMUTime >= 50)&& use_imu) {  
-        readIMU();
+    // Read MPU6050 and comapss
+    if (now - lastIMUTime >= IMU_INTERVAL_MS) {
+        publishFusedIMUData(); // <-- เรียกใช้ฟังก์ชันใหม่ที่รวมข้อมูล
         lastIMUTime = now;
     }
-    // อ่านค่ากระแสไฟฟ้าและแรงดันไฟฟ้าทุกๆ 1000ms (1Hz)
-    if (now - lastPowerSensorTime >= 1000) {  
+
+    // Read Power Sensors
+    if (now - lastPowerSensorTime >= POWER_INTERVAL_MS) {  
         current_mA = readCurrent();
         voltage_cV = readVoltage();
         sensor_data_msg.data = ((uint32_t)current_mA << 16) | voltage_cV;
@@ -323,22 +401,30 @@ void loop() {
         if (current_time - last_cmd_time > time_delay) {
             // หากไม่มีคำสั่งใหม่ในช่วงเวลาที่กำหนด ให้หยุดมอเตอร์
             MotorCoastMode(); // อาจใช้โหมด coast mode เพื่อปล่อยมอเตอร์ให้หมุนอิสระ
-            motor_running = false;  
+            motor_running = false; 
+            /* 
             if (debug_flag) {
                 snprintf(debug_buffer, sizeof(debug_buffer),
                         "Auto-stop: No cmd received");
                 DebugPublish(debug_buffer);
-            }
+            }*/
 
         }
     }
 
-    // อัปเดต ROS Node และรอรับคำสั่งใหม่
-    static unsigned long lastSpinTime = 0;
-    if (now - lastSpinTime >= 5) {  // 200Hz
-      nh.spinOnce();
-      lastSpinTime = now;
+    if (debug_flag && (now - lastDebugTime >= DEBUG_INTERVAL_MS)) {
+        char encoder_debug_buffer[80];
+        snprintf(encoder_debug_buffer, sizeof(encoder_debug_buffer),
+                 "Encoders: FL:%ld FR:%ld RL:%ld RR:%ld",
+                 counter_FL, counter_FR, counter_RL, counter_RR);
+        DebugPublish(encoder_debug_buffer);
+        lastDebugTime = now;
     }
+    checkAndResetEncoder(counter_FL);
+    checkAndResetEncoder(counter_FR);
+    checkAndResetEncoder(counter_RL);
+    checkAndResetEncoder(counter_RR);
+    nh.spinOnce();
 }
 
 /**
@@ -367,127 +453,66 @@ void MotorCoastMode(){
 }
 
 /**
- * @brief ควบคุมการเคลื่อนที่ของหุ่นยนต์ Mecanum
- * 
- * ฟังก์ชันนี้ใช้กำหนดทิศทางและความเร็วของหุ่นยนต์โดยอ้างอิงจาก
- * หมายเลขมอเตอร์ที่ตั้งค่าไว้ (FL(M1), FR(M2), RL(M3), RR(M4)) และปรับความเร็วโดยใช้ PWM
- *
- * @param direction ทิศทางการเคลื่อนที่ของหุ่นยนต์ (1-10)
- *  - 1: Forward (เดินหน้า)
- *  - 2: Left (ซ้าย)
- *  - 3: Right (ขวา)
- *  - 4: Backward (ถอยหลัง)
- *  - 5: Turn Left (หมุนซ้าย)
- *  - 6: Turn Right (หมุนขวา)
- *  - 7: Forward Left (เดินหน้าเฉียงซ้าย)
- *  - 8: Forward Right (เดินหน้าเฉียงขวา)
- *  - 9: Backward Left (ถอยหลังเฉียงซ้าย)
- *  - 10: Backward Right (ถอยหลังเฉียงขวา)
- * @param pwmMD1A ค่าความเร็วของมอเตอร์ FL (0-255)
- * @param pwmMD1B ค่าความเร็วของมอเตอร์ FR (0-255)
- * @param pwmMD2A ค่าความเร็วของมอเตอร์ RL (0-255)
- * @param pwmMD2B ค่าความเร็วของมอเตอร์ RR (0-255)
+ * @brief (ล่าม) แปลคำสั่งควบคุมแบบ Manual (ทิศทาง + PWM)
+ * ให้เป็นคำสั่งความเร็ว (vx, vy, omega) แล้วส่งให้ controlMotors() คำนวณต่อ
+ * * @param direc ทิศทางการเคลื่อนที่ของหุ่นยนต์ (1-10)
+ * @param pwm ค่าความเร็ว PWM ที่ได้รับ (0-255)
  */
-void moveRobot(uint8_t direc, uint8_t pwmMD1A, uint8_t pwmMD1B, uint8_t pwmMD2A, uint8_t pwmMD2B) {
-    const char* direction_str = "Unknown";
+void moveRobot(uint8_t direc, uint8_t pwm) {
+    // แปลงค่า pwm (0-255) ให้เป็น "ขนาดของความเร็ว" ที่จะใช้ในการคำนวณ
+    float speed_magnitude = (float)pwm;
+    float vx = 0.0, vy = 0.0, omega = 0.0;
 
+    // แปลงคำสั่งทิศทางให้เป็นค่า vx, vy, omega
     switch (direc) {
         case 1:  // Forward
-            setMotorDirection(1, 0); setMotorDirection(2, 0);
-            setMotorDirection(3, 0); setMotorDirection(4, 0);
-            direction_str = "Forward";
+            vx = speed_magnitude;
             break;
-
-        case 2:  // Left
-            setMotorDirection(1, 1); setMotorDirection(2, 0);
-            setMotorDirection(3, 0); setMotorDirection(4, 1);
-            direction_str = "Left";
+        case 2:  // Left (Strafe)
+            vy = -speed_magnitude;
             break;
-
-        case 3:  // Right
-            setMotorDirection(1, 0); setMotorDirection(2, 1);
-            setMotorDirection(3, 1); setMotorDirection(4, 0);
-            direction_str = "Right";
+        case 3:  // Right (Strafe)
+            vy = speed_magnitude;
             break;
-
         case 4:  // Backward
-            setMotorDirection(1, 1); setMotorDirection(2, 1);
-            setMotorDirection(3, 1); setMotorDirection(4, 1);
-            direction_str = "Backward";
+            vx = -speed_magnitude;
             break;
-
         case 5:  // Turn Left
-            setMotorDirection(1, 1); setMotorDirection(2, 0);
-            setMotorDirection(3, 1); setMotorDirection(4, 0);
-            direction_str = "Turn Left";
+            omega = speed_magnitude;
             break;
-
         case 6:  // Turn Right
-            setMotorDirection(1, 0); setMotorDirection(2, 1);
-            setMotorDirection(3, 0); setMotorDirection(4, 1);
-            direction_str = "Turn Right";
+            omega = -speed_magnitude;
             break;
-
-        case 7:  // Forward Left
-            setMotorCoastMode(1);    // FL
-            setMotorDirection(2, 0); // FR
-            setMotorDirection(3, 0); // RL
-            setMotorCoastMode(4);    // RR
-            direction_str = "Forward Left";
-            pwmMD1A = 0;
-            pwmMD2B = 0;
+        case 7:  // Forward-Left
+            vx = speed_magnitude * 0.707;
+            vy = -speed_magnitude * 0.707;
             break;
-
-        case 8:  // Forward Right
-            setMotorDirection(1, 0); // FL
-            setMotorCoastMode(2);    // FR
-            setMotorCoastMode(3);    // RL
-            setMotorDirection(4, 0); // RR
-            direction_str = "Forward Right";
-            pwmMD1B = 0;
-            pwmMD2A = 0;
+        case 8:  // Forward-Right
+            vx = speed_magnitude * 0.707;
+            vy = speed_magnitude * 0.707;
             break;
-
-        case 9:  // Backward Left
-            setMotorCoastMode(1);    // FL
-            setMotorDirection(2, 1); // FR
-            setMotorDirection(3, 1); // RL
-            setMotorCoastMode(4);    // RR
-            direction_str = "Backward Left";
-            pwmMD1A = 0;
-            pwmMD2B = 0;
+        case 9:  // Backward-Left
+            vx = -speed_magnitude * 0.707;
+            vy = -speed_magnitude * 0.707;
             break;
-
-        case 10:  // Backward Right
-            setMotorDirection(1, 1); // FL
-            setMotorCoastMode(2);    // FR
-            setMotorCoastMode(3);    // RL
-            setMotorDirection(4, 1); // RR
-            direction_str = "Backward Right";
-            pwmMD1B = 0;
-            pwmMD2A = 0;
+        case 10: // Backward-Right
+            vx = -speed_magnitude * 0.707;
+            vy = speed_magnitude * 0.707;
             break;
-
-        default:
-            Serial2.println("Invalid direction command");
-            return;
+        default: // ถ้าคำสั่งผิดพลาด ให้หยุด
+            vx = 0; vy = 0; omega = 0;
+            break;
     }
-
-    // ตั้งค่า PWM ให้กับมอเตอร์
-    analogWrite(FL_PWM, pwmMD1A); // M1 = FL
-    analogWrite(FR_PWM, pwmMD1B); // M2 = FR
-    analogWrite(RL_PWM, pwmMD2A); // M3 = RL
-    analogWrite(RR_PWM, pwmMD2B); // M4 = RR
+    controlMotors(vx, vy, omega);
 
     // Debug
     if (debug_flag) {
         snprintf(debug_buffer, sizeof(debug_buffer),
-                 "Direc: %s (%d)  FL:%d  FR:%d  RL:%d  RR:%d",
-                 direction_str, direc, pwmMD1A, pwmMD1B, pwmMD2A, pwmMD2B);
+                 "Manual CMD: Direc=%d PWM=%d -> vx=%.0f vy=%.0f w=%.0f",
+                 direc, pwm, vx, vy, omega);
         DebugPublish(debug_buffer);
     }
 }
-
 
 /**
  * @brief ทำให้มอเตอร์หมุนอิสระ (Coast Mode)
@@ -551,15 +576,19 @@ void setMotorDirection(uint8_t motorNum, bool direction) {
  */
 void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
     if (current_mode == AUTO) { // รับคำสั่งเฉพาะโหมดอัตโนมัติ
-        float vx = cmd_vel_msg.linear.x * 100;    // ปรับสเกลให้เหมาะกับ PWM (ค่าต้องไม่เกิน 255)
-        float vy = cmd_vel_msg.linear.y * 100;
-        float omega = cmd_vel_msg.angular.z * 100;
+        float vx = map_float(cmd_vel_msg.linear.x, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
+        float vy = map_float(cmd_vel_msg.linear.y, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
+        float omega = map_float(cmd_vel_msg.angular.z, -MAX_ANGULAR_SPEED, MAX_ANGULAR_SPEED, -255.0, 255.0);
+        
         controlMotors(vx, vy, omega);
 
-        // อัปเดตเวลาล่าสุดที่ได้รับคำสั่ง
         motor_running = true;
         last_cmd_time = millis();
     }
+}
+
+float map_float(float x, float in_min, float in_max, float out_min, float out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
 
 /**
@@ -575,11 +604,15 @@ void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
  * - ส่งค่าความเร็วไปยัง `setMotorPWM()` เพื่อควบคุมมอเตอร์
  */
 void controlMotors(float vx, float vy, float omega) {
+    snprintf(debug_buffer, sizeof(debug_buffer),
+                 "vx: %.4f  vy: %.4f  omega: %.4f", vx, vy,omega);
+        DebugPublish(debug_buffer);
+    
     //  คำนวณความเร็วของล้อแต่ละตัว
-    float wheel_FL = vx - vy - omega;  // ล้อหน้า-ซ้าย (Front-Left)
-    float wheel_FR = vx + vy + omega;  // ล้อหน้า-ขวา (Front-Right)
-    float wheel_RL = vx + vy - omega;  // ล้อหลัง-ซ้าย (Rear-Left)
-    float wheel_RR = vx - vy + omega;  // ล้อหลัง-ขวา (Rear-Right)
+    float wheel_FL = vx - vy - (L1 + L2) * omega;
+    float wheel_FR = vx + vy + (L1 + L2) * omega;
+    float wheel_RL = vx + vy - (L1 + L2) * omega; // แก้ไข
+    float wheel_RR = vx - vy + (L1 + L2) * omega; // แก้ไข
 
     //  ปรับค่าสเกลให้ไม่เกิน -255 ถึง 255
     float maxVal = max(max(abs(wheel_FL), abs(wheel_FR)), 
@@ -591,14 +624,10 @@ void controlMotors(float vx, float vy, float omega) {
         wheel_RR *= 255.0 / maxVal;
     }
 
-    //  ส่งค่าควบคุมมอเตอร์ไปยัง `setMotorPWM()`
-    // MD1 - ควบคุมมอเตอร์หน้า-ซ้าย (M1) และหน้า-ขวา (M2)
-    setMotorPWM(wheel_FL, FL_IN1, FL_IN2, FL_PWM);  // M1 - FL
-    setMotorPWM(wheel_FR, FR_IN1, FR_IN2, FR_PWM);  // M2 - FR
-    
-    // MD2 - ควบคุมมอเตอร์หลัง-ซ้าย (M3) และหลัง-ขวา (M4)
-    setMotorPWM(wheel_RL, RL_IN1, RL_IN2, RL_PWM);  // M3 - RL
-    setMotorPWM(wheel_RR, RR_IN1, RR_IN2, RR_PWM);  // M4 - RR
+    setMotorPWM(wheel_FL, FL_IN1, FL_IN2, FL_PWM); // M1: Front-Left
+    setMotorPWM(wheel_FR, FR_IN1, FR_IN2, FR_PWM); // M3: Front-Right
+    setMotorPWM(wheel_RL, RL_IN1, RL_IN2, RL_PWM); // M4: Rear-Left
+    setMotorPWM(wheel_RR, RR_IN1, RR_IN2, RR_PWM); // M2: Rear-Right
 }
 
 /**
@@ -619,6 +648,7 @@ void controlMotors(float vx, float vy, float omega) {
  */
 void setMotorPWM(float speed, int in1, int in2, int pwmPin) {
     //  คำนวณค่าความเร็วของ PWM (ปรับให้ไม่เกิน 255)
+    
     int pwmVal = abs(speed);
     if (pwmVal > 255) pwmVal = 255;
 
@@ -652,7 +682,7 @@ void setMotorPWM(float speed, int in1, int in2, int pwmPin) {
  * 
  * @details
  * - ใช้ `ServoTimer2` ในการควบคุมเซอร์โว โดยค่าที่ใช้เป็นค่า `pulse width` (1000-2000 µs)
- * - จำกัดค่าการเคลื่อนที่ของเซอร์โวไม่ให้ออกนอกช่วงที่กำหนด (`MIN_POSITION` - `MAX_POSITION`)
+ * - จำกัดค่าการเคลื่อนที่ของเซอร์โวไม่ให้ออกนอกช่วงที่กำหนด (`MIN_POSITION_SV` - `MAX_POSITION_SV`)
  * - ใช้ฟังก์ชัน `moveServo(pin, value)` เพื่อกำหนดตำแหน่งของเซอร์โว
  * - ค่า `STEP_SIZE_X` และ `STEP_SIZE_Y` ใช้กำหนดระดับการเคลื่อนที่ของเซอร์โวในแต่ละคำสั่ง
  */
@@ -663,22 +693,22 @@ void command_servo(const std_msgs::UInt8& msg) {
     }
     switch (msg.data) {
         case 0x1: // ซ้าย
-            current_position_1 = max(current_position_1 - STEP_SIZE_X, MIN_POSITION);
+            current_position_1 = max(current_position_1 - STEP_SIZE_X, MIN_POSITION_SV);
             servo1.writeMicroseconds(current_position_1);
             break;
 
         case 0x2: // ขวา
-            current_position_1 = min(current_position_1 + STEP_SIZE_X, MAX_POSITION);
+            current_position_1 = min(current_position_1 + STEP_SIZE_X, MAX_POSITION_SV);
             servo1.writeMicroseconds(current_position_1);
             break;
 
         case 0x3: // ขึ้น
-            current_position_2 = max(current_position_2 - STEP_SIZE_Y, MIN_POSITION);
+            current_position_2 = max(current_position_2 - STEP_SIZE_Y, MIN_POSITION_SV);
             servo2.writeMicroseconds(current_position_2);
             break;
 
         case 0x4: // ลง
-            current_position_2 = min(current_position_2 + STEP_SIZE_Y, MAX_POSITION);
+            current_position_2 = min(current_position_2 + STEP_SIZE_Y, MAX_POSITION_SV);
             servo2.writeMicroseconds(current_position_2);
             break;
 
@@ -705,8 +735,8 @@ void command_servo(const std_msgs::UInt8& msg) {
     }
     // แสดงตำแหน่ง Pan / Tilt หลังสั่งงาน
     if (debug_flag) {
-        int pan_deg  = map(current_position_1, MIN_POSITION, MAX_POSITION, 0, 180);
-        int tilt_deg = map(current_position_2, MIN_POSITION, MAX_POSITION, 0, 180);
+        int pan_deg  = map(current_position_1, MIN_POSITION_SV, MAX_POSITION_SV, 0, 180);
+        int tilt_deg = map(current_position_2, MIN_POSITION_SV, MAX_POSITION_SV, 0, 180);
         snprintf(debug_buffer, sizeof(debug_buffer),
                  "Servo Pan: %d°  Tilt: %d°", pan_deg, tilt_deg);
         DebugPublish(debug_buffer);
@@ -871,7 +901,7 @@ void DriveCallback(const std_msgs::UInt16& dirve_msg) {
         uint8_t pwm = dirve_msg.data & 0xFF;               // ดึง 8 บิตหลัง (LSB) เป็นค่า PWM
 
         // ส่งคำสั่งไปยังฟังก์ชันควบคุมหุ่นยนต์
-        moveRobot(direction, pwm,pwm,pwm,pwm);
+        moveRobot(direction, pwm);
 
         // อัปเดตสถานะว่ามอเตอร์กำลังทำงาน
         motor_running = true;
@@ -889,42 +919,72 @@ void DebugPublish(const char* data){
   }
 }
 
-/**
- * @brief อ่านข้อมูลที่ได้รับจาก `Serial1` และประมวลผลคำสั่ง
- *
- * ฟังก์ชันนี้ทำหน้าที่อ่านข้อมูลที่ส่งมาผ่าน `Serial1` (UART)  
- * และนำไปประมวลผลหากเป็นคำสั่งที่ต้องการ โดยเฉพาะคำสั่ง `"D "` (D + space)  
- * ซึ่งใช้สำหรับอัปเดตค่าความเร็ว (`vx`, `vy`, `omega`) และเผยแพร่ Odometry
- *
- * @note ฟังก์ชันนี้จะตัดข้อความเมื่อเจอ '\n' และป้องกัน Buffer Overflow ด้วยขนาด 32 ไบต์
- */
-void processSerialData(char c) {
-    static String buffer = "";
-    
-    if (c == '\n') {  // จบข้อความเมื่อพบ '\n'
-        processReceivedCommand(buffer.c_str());  // ส่งข้อความไปประมวลผล
-        buffer = "";  // เคลียร์ buffer
-    } else {
-        buffer += c;  // เก็บข้อมูลเพิ่มเข้าไปใน buffer
+void publishFusedIMUData() {
+    //อ่าน Gyro & Accelerometer จาก MPU6050
+    int16_t ax, ay, az, gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+
+    const float accelScale = 16384.0; // MPU6050 in ±2g mode
+    const float gyroScale = 131.0;    // MPU6050 in ±250°/s mode
+    const float PI_OVER_180 = 0.01745329251; // PI / 180.0
+
+    //ใส่ข้อมูลความเร่งและความเร็วเชิงมุมลงใน message
+    imu_msg.linear_acceleration.x = (ax / accelScale) * 9.81;
+    imu_msg.linear_acceleration.y = (ay / accelScale) * 9.81;
+    imu_msg.linear_acceleration.z = (az / accelScale) * 9.81;
+
+    imu_msg.angular_velocity.x = (gx / gyroScale) * PI_OVER_180;
+    imu_msg.angular_velocity.y = (gy / gyroScale) * PI_OVER_180;
+    imu_msg.angular_velocity.z = (gz / gyroScale) * PI_OVER_180;
+
+    //อ่าน Yaw (Heading) จาก Compass (QMC5883L)
+    Wire.beginTransmission(QMC5883L_ADDRESS);
+    Wire.write(0x00);
+    if (Wire.endTransmission() != 0) { return; } // Exit if compass not found
+
+    Wire.requestFrom((uint8_t)QMC5883L_ADDRESS, (uint8_t)6);
+    if (Wire.available() < 6) { return; } // Exit on read timeout
+
+    int16_t x = Wire.read() | Wire.read() << 8;
+    int16_t y = Wire.read() | Wire.read() << 8;
+    Wire.read(); Wire.read(); // skip Z
+
+    float heading = atan2(static_cast<float>(y) - OFFSET_Y, static_cast<float>(x) - OFFSET_X);
+    if (heading < 0) {
+        heading += TWO_PI;
     }
+
+    // แปลง Heading (Yaw) เป็น Quaternion
+    float qx, qy, qz, qw;
+    yawToQuaternion(heading, qx, qy, qz, qw);
+
+    // บรรจุข้อมูล Orientation จาก Compass ลงใน message
+    imu_msg.orientation.x = qx;
+    imu_msg.orientation.y = qy;
+    imu_msg.orientation.z = qz;
+    imu_msg.orientation.w = qw;
+
+    //ตั้งค่า Covariance เพื่อบอก EKF ว่าจะเชื่อถือข้อมูลส่วนไหน
+    // เราเชื่อถือ Yaw จาก Compass แต่ไม่เชื่อ Roll/Pitch (ตั้งค่าความไม่แน่นอนสูงๆ)
+    imu_msg.orientation_covariance[0] = 1e-2;  // Roll variance
+    imu_msg.orientation_covariance[4] = 1e-2;  // Pitch variance
+    imu_msg.orientation_covariance[8] = 0.05;    // Yaw variance (ความไม่แน่นอนต่ำ = เชื่อถือ)
+
+    //เชื่อถือ Gyroscope และ Accelerometer
+    imu_msg.angular_velocity_covariance[0] = 0.02; // gx
+    imu_msg.angular_velocity_covariance[4] = 0.02; // gy
+    imu_msg.angular_velocity_covariance[8] = 0.02; // gz
+
+    imu_msg.linear_acceleration_covariance[0] = 0.05; // ax
+    imu_msg.linear_acceleration_covariance[4] = 0.05; // ay
+    imu_msg.linear_acceleration_covariance[8] = 0.05; // az
+
+    // ตั้งค่า Header และ Publish
+    imu_msg.header.stamp = nh.now();
+    imu_msg.header.frame_id = "imu_link";
+    imu_pub.publish(&imu_msg);
 }
 
-
-void processReceivedCommand(const char* received) {
-
-    if (received[0] == 'D' && received[1] == ' ') {
-        char* token = strtok(received + 2, " ");
-        if (token) vx = atof(token);
-        token = strtok(NULL, " ");
-        if (token) vy = atof(token);
-        token = strtok(NULL, " ");
-        if (token) omega = atof(token);
-
-    }
-    else if(strncmp(received, "ACK ", 4) == 0){
-        serial2Print("ACK ", received);
-    }
-}
 
 /**
  * @brief อ่านข้อมูลจาก MPU6050 และเผยแพร่เป็น ROS IMU Message
@@ -937,7 +997,7 @@ void processReceivedCommand(const char* received) {
  * - แปลงค่าที่ได้ให้อยู่ในหน่วยที่เหมาะสม
  * - normalizeQuaternion
  * - เผยแพร่ข้อมูลไปยัง ROS Topic `imu/data_raw`
- */
+ 
 void readIMU() {
     int fifoCount = mpu.getFIFOCount(); // ตรวจสอบจำนวนข้อมูลที่มีอยู่ใน FIFO
     if (fifoCount < 42) return;         // ถ้ายังไม่มีข้อมูลเพียงพอ ให้รอ
@@ -994,7 +1054,7 @@ void readIMU() {
         imu_raw_pub.publish(&imu_msg);
     }
 }
-
+*/
 
 /**
  * @brief Normalize Quaternion จาก MPU6050
@@ -1016,6 +1076,8 @@ void normalizeQuaternion(sensor_msgs::Imu &msg) {
     }
 }
 
+
+/*
 void readCompass() {   
     Wire.beginTransmission(QMC5883L_ADDRESS);
     Wire.write(0x00);
@@ -1024,7 +1086,7 @@ void readCompass() {
         return;
     }
 
-    Wire.requestFrom(QMC5883L_ADDRESS, 6);
+    Wire.requestFrom((uint8_t)QMC5883L_ADDRESS, (uint8_t)6);
     uint8_t timeout = 10;
     while (Wire.available() < 6 && timeout > 0) {
         delayMicroseconds(100);
@@ -1077,13 +1139,20 @@ void readCompass() {
     mag_msg.orientation.z = qz;
     mag_msg.orientation.w = qw;
 
-    mag_msg.orientation_covariance[0] = -1.0;
-    mag_msg.orientation_covariance[4] = -1.0;
-    mag_msg.orientation_covariance[8] = 0.05;
+    // ----- ส่วนที่ต้องเพิ่มเข้ามา -----
+    // บอก EKF ว่าเรามีข้อมูลแค่ orientation (yaw) เท่านั้น
+    mag_msg.orientation_covariance[0] = 99999; // Roll - ไม่ได้ใช้
+    mag_msg.orientation_covariance[4] = 99999; // Pitch - ไม่ได้ใช้
+    mag_msg.orientation_covariance[8] = 0.05;  // Yaw - ความไม่แน่นอนต่ำ (ค่าบวก)
+
+    // บอก EKF ให้ "ไม่ต้องสนใจ" ข้อมูลส่วนที่เหลือโดยสิ้นเชิง
+    mag_msg.angular_velocity_covariance[0] = -1;
+    mag_msg.linear_acceleration_covariance[0] = -1;
+    // --------------------------------
 
     mag_pub.publish(&mag_msg);
 }
-
+*/
 void yawToQuaternion(float yaw, float& qx, float& qy, float& qz, float& qw) {
     float cy = cos(yaw * 0.5);
     float sy = sin(yaw * 0.5);
@@ -1101,13 +1170,13 @@ void yawToQuaternion(float yaw, float& qx, float& qy, float& qz, float& qw) {
  * @param pwm_value ค่ามุมของเซอร์โวในรูปแบบของไมโครวินาที (us)
  * 
  * @details
- * - จำกัดค่าของ `pwm_value` ให้อยู่ในช่วงที่เซอร์โวรับได้ (`MIN_POSITION` ถึง `MAX_POSITION`)
+ * - จำกัดค่าของ `pwm_value` ให้อยู่ในช่วงที่เซอร์โวรับได้ (`MIN_POSITION_SV` ถึง `MAX_POSITION`)
  * - ตรวจสอบว่าค่าพินที่รับเข้ามาตรงกับเซอร์โวตัวที่ 1 (`SERVO1_PIN`) หรือ เซอร์โวตัวที่ 2 (`SERVO2_PIN`)
  * - ใช้ไลบรารี `ServoTimer2` ในการสั่งให้เซอร์โวเคลื่อนที่ไปยังตำแหน่งที่กำหนด
  */
 void moveServo(int pin, int pwm_value) {
     // จำกัดค่าการเคลื่อนที่ของเซอร์โวให้อยู่ในช่วงที่กำหนด
-    pwm_value = constrain(pwm_value, MIN_POSITION, MAX_POSITION); 
+    pwm_value = constrain(pwm_value, MIN_POSITION_SV, MAX_POSITION_SV); 
 
     // ตรวจสอบว่าพินตรงกับเซอร์โวตัวไหน และสั่งให้เคลื่อนที่
     if (pin == SERVO1_PIN) {
@@ -1174,6 +1243,170 @@ uint16_t readVoltage() {
     return (uint16_t)(voltage * 100);    // แปลงเป็น centivolt (cV)
 }
 
+void calculateAndPublishOdometry() {
+    static unsigned long last_time = millis();
+    unsigned long current_time = millis();
+    float dt = (current_time - last_time) / 1000.0;
+    if (dt <= 0) return;
+
+    noInterrupts();
+    long currentFL = counter_FL; 
+    long currentFR = counter_FR;
+    long currentRL = counter_RL; 
+    long currentRR = counter_RR;
+    interrupts();
+
+    double deltaFL = currentFL - prevFL; 
+    double deltaFR = currentFR - prevFR;
+    double deltaRL = currentRL - prevRL; 
+    double deltaRR = currentRR - prevRR;
+
+    prevFL = currentFL; prevFR = currentFR;
+    prevRL = currentRL; prevRR = currentRR;
+
+    double w_fl = (deltaFL / PPR) * (TWO_PI) / dt; 
+    double w_fr = (deltaFR / PPR) * (TWO_PI) / dt;
+    double w_rl = (deltaRL / PPR) * (TWO_PI) / dt; 
+    double w_rr = (deltaRR / PPR) * (TWO_PI) / dt;
+
+    w_fr = -w_fr;
+    w_rr = -w_rr;
+
+    // --- คำนวณความเร็ว (Twist) - ใช้สูตร Forward Kinematics ที่ถูกต้อง ---
+    double vx = (WHEEL_RADIUS / 4.0) * (w_fl + w_fr + w_rl + w_rr);
+    double vy = (WHEEL_RADIUS / 4.0) * (-w_fl + w_fr - w_rl + w_rr);
+    double vth = (WHEEL_RADIUS / (4.0 * (L1 + L2))) * (-w_fl + w_fr - w_rl + w_rr);
+
+    // --- 4. คำนวณและอัปเดตตำแหน่ง (Pose) ---
+    // คำนวณระยะทางที่เปลี่ยนไปในแต่ละแกน (ใน frame ของหุ่นยนต์)
+    double delta_x = (vx * cos(theta) - vy * sin(theta)) * dt;
+    double delta_y = (vx * sin(theta) + vy * cos(theta)) * dt;
+    double delta_theta = vth * dt;
+
+    // นำระยะทางที่เปลี่ยนไปมาบวกสะสมในตัวแปร global
+    x_pos += delta_x;
+    y_pos += delta_y;
+    theta += delta_theta;
+    
+    // ทำให้มุม theta อยู่ในช่วง 0 ถึง 2*PI
+    if (theta >= TWO_PI) theta -= TWO_PI;
+    if (theta < 0) theta += TWO_PI;
+
+
+    // --- 5. บรรจุข้อมูลทั้งหมดลงใน Odometry Message ---
+
+    // แปลงมุม theta (Yaw) เป็น Quaternion สำหรับ message
+    odom_msg.pose.pose.orientation.w = cos(theta / 2.0);
+    odom_msg.pose.pose.orientation.z = sin(theta / 2.0);
+    odom_msg.pose.pose.orientation.x = 0.0;
+    odom_msg.pose.pose.orientation.y = 0.0;
+
+    // ตั้งค่า Header
+    odom_msg.header.stamp = nh.now();
+    odom_msg.header.frame_id = odom_frame;
+    odom_msg.child_frame_id = base_link_frame;
+
+    // บรรจุข้อมูลตำแหน่ง (Pose)
+    odom_msg.pose.pose.position.x = x_pos;
+    odom_msg.pose.pose.position.y = y_pos;
+    odom_msg.pose.pose.position.z = 0.0; // สำหรับหุ่นยนต์ 2D
+
+    // บรรจุข้อมูลความเร็ว (Twist)
+    odom_msg.twist.twist.linear.x = vx;
+    odom_msg.twist.twist.linear.y = vy;
+    odom_msg.twist.twist.angular.z = vth;
+
+    odom_msg.twist.covariance[0] = 0.1;  // vx
+    odom_msg.twist.covariance[7] = 0.1;  // vy
+    odom_msg.twist.covariance[35] = 0.05; // vth
+
+    odom_msg.pose.covariance[0] = 0.1;   // x
+    odom_msg.pose.covariance[7] = 0.1;   // y
+    odom_msg.pose.covariance[35] = 0.05;  // theta
+
+    // --- 6. Publish Odometry Message ---
+    odom_pub.publish(&odom_msg);
+
+
+    // --- 7. สร้างและส่ง TF Transform (odom -> base_link) ---
+    odom_trans.header.stamp = nh.now();
+    odom_trans.header.frame_id = odom_frame;
+    odom_trans.child_frame_id = base_link_frame;
+
+    odom_trans.transform.translation.x = x_pos;
+    odom_trans.transform.translation.y = y_pos;
+    odom_trans.transform.translation.z = 0.0;
+    odom_trans.transform.rotation = odom_msg.pose.pose.orientation; // ใช้ Quaternion เดียวกัน
+
+    broadcaster.sendTransform(odom_trans);
+
+    // อัปเดตเวลาสำหรับการคำนวณรอบถัดไป
+    last_time = current_time;
+}
+
+void isr_FL() { // สำหรับ Encoder Front-Left
+    if (micros() - last_interrupt_time_FL < ENCODER_DEBOUNCE_DELAY_US) return;
+    byte a = (PINE >> PINE4) & 1; // อ่านค่าขา A (Pin 2)
+    byte b = (PING >> PING5) & 1; // อ่านค่าขา B (Pin 4)
+    if (a != prevA_FL) { // ตรวจสอบว่าขา A มีการเปลี่ยนแปลงจริง
+        // ใช้ XOR (eXclusive OR) logic ในการเช็คทิศทาง
+        // a ^ b จะเป็นจริง (1) ถ้า a และ b มีค่าต่างกัน
+        // และจะเป็นเท็จ (0) ถ้า a และ b มีค่าเหมือนกัน
+        if (a ^ b) counter_FL++; // ถ้าต่างกัน หมุนทิศหนึ่ง
+        else       counter_FL--; // ถ้าเหมือนกัน หมุนอีกทิศหนึ่ง
+    }
+    prevA_FL = a; // อัปเดตสถานะล่าสุดของขา A เพื่อใช้ในการเปรียบเทียบครั้งต่อไป
+    last_interrupt_time_FL = micros();
+}
+
+void isr_FR() { // สำหรับ Encoder Front-Right
+    if (micros() - last_interrupt_time_FR < ENCODER_DEBOUNCE_DELAY_US) return;
+    byte a = (PIND >> PIND3) & 1; // อ่านค่าขา A (Pin 18)
+    byte b = (PINA >> PINA0) & 1; // อ่านค่าขา B (Pin 22)
+    if (a != prevA_FR) {
+        if (a ^ b) counter_FR++;
+        else       counter_FR--;
+    }
+    prevA_FR = a;
+    last_interrupt_time_FR = micros();
+}
+
+void isr_RL() { // สำหรับ Encoder Rear-Lef
+    if (micros() - last_interrupt_time_RL < ENCODER_DEBOUNCE_DELAY_US) return;
+    byte a = (PIND >> PIND2) & 1; // อ่านค่าขา A (Pin 19)
+    byte b = (PINA >> PINA1) & 1; // อ่านค่าขา B (Pin 23)
+    if (a != prevA_RL) {
+        if (a ^ b) counter_RL++;
+        else       counter_RL--;
+    }
+    prevA_RL = a;
+    last_interrupt_time_RL = micros();
+
+}
+
+void isr_RR() { // สำหรับ Encoder Rear-Right
+    if (micros() - last_interrupt_time_RR < ENCODER_DEBOUNCE_DELAY_US) return;
+    byte a = (PINE >> PINE5) & 1; // อ่านค่าขา A (Pin 3)
+    byte b = (PINE >> PINE3) & 1; // อ่านค่าขา B (Pin 5)
+    if (a != prevA_RR) {
+        if (a ^ b) counter_RR++;
+        else       counter_RR--;
+    }
+    prevA_RR = a;
+    last_interrupt_time_RR = micros();
+}
+//Encoder Reset Function
+void checkAndResetEncoder(volatile long &encoderCount) {
+    if (encoderCount <= 0 || encoderCount >= MAX_POSITION_ENC) {
+        noInterrupts();
+        encoderCount = ENCODER_MIDPOINT;
+        snprintf(debug_buffer, sizeof(debug_buffer),
+                 "Encoders: RESET");
+        DebugPublish(debug_buffer);
+        interrupts();
+    }
+}
+
 //debug serial2
   void serial2Print(const String& des, int data) {
       if (DEBUG_MODE_S2) {
@@ -1195,7 +1428,3 @@ uint16_t readVoltage() {
           Serial2.println(data);
       }
   }
-
-
-
-

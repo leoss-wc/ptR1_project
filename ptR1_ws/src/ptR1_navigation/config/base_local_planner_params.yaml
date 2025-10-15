@@ -1,5 +1,5 @@
 TrajectoryPlannerROS:
-  holonomic_robot: true         # ✅ บอก planner ว่าหุ่นยนต์สามารถเคลื่อนที่แบบ holonomic ได้ (เช่น mecanum หรือ omnidirectional)
+  holonomic_robot: true         # บอก planner ว่าหุ่นยนต์สามารถเคลื่อนที่แบบ holonomic ได้ (เช่น mecanum หรือ omnidirectional)
 
   max_vel_x: 0.5                # ความเร็วสูงสุดในแกน X (เดินหน้า) หน่วย: m/s
   min_vel_x: 0.1                # ความเร็วต่ำสุดในแกน X ที่ planner จะพิจารณา (ไม่ควรเป็น 0 เพื่อให้ planner เลือกความเร็วต่ำได้)

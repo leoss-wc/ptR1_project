@@ -1,15 +1,15 @@
 <launch> 
    
-    <!-- Start ROSBridge WebSocket -->
+    <!-- Start ROSBridge WebSocket
     <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch"/>
-
-    <!-- ROSSerial สำหรับ Mega ที่ /dev/ttyUSB0 
+     -->
+    <!-- ROSSerial สำหรับ Mega ที่ /dev/ttyUSB0    -->
     <node pkg="rosserial_python" type="serial_node.py" name="serial_node_mega"
           output="screen">
         <param name="port" value="/dev/ttyUSB0"/>
         <param name="baud" value="250000"/>
     </node>
-    -->
+ 
     
 
     <!-- ROSSerial สำหรับ Nano ที่ /dev/ttyUSB1 
@@ -36,7 +36,8 @@
         <param name="param1" value="default_value"/>
     </node>
     -->
-
+<!-- 
     <node name="map_manager_node" pkg="ptR1_navigation" type="map_manager_node.py" output="screen">
     </node>
+    -->
 </launch>

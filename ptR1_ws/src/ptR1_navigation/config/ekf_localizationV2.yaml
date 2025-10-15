@@ -1,4 +1,4 @@
-frequency: 30  # ความถี่ในการคำนวณ (Hz) EKF จะอัปเดตค่าตำแหน่งทุก 1/30 = 0.033 วินาที (33ms)
+frequency:  15  # ความถี่ในการคำนวณ (Hz) EKF จะอัปเดตค่าตำแหน่ง
 sensor_timeout: 0.1  # Timeout ของเซ็นเซอร์ที่ยอมรับได้
 
 two_d_mode: true  # ใช้เฉพาะ 2D motion (x, y, yaw) ไม่ใช้ z, roll, pitch

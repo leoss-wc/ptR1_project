@@ -6,6 +6,7 @@ import { robotPose } from './robotState.js';
 import { latestScan } from './laserScanState.js';
 import { stopPatrol } from './patrol.js';
 import { yawToQuaternion, getYawFromQuaternion } from './utils.js';
+import * as patrolState from './patrolState.js';
 
 let backgroundCanvas, backgroundCtx;
 let objectsCanvas, objectsCtx;
@@ -240,7 +241,7 @@ function bindUI() {
   document.getElementById('reset-static-view-btn').addEventListener('click', resetStaticMapView);
 
   document.getElementById('clear-path-btn').addEventListener('click', () => {
-    patrolPath.length = 0;
+    patrolState.patrolPath.length = 0;
     cancelMode();
     renderObjects();
   });
@@ -443,11 +444,10 @@ function setupCanvasEvents() {
         
         // อัปเดต State และส่งไป ROS
         setGoalPoint(goalPose);
-        // ส่งข้อมูลเป็น pose object ทั้งหมด
-        window.electronAPI.sendSingleGoal({ pose: goalPose });
+        // เรียกใช้ระบบ Patrol แต่ส่งไปแค่ Goal เดียว และไม่ Loop
+        window.electronAPI.startPatrol([goalPose], false); 
         console.log("New goal point set:", goalPose);
-
-        
+        patrolState.updateStatus("Patrolling to the new goal...");
         isSettingGoal = false;
         poseStartPosition = null;
         cancelMode();
@@ -764,18 +764,18 @@ function drawRobot(ctx) {
 
 function drawPatrolPath(ctx) {
     // ถ้าไม่มีเส้นทาง, ข้อมูล meta, หรือรูปแผนที่ ให้หยุดทำงาน
-    if (patrolPath.length < 1 || !activeMap?.meta || !mapImage) return;
+    if (patrolState.patrolPath.length < 1 || !activeMap?.meta || !mapImage) return;
 
     const { resolution, origin } = activeMap.meta;
     const mapImgHeight = mapImage.height;
 
     // --- 1. วาดเส้นเชื่อมระหว่างจุด ---
-    if (patrolPath.length > 1) {
+    if (patrolState.patrolPath.length > 1) {
         ctx.strokeStyle = 'orange';
         ctx.lineWidth = 2 / mapView.viewState.scale; // ทำให้เส้นหนาเท่าเดิมไม่ว่าจะซูมแค่ไหน
         ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ
         ctx.beginPath();
-        patrolPath.forEach((point, i) => {
+        patrolState.patrolPath.forEach((point, i) => {
             const px = (point.x - origin[0]) / resolution;
             const py = mapImgHeight - ((point.y - origin[1]) / resolution);
             if (i === 0) {
@@ -789,7 +789,7 @@ function drawPatrolPath(ctx) {
     }
 
     // --- 2. วาดจุด Waypoint แต่ละจุด ---
-    patrolPath.forEach((point, i) => {
+    patrolState.patrolPath.forEach((point, i) => {
         const px = (point.x - origin[0]) / resolution;
         const py = mapImgHeight - ((point.y - origin[1]) / resolution);
         
