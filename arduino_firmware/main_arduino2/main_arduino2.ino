@@ -1,25 +1,26 @@
-#include "I2Cdev.h"                        // ไลบรารีสำหรับ I2C communication
-#include "MPU6050_6Axis_MotionApps20.h"     // ไลบรารีสำหรับใช้งาน Digital Motion Processing (DMP)
-#include "MPU6050.h"                        // ไลบรารีสำหรับเซ็นเซอร์ IMU MPU6050
-
 #include <ros.h>                            // ไลบรารีสำหรับ ROS communication
 #include <std_msgs/UInt32.h>                // ใช้สำหรับส่งค่าประเภท UInt32 ใน ROS
 #include <std_msgs/UInt16.h>                // ใช้สำหรับส่งค่าประเภท UInt16 ใน ROS
 #include <std_msgs/UInt8.h>                 // ใช้สำหรับส่งค่าประเภท UInt8 ใน ROS
-#include <std_msgs/Float32.h>               // ใช้สำหรับส่งค่าประเภท Float32 ใน ROS
+//#include <std_msgs/Float32.h>               // ใช้สำหรับส่งค่าประเภท Float32 ใน ROS
 #include <geometry_msgs/Twist.h>            // ใช้สำหรับรับคำสั่งความเร็ว (cmd_vel) จาก ROS
 #include <sensor_msgs/Imu.h>                // ใช้สำหรับส่งข้อมูลจาก IMU ไปยัง ROS
-#include <sensor_msgs/MagneticField.h>      // ใช้สำหรับส่งค่าของ Compass (สนามแม่เหล็ก)
+//#include <sensor_msgs/MagneticField.h>      // ใช้สำหรับส่งค่าของ Compass (สนามแม่เหล็ก)
 #include <std_msgs/String.h>                // ใช้สำหรับส่งข้อมูลเป็นข้อความ
 #include <tf/transform_broadcaster.h> 
 #include <nav_msgs/Odometry.h>
-
+#include "I2Cdev.h"                        // ไลบรารีสำหรับ I2C communication
+//#include "MPU6050_6Axis_MotionApps20.h"     // ไลบรารีสำหรับใช้งาน Digital Motion Processing (DMP)
+#include "MPU6050.h"                        // ไลบรารีสำหรับเซ็นเซอร์ IMU MPU6050
 #include <avr/io.h>                         // ไลบรารีควบคุม I/O ของ ATmega
 #include <avr/interrupt.h>                  // ไลบรารีสำหรับใช้ Interrupts
 #include <Wire.h>                            // ไลบรารีสำหรับ I2C communication
 #include <Servo.h>                          // ไลบรารีควบคุม Servo
-#include <math.h>                           // IMU normalized
-#include <stdlib.h>
+#include <math.h>                          
+#include <PID_v1.h>
+#include <stdlib.h>             // IMU normalized
+
+
 
 // การกำหนดพินของมอเตอร์ไดรเวอร์ (Motor Driver)
 const uint8_t md1_AIN2  = 35;
@@ -93,14 +94,14 @@ const long ENCODER_MIDPOINT = 10000000;
 
 // --- Main Loop Timings ---
 const unsigned long ODOM_INTERVAL_MS = 40;         // คำนวณและส่ง Odometry ทุก 40ms (25 Hz)
-const unsigned long COMPASS_INTERVAL_MS = 100;     // อ่าน Compass ทุก 100ms (10 Hz)
 const unsigned long IMU_INTERVAL_MS = 50;          // อ่าน IMU ทุก 50ms (20 Hz)
 const unsigned long POWER_INTERVAL_MS = 1000;      // อ่าน Power Sensor ทุก 1000ms (1 Hz)
 const unsigned long DEBUG_INTERVAL_MS = 500;
-const unsigned int  ENCODER_DEBOUNCE_DELAY_US = 800; // ใช้ unsigned int สำหรับค่าที่ไม่ใหญ่มาก
+const unsigned int  ENCODER_DEBOUNCE_DELAY_US = 800;
+const unsigned long PID_INTERVAL_MS = 20; // คำนวณ PID ทุกๆ 20ms (50 Hz)
 
 // ค่าคงที่ของ Compass Sensor (QMC5883L)
-const uint8_t QMC5883L_ADDRESS = 0x0D; // uint8_t หรือ byte เหมาะสำหรับ I2C address
+const uint8_t QMC5883L_ADDRESS = 0x0D;
 const int MIN_X = -1363;
 const int MAX_X = 665;
 const int MIN_Y = -1932;
@@ -108,22 +109,45 @@ const int MAX_Y = 32;
 const int MIN_Z = -568;
 const int MAX_Z = -265;
 
+//PID
+// ค่าคงที่ Kp, Ki, Kd (ต้องทำการจูน)
+double Kp = 2.0, Ki = 5.0, Kd = 1.0;
+// ตัวแปรสำหรับเก็บค่า Setpoint, Input, และ Output
+double setpoint_FL, input_FL, output_FL;
+double setpoint_FR, input_FR, output_FR;
+double setpoint_RL, input_RL, output_RL;
+double setpoint_RR, input_RR, output_RR;
+
+// สร้าง Object PID สำหรับแต่ละล้อ
+PID pid_FL(&input_FL, &output_FL, &setpoint_FL, Kp, Ki, Kd, DIRECT);
+PID pid_FR(&input_FR, &output_FR, &setpoint_FR, Kp, Ki, Kd, DIRECT);
+PID pid_RL(&input_RL, &output_RL, &setpoint_RL, Kp, Ki, Kd, DIRECT);
+PID pid_RR(&input_RR, &output_RR, &setpoint_RR, Kp, Ki, Kd, DIRECT);
+// ตัวแปรสำหรับคำนวณความเร็วจริงจาก Encoder
+long prev_counter_FL = ENCODER_MIDPOINT;
+long prev_counter_FR = ENCODER_MIDPOINT;
+long prev_counter_RL = ENCODER_MIDPOINT;
+long prev_counter_RR = ENCODER_MIDPOINT;
+unsigned long prev_pid_time = 0;
+
+
+
 // Odometry
-  float vx = 0.0, vy = 0.0, omega = 0.0;
+//  float vx = 0.0, vy = 0.0, omega = 0.0;
 
 // MPU6050
-uint8_t fifoBuffer[64]; 
-bool use_imu = false;
-bool use_imu_mag = false;
+//uint8_t fifoBuffer[64]; 
 
 
 // การชดเชยค่าของ Compass Sensor หลังจาก Calibration
 const float OFFSET_X = -349.0;  // Offset ตามแนวแกน X
 const float OFFSET_Y = -950.0;  // Offset ตามแนวแกน Y
-const float OFFSET_Z = -416.5;  // Offset ตามแนวแกน Z
-const float SCALE_X = 0.8527;
-const float SCALE_Y = 0.8284;
-const float SCALE_Z = 1.6124;
+
+
+// const float OFFSET_Z = -416.5;  // Offset ตามแนวแกน Z
+// const float SCALE_X = 0.8527;
+// const float SCALE_Y = 0.8284;
+// const float SCALE_Z = 1.6124;
 
 // --- พินของเซ็นเซอร์วัดกระแสและแรงดันไฟฟ้า ---
 const uint8_t CURRENT_SENSOR_PIN = A9;
@@ -180,8 +204,8 @@ bool debug_flag = 1;       // เปิดใช้งานการพิม�
 
 
 // การควบคุมหุ่นยนต์
-enum ControlMode { AUTO, MANUAL }; // โหมดควบคุม: อัตโนมัติ (AUTO) หรือ ควบคุมเอง (MANUAL)
-ControlMode current_mode = MANUAL; // ตั้งค่าเริ่มต้นเป็น Manual
+enum ControlMode { AUTO, MAN }; // โหมดควบคุม: อัตโนมัติ (AUTO) หรือ ควบคุมเอง (MANUAL)
+ControlMode current_mode = MAN; // ตั้งค่าเริ่มต้นเป็น Manual
 
 // ตัวแปรเก็บข้อมูลเซ็นเซอร์
 MPU6050 mpu;          // IMU MPU6050
@@ -227,16 +251,7 @@ bool motor_running = false;
 unsigned long last_cmd_time = 0;
 uint16_t time_delay = 60;  // เวลาหน่วงสำหรับหยุดมอเตอร์อัตโนมัติ (ms)
 
-/**
- * @brief ฟังก์ชัน setup() ใช้สำหรับกำหนดค่าเริ่มต้นของระบบก่อนเริ่ม loop()
- * 
- * @details 
- * - กำหนดค่า Serial และ I2C สำหรับการสื่อสาร
- * - กำหนดค่าเริ่มต้นสำหรับ ROS Node
- * - ตั้งค่าขา (Pin Mode) สำหรับมอเตอร์, เซ็นเซอร์ และ Servo
- * - ทดสอบการเชื่อมต่อกับเซ็นเซอร์ต่างๆ เช่น IMU (MPU6050) และ Compass (QMC5883L)
- * - กำหนดค่า Standby ของมอเตอร์ให้พร้อมใช้งาน
- */
+
 void setup() {
     // ตั้งค่าการสื่อสาร Serial และ I2C
     Serial.begin(250000);     // Serial หลักสำหรับ rosserial 250000
@@ -301,6 +316,17 @@ void setup() {
     prevA_RL = (PIND >> PIND2) & 1;
     prevA_RR = (PINE >> PINE5) & 1;
 
+    //PID
+    pid_FL.SetOutputLimits(0, 255);
+    pid_FR.SetOutputLimits(0, 255);
+    pid_RL.SetOutputLimits(0, 255);
+    pid_RR.SetOutputLimits(0, 255);
+
+    // เปิดใช้งาน PID
+    pid_FL.SetMode(AUTOMATIC);
+    pid_FR.SetMode(AUTOMATIC);
+    pid_RL.SetMode(AUTOMATIC);
+    pid_RR.SetMode(AUTOMATIC);
 
     //Relay pinout
     pinMode(RELAY1, OUTPUT);
@@ -317,7 +343,7 @@ void setup() {
     } else {
         Serial2.println("MPU6050 connection successful");
     }
-
+/*
     // เปิดใช้งาน DMP (Digital Motion Processing) ของ MPU6050
     uint8_t devStatus = mpu.dmpInitialize();
     if (devStatus == 0) {
@@ -329,6 +355,7 @@ void setup() {
         Serial2.print(devStatus);
         Serial2.println(")");
     }
+*/
 
     // ตั้งค่าและทดสอบ Compass (QMC5883L)
     Wire.beginTransmission(QMC5883L_ADDRESS);
@@ -356,23 +383,13 @@ void setup() {
     Serial2.println("Setup complete");
 }
 
-/**
- * @brief ฟังก์ชันหลักของ Arduino ที่ทำงานซ้ำๆ ตลอดเวลา
- * 
- * @details
- * - อ่านค่าข้อมูลจาก Serial1 หากมีข้อมูลเข้ามา
- * - ตรวจสอบระยะเวลาที่เหมาะสมในการอ่านข้อมูลจาก Compass, IMU, และเซ็นเซอร์ไฟฟ้า
- * - ตรวจสอบว่ามีคำสั่งควบคุมมอเตอร์ล่าสุดหรือไม่ หากไม่มีให้หยุดการทำงานของมอเตอร์
- * - เรียก `nh.spinOnce()` เพื่อให้ ROS สามารถอัปเดตสถานะและรับ-ส่งข้อมูลได้
- * - ใช้ `delay(1)` เพื่อลดภาระ CPU เล็กน้อย (อาจปรับปรุงให้ใช้ `millis()` แทน)
- */
 void loop() {
     // ใช้ตัวแปร static เพื่อติดตามเวลาที่ผ่านไปของแต่ละเซ็นเซอร์
     static unsigned long lastOdomCalcTime = 0;
-    static unsigned long lastCompassTime = 0;
     static unsigned long lastIMUTime = 0;
     static unsigned long lastPowerSensorTime = 0;
     static unsigned long lastDebugTime = 0;
+    static unsigned long lastPIDTime = 0;
     unsigned long now = millis();
     // Calculate and Publish Odometry Velocity
     if (now - lastOdomCalcTime >= ODOM_INTERVAL_MS) {
@@ -410,6 +427,11 @@ void loop() {
             }*/
 
         }
+    }
+
+    if (now - lastPIDTime >= PID_INTERVAL_MS) {
+        computeAndUpdatePID();
+        lastPIDTime = now;
     }
 
     if (debug_flag && (now - lastDebugTime >= DEBUG_INTERVAL_MS)) {
@@ -517,7 +539,7 @@ void moveRobot(uint8_t direc, uint8_t pwm) {
 /**
  * @brief ทำให้มอเตอร์หมุนอิสระ (Coast Mode)
  * @param motorNum หมายเลขมอเตอร์ (1-4)
- */
+
 void setMotorCoastMode(uint8_t motorNum) {
     int in1, in2;
     
@@ -532,12 +554,12 @@ void setMotorCoastMode(uint8_t motorNum) {
     digitalWrite(in1, LOW);
     digitalWrite(in2, LOW);
 }
-
+ */
 /**
  * @brief ควบคุมการหมุนของมอเตอร์ M1-M4
  * @param motorNum หมายเลขมอเตอร์ (1-4)
  * @param direction ทิศทางของมอเตอร์ (0 = เดินหน้า, 1 = ถอยหลัง)
- */
+ป
 void setMotorDirection(uint8_t motorNum, bool direction) {
     int in1, in2;
     
@@ -557,7 +579,7 @@ void setMotorDirection(uint8_t motorNum, bool direction) {
         digitalWrite(in2, HIGH);
     }
 }
-
+ */
 /**
  * @brief Callback function สำหรับรับคำสั่งความเร็วจาก `move_base` หรือแหล่งอื่นผ่าน `/cmd_vel`
  * 
@@ -576,11 +598,11 @@ void setMotorDirection(uint8_t motorNum, bool direction) {
  */
 void cmdVelCallback(const geometry_msgs::Twist& cmd_vel_msg) {
     if (current_mode == AUTO) { // รับคำสั่งเฉพาะโหมดอัตโนมัติ
-        float vx = map_float(cmd_vel_msg.linear.x, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
-        float vy = map_float(cmd_vel_msg.linear.y, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
-        float omega = map_float(cmd_vel_msg.angular.z, -MAX_ANGULAR_SPEED, MAX_ANGULAR_SPEED, -255.0, 255.0);
-        
-        controlMotors(vx, vy, omega);
+        // float vx = map_float(cmd_vel_msg.linear.x, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
+        // float vy = map_float(cmd_vel_msg.linear.y, -MAX_LINEAR_SPEED, MAX_LINEAR_SPEED, -255.0, 255.0);
+        // float omega = map_float(cmd_vel_msg.angular.z, -MAX_ANGULAR_SPEED, MAX_ANGULAR_SPEED, -255.0, 255.0);      
+        //controlMotors(vx, vy, omega);
+        controlMotors(cmd_vel_msg.linear.x, cmd_vel_msg.linear.y, cmd_vel_msg.angular.z);
 
         motor_running = true;
         last_cmd_time = millis();
@@ -608,63 +630,53 @@ void controlMotors(float vx, float vy, float omega) {
                  "vx: %.4f  vy: %.4f  omega: %.4f", vx, vy,omega);
         DebugPublish(debug_buffer);
     
-    //  คำนวณความเร็วของล้อแต่ละตัว
-    float wheel_FL = vx - vy - (L1 + L2) * omega;
-    float wheel_FR = vx + vy + (L1 + L2) * omega;
-    float wheel_RL = vx + vy - (L1 + L2) * omega; // แก้ไข
-    float wheel_RR = vx - vy + (L1 + L2) * omega; // แก้ไข
+    // คำนวณความเร็วเชิงมุมของล้อแต่ละข้าง (หน่วย rad/s)
+    float w_fl = (vx - vy - (L1 + L2) * omega) / WHEEL_RADIUS;
+    float w_fr = (vx + vy + (L1 + L2) * omega) / WHEEL_RADIUS;
+    float w_rl = (vx + vy - (L1 + L2) * omega) / WHEEL_RADIUS;
+    float w_rr = (vx - vy + (L1 + L2) * omega) / WHEEL_RADIUS;
 
-    //  ปรับค่าสเกลให้ไม่เกิน -255 ถึง 255
-    float maxVal = max(max(abs(wheel_FL), abs(wheel_FR)), 
-                       max(abs(wheel_RL), abs(wheel_RR)));
-    if (maxVal > 255) {
-        wheel_FL *= 255.0 / maxVal;
-        wheel_FR *= 255.0 / maxVal;
-        wheel_RL *= 255.0 / maxVal;
-        wheel_RR *= 255.0 / maxVal;
-    }
+    // กำหนดค่า Setpoint ให้กับ PID Controller
+    // นี่คือ "ความเร็วเป้าหมาย" ที่เราต้องการให้ล้อหมุน
+    setpoint_FL = w_fl;
+    setpoint_FR = -w_fr; // มอเตอร์ฝั่งขวาหมุนกลับด้าน
+    setpoint_RL = w_rl;
+    setpoint_RR = -w_rr; // มอเตอร์ฝั่งขวาหมุนกลับด้าน
+    
 
-    setMotorPWM(wheel_FL, FL_IN1, FL_IN2, FL_PWM); // M1: Front-Left
-    setMotorPWM(wheel_FR, FR_IN1, FR_IN2, FR_PWM); // M3: Front-Right
-    setMotorPWM(wheel_RL, RL_IN1, RL_IN2, RL_PWM); // M4: Rear-Left
-    setMotorPWM(wheel_RR, RR_IN1, RR_IN2, RR_PWM); // M2: Rear-Right
+    // //  ปรับค่าสเกลให้ไม่เกิน -255 ถึง 255
+    // float maxVal = max(max(abs(wheel_FL), abs(wheel_FR)), 
+    //                    max(abs(wheel_RL), abs(wheel_RR)));
+    // if (maxVal > 255) {
+    //     wheel_FL *= 255.0 / maxVal;
+    //     wheel_FR *= 255.0 / maxVal;
+    //     wheel_RL *= 255.0 / maxVal;
+    //     wheel_RR *= 255.0 / maxVal;
+    // }
+
+    // setMotorPWM(wheel_FL, FL_IN1, FL_IN2, FL_PWM); // M1: Front-Left
+    // setMotorPWM(wheel_FR, FR_IN1, FR_IN2, FR_PWM); // M3: Front-Right
+    // setMotorPWM(wheel_RL, RL_IN1, RL_IN2, RL_PWM); // M4: Rear-Left
+    // setMotorPWM(wheel_RR, RR_IN1, RR_IN2, RR_PWM); // M2: Rear-Right
 }
 
-/**
- * @brief ตั้งค่าทิศทางและความเร็วของมอเตอร์ DC ผ่าน PWM
- * 
- * @param speed ค่า (-255 ถึง 255) ใช้กำหนดทิศทางและความเร็วของมอเตอร์
- *               - ค่า `> 0` → หมุนไปข้างหน้า
- *               - ค่า `< 0` → หมุนถอยหลัง
- *               - ค่า `0`  → หยุดมอเตอร์
- * @param in1 พินควบคุมทิศทางของมอเตอร์ (ต้องใช้ร่วมกับ in2)
- * @param in2 พินควบคุมทิศทางของมอเตอร์ (ต้องใช้ร่วมกับ in1)
- * @param pwmPin พินที่ใช้ส่งสัญญาณ PWM ไปยังมอเตอร์เพื่อควบคุมความเร็ว
- * 
- * @details 
- * - กำหนดค่าความเร็ว `speed` ให้อยู่ในช่วงที่ปลอดภัย (-255 ถึง 255)
- * - ควบคุมทิศทางของมอเตอร์โดยใช้ `digitalWrite()` กับ `in1` และ `in2`
- * - ส่งสัญญาณ PWM ไปยัง `pwmPin` เพื่อควบคุมความเร็วของมอเตอร์
- */
-void setMotorPWM(float speed, int in1, int in2, int pwmPin) {
-    //  คำนวณค่าความเร็วของ PWM (ปรับให้ไม่เกิน 255)
-    
-    int pwmVal = abs(speed);
+void setMotorPWM(float setpoint, float output_pwm, int in1, int in2, int pwmPin) {
+    int pwmVal = abs(output_pwm); // ใช้ argument 'output_pwm' ที่รับเข้ามา
     if (pwmVal > 255) pwmVal = 255;
 
-    //  กำหนดทิศทางของมอเตอร์
-    if (speed > 0) {
+    // กำหนดทิศทางจาก argument 'setpoint' ที่รับเข้ามา
+    if (setpoint > 0.01) {      // มี Deadband เล็กน้อย
         digitalWrite(in1, HIGH);
-        digitalWrite(in2, LOW);   // มอเตอร์หมุนไปข้างหน้า
-    } else if (speed < 0) {
+        digitalWrite(in2, LOW);
+    } else if (setpoint < -0.01) {
         digitalWrite(in1, LOW);
-        digitalWrite(in2, HIGH);  // มอเตอร์หมุนถอยหลัง
+        digitalWrite(in2, HIGH);
     } else {
+        // ถ้า Setpoint เกือบเป็น 0 ให้หยุด
         digitalWrite(in1, LOW);
-        digitalWrite(in2, LOW);   // หยุดมอเตอร์ (Brake)
+        digitalWrite(in2, LOW);
+        pwmVal = 0;
     }
-
-    //  ส่งค่า PWM ไปควบคุมความเร็วของมอเตอร์
     analogWrite(pwmPin, pwmVal);
 }
 
@@ -784,7 +796,7 @@ void commandEdit(const std_msgs::UInt32& msg) {
             if (flag_mode == 0) {
                 current_mode = AUTO;
             } else if (flag_mode == 1) {
-                current_mode = MANUAL;
+                current_mode = MAN;
             }
 
             snprintf(debug_buffer, sizeof(debug_buffer), "Switched to %s mode", flag_mode == 0 ? "AUTO" : "MANUAL");
@@ -842,26 +854,30 @@ void commandEdit(const std_msgs::UInt32& msg) {
 
             break;
         }
-        case 0x09: { // อับเดตค่า use_imu
-            uint8_t flag_imu = msg.data & 0xFF;
-            if (flag_imu == 0) {
-                use_imu = false;
-            } else if (flag_imu == 1) {
-                use_imu = true;
-            }
-            snprintf(debug_buffer,  sizeof(debug_buffer), "use_imu %d",flag_imu);
+        case 0x09: { // แก้ไขค่า Kp
+            // แปลงค่าที่รับมา (คูณ 1000) กลับเป็น double
+            uint32_t new_val = msg.data & 0xFFFFFF;
+            Kp = (double)new_val / 1000.0;
+            updateAllPIDTunings(); // เรียกฟังก์ชันเพื่ออัปเดต PID ทั้ง 4 ตัว
+            snprintf(debug_buffer, sizeof(debug_buffer), "Updated Kp to: %.3f", Kp);
             DebugPublish(debug_buffer);
             break;
         }
-        case 0x0A: { // อับเดตค่า use_imu_mag
-            uint8_t flag_imu_mag = msg.data & 0xFF;
-            if (flag_imu_mag == 0) {
-                use_imu_mag = false;
-            } else if (flag_imu_mag == 1) {
-                use_imu_mag = true;
-            }
-            snprintf(debug_buffer,  sizeof(debug_buffer), "use_imu_mag %d",use_imu_mag);
 
+        case 0x0A: { // แก้ไขค่า Ki
+            uint32_t new_val = msg.data & 0xFFFFFF;
+            Ki = (double)new_val / 1000.0;
+            updateAllPIDTunings();
+            snprintf(debug_buffer, sizeof(debug_buffer), "Updated Ki to: %.3f", Ki);
+            DebugPublish(debug_buffer);
+            break;
+        }
+
+        case 0x0B: { // แก้ไขค่า Kd
+            uint32_t new_val = msg.data & 0xFFFFFF;
+            Kd = (double)new_val / 1000.0;
+            updateAllPIDTunings();
+            snprintf(debug_buffer, sizeof(debug_buffer), "Updated Kd to: %.3f", Kd);
             DebugPublish(debug_buffer);
             break;
         }
@@ -893,7 +909,7 @@ void commandEdit(const std_msgs::UInt32& msg) {
  */
 void DriveCallback(const std_msgs::UInt16& dirve_msg) {
     // ตรวจสอบว่าอยู่ในโหมด Manual เท่านั้น
-    if (current_mode == MANUAL) {
+    if (current_mode == MAN) {
         // Debug แสดงข้อมูลที่ได้รับ
 
         // แยกข้อมูลเป็นทิศทาง (direction) และค่าความเร็ว (PWM)
@@ -1075,8 +1091,6 @@ void normalizeQuaternion(sensor_msgs::Imu &msg) {
         msg.orientation.w /= norm;
     }
 }
-
-
 /*
 void readCompass() {   
     Wire.beginTransmission(QMC5883L_ADDRESS);
@@ -1186,6 +1200,45 @@ void moveServo(int pin, int pwm_value) {
     }
 }
 
+void computeAndUpdatePID() {
+    unsigned long current_time = millis();
+    float dt = (current_time - prev_pid_time) / 1000.0;
+    if (dt <= 0) return;
+
+    // 1. อ่านค่า Encoder count ปัจจุบัน
+    noInterrupts();
+    long current_FL = counter_FL;
+    long current_FR = counter_FR;
+    long current_RL = counter_RL;
+    long current_RR = counter_RR;
+    interrupts();
+
+    // 2. คำนวณความเร็วที่เกิดขึ้นจริง (rad/s) -> นี่คือ Input ของ PID
+    input_FL = ((current_FL - prev_counter_FL) / PPR) * TWO_PI / dt;
+    input_FR = ((current_FR - prev_counter_FR) / PPR) * TWO_PI / dt;
+    input_RL = ((current_RL - prev_counter_RL) / PPR) * TWO_PI / dt;
+    input_RR = ((current_RR - prev_counter_RR) / PPR) * TWO_PI / dt;
+
+    // 3. เรียก PID ให้คำนวณค่า Output (PWM)
+    pid_FL.Compute();
+    pid_FR.Compute();
+    pid_RL.Compute();
+    pid_RR.Compute();
+
+    // 4. นำค่า PWM ที่ได้จาก PID ไปสั่งงานมอเตอร์
+    setMotorPWM(setpoint_FL, output_FL, FL_IN1, FL_IN2, FL_PWM);
+    setMotorPWM(setpoint_FR, output_FR, FR_IN1, FR_IN2, FR_PWM);
+    setMotorPWM(setpoint_RL, output_RL, RL_IN1, RL_IN2, RL_PWM);
+    setMotorPWM(setpoint_RR, output_RR, RR_IN1, RR_IN2, RR_PWM);
+
+
+    // 5. บันทึกค่าปัจจุบันไว้สำหรับรอบถัดไป
+    prev_counter_FL = current_FL;
+    prev_counter_FR = current_FR;
+    prev_counter_RL = current_RL;
+    prev_counter_RR = current_RR;
+    prev_pid_time = current_time;
+}
 /**
  * @brief อ่านค่ากระแสไฟฟ้าจากเซ็นเซอร์ ACS712-05A และแปลงเป็นหน่วยมิลลิแอมป์ (mA)
  * 
@@ -1274,8 +1327,8 @@ void calculateAndPublishOdometry() {
 
     // --- คำนวณความเร็ว (Twist) - ใช้สูตร Forward Kinematics ที่ถูกต้อง ---
     double vx = (WHEEL_RADIUS / 4.0) * (w_fl + w_fr + w_rl + w_rr);
-    double vy = (WHEEL_RADIUS / 4.0) * (-w_fl + w_fr - w_rl + w_rr);
-    double vth = (WHEEL_RADIUS / (4.0 * (L1 + L2))) * (-w_fl + w_fr - w_rl + w_rr);
+    double vy = (WHEEL_RADIUS / 4.0) * (-w_fl + w_fr + w_rl - w_rr);
+    double vth = (WHEEL_RADIUS / (4.0 * (L1 + L2))) * (-w_fl + w_fr + w_rl - w_rr);
 
     // --- 4. คำนวณและอัปเดตตำแหน่ง (Pose) ---
     // คำนวณระยะทางที่เปลี่ยนไปในแต่ละแกน (ใน frame ของหุ่นยนต์)
@@ -1405,6 +1458,13 @@ void checkAndResetEncoder(volatile long &encoderCount) {
         DebugPublish(debug_buffer);
         interrupts();
     }
+}
+
+void updateAllPIDTunings() {
+    pid_FL.SetTunings(Kp, Ki, Kd);
+    pid_FR.SetTunings(Kp, Ki, Kd);
+    pid_RL.SetTunings(Kp, Ki, Kd);
+    pid_RR.SetTunings(Kp, Ki, Kd);
 }
 
 //debug serial2

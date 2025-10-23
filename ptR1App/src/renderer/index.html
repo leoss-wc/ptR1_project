@@ -73,7 +73,7 @@
       <div class="controls-main">
         <div>
           <label for="pwm-slider">PWM Value: <span id="pwm-value-label">70</span></label><br>
-          <input type="range" id="pwm-slider" min="0" max="200" value="70" step="1">
+          <input type="range" id="pwm-slider" min="0" max="255" value="70" step="1">
         </div>
         <div class="cmd-section">
           <label for="cmd-dropdown">Select Command:</label>
@@ -90,8 +90,8 @@
           <button id="send-custom-cmd-button">Send Custom</button>
         </div>
         <div id="power-panel" style="margin-top: 20px;">
-          <h4>🔋 Voltage: <span id="voltage">--</span></h4>
-          <h4>📊 Battery: <span id="percent">--</span></h4>
+          <h4>Voltage: <span id="voltage">--</span></h4>
+          <h4>Battery: <span id="percent">--</span></h4>
         </div>
       </div>
     </div>

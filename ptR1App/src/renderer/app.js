@@ -366,12 +366,15 @@ const sendKeyDrive = (event) => {
   const pwmInputValue = parseInt(pwmInput.value);
   const pwmMax = (!isNaN(pwmInputValue) && pwmInputValue > 0) ? pwmInputValue : 255;
 
-  const hadPwm = pwmMap.has(event.code);
-  let pwm = hadPwm ? pwmMap.get(event.code) : pwmInitial;
-  let command;
+  //const hadPwm = pwmMap.has(event.code);
+  //let pwm = hadPwm ? pwmMap.get(event.code) : pwmInitial;
+  //let command;
   //let pwm = pwmMap.has(event.code) ? pwmMap.get(event.code) : pwmInitial;
-  pwm = Math.min(pwm + pwmStep, pwmMax);
-  pwmMap.set(event.code, pwm);  // เก็บ pwm ล่าสุด
+  //pwm = Math.min(pwm + pwmStep, pwmMax);
+  //pwmMap.set(event.code, pwm);  // เก็บ pwm ล่าสุด
+  const pwm = pwmMax;
+  let command;
+
 
   switch (event.code) {
     case 'KeyW': command = 0x0100 + pwm; break; // Forward
@@ -406,16 +409,12 @@ document.addEventListener('keydown', (event) => {
     } else {
       sendKeyDrive(event);
     }
-  }, isServoKey ? 150 : 100);
+  }, isServoKey ? 150 : 100);// 150ms สำหรับ Servo, 100ms สำหรับ Drive
 
   intervalMap.set(code, intervalId);
 });
 document.addEventListener('keyup', (event) => {
   const code = event.code;
-
-  //console.log(`⏏️ Key released: ${code}, clearing interval and PWM`);
-  //console.log('PWM before delete:', pwmMap.get(code));
-
   if (intervalMap.has(code)) {
     clearInterval(intervalMap.get(code));
     intervalMap.delete(code);
@@ -424,7 +423,7 @@ document.addEventListener('keyup', (event) => {
   pressedKeys.delete(code);
 });
 
-//ฟังก์ชันส่ง Servo command เฉพาะตอน MANUAL ON
+//ฟังก์ชันส่ง Servo command 
 const sendServoControl = (event) => {
   if (!event || !event.code) return;
 
@@ -432,7 +431,7 @@ const sendServoControl = (event) => {
   const modeLabel = document.getElementById('mode-label');
 
   if (!keyboardToggle || !modeLabel) return;
-  if (modeLabel.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
+  //if (modeLabel.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
 
   let command;
 
