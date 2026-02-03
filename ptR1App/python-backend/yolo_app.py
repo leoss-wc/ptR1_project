@@ -17,7 +17,7 @@ except Exception as e:
     exit()
 
 
-async def handler(websocket, path):
+async def handler(websocket):
     print("Client connected!")
     try:
         async for message in websocket:
@@ -25,6 +25,7 @@ async def handler(websocket, path):
             if "," in message:
                 header, encoded_data = message.split(",", 1)
             else:
+                print("Invalid data format received.")  
                 continue # ข้ามถ้า format ไม่ถูกต้อง
 
             image_data = base64.b64decode(encoded_data)

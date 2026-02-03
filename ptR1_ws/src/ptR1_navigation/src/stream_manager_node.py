@@ -24,12 +24,12 @@ def handle_start_stream(req):
     ffmpeg_command = [
         'ffmpeg',
         '-f', 'v4l2',      # Source format
-        '-i', '/dev/video0', # Source device (แก้เป็น path กล้องของคุณ)
+        '-i', '/dev/video0', # Source device 
         '-c:v', 'libx264', # Video codec
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
         '-f', 'rtsp',      # Output format
-        'rtsp://localhost:8554/mystream' # Destination MediaMTX (แก้ path ตามของคุณ)
+        'rtsp://localhost:8554/live' # Destination MediaMTX 
     ]
     
     try:

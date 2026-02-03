@@ -186,6 +186,7 @@ include_directories(
    src/map_manager_node.py
    src/patrol_navigator_node.py
    src/pose_republisher.py
+   src/stream_manager_node.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

@@ -1,6 +1,6 @@
 const { parentPort } = require('worker_threads');
 const ROSLIB = require('roslib');
-const WebSocket = require('ws');
+const { CMD } = require('../main/constants.js');
 
 let ros;
 let reconnectInterval = 5000; // ระยะเวลาในการลองเชื่อมต่อใหม่ (ms)
@@ -14,6 +14,7 @@ let isSlamPoseInitialized = false;
 
 const BUFFER_SIZE_VOLTAGE = 50;  // ค่าเฉลี่ยจาก 10 วินาที
 let voltageBuffer = [];
+let tfClient = null;
 
 
 parentPort.on('message', (message) => {
@@ -65,24 +66,19 @@ parentPort.on('message', (message) => {
         callStopStreamService();
         break;
       case 'switchPoseSubscriber':
-         case 'switchPoseSubscriber':
         console.log(`Server: Switching pose subscriber to mode: ${message.mode}`);
         
         if (amclPoseSubscriber) {
           amclPoseSubscriber.unsubscribe();
           amclPoseSubscriber = null;
         }
-        // <<< CHANGED: แก้ไขการ unsubscribe ของ slam
         if (slamPoseSubscriber) {
           slamPoseSubscriber.unsubscribe();
           slamPoseSubscriber = null;
         }
-
-        // เริ่มตัวที่ต้องการ
         if (message.mode === 'amcl') {
           subscribeAmclPose();
         } else if (message.mode === 'slam') {
-          // ไม่จำเป็นต้องเช็ค flag อีกต่อไป เพราะเราควบคุมการ subscribe จาก UI โดยตรง
           subscribeRobotPoseSlam();
         }
         break;
@@ -105,6 +101,10 @@ parentPort.on('message', (message) => {
       case 'stopPatrol':
         callStopPatrolService();
         break;
+      case 'getParam': 
+        getRosParam(message.name); break;
+      case 'setParam': 
+        setRosParam(message.name, message.value); break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -148,6 +148,7 @@ function connectROSBridge(url) {
     subscribePlannedPath();
     subscribeMoveBaseResult();
     subscribeLaserScanData();
+    subscribeTF();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
@@ -186,12 +187,12 @@ function startReconnect() {
 function sendRelayViaCommand(relayId, command) {
   const relayCommandMap = {
     relay1: {
-      on:  0x08000001,
-      off: 0x08000000
+      on:  CMD.RELAY1_ON,
+      off: CMD.RELAY1_OFF
     },
     relay2: {
-      on:  0x08000003,
-      off: 0x08000002
+      on:  CMD.RELAY2_ON,
+      off: CMD.RELAY2_OFF
     }
   };
 
@@ -204,7 +205,6 @@ function sendRelayViaCommand(relayId, command) {
   console.log(`Server : 📤 Relay ${relayId} ${command.toUpperCase()} → HEX: ${cmdValue.toString(16)} → DEC: ${cmdValue}`);
   sendCommand(cmdValue);
 }
-
 
 // ส่งคำสั่ง UInt32 Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
 function sendCommand(command) {
@@ -891,17 +891,33 @@ function callStopPatrolService() {
   });
 }
 
-setTimeout((url) => {
-  if (!rosAutoConnected) {
-    console.log('Server : ⏳ No IP received in 3s, connecting to localhost fallback...');
-  }
-}, 3000);
+function subscribeTF() {
+  if (!ros || !ros.isConnected) return;
+
+  console.log('Server : 📡 Initializing TF Client...');
+
+  // สร้าง TF Client โดยระบุว่าเรายึด 'map' เป็นเฟรมหลัก
+  tfClient = new ROSLIB.TFClient({
+    ros: ros,
+    fixedFrame: 'map',
+    angularThres: 0.01, // อัปเดตเมื่อมุมเปลี่ยน 0.01 rad
+    transThres: 0.01,   // อัปเดตเมื่อระยะเปลี่ยน 0.01 เมตร
+    rate: 10.0          // ความถี่สูงสุด 10Hz
+  });
+
+  // Subscribe หาตำแหน่งของ 'base_link' (ตัวหุ่น) เทียบกับ 'map'
+  tfClient.subscribe('base_link', (tf) => {
+    // tf จะมีข้อมูล translation (x,y,z) และ rotation (x,y,z,w)
+    
+    // ส่งข้อมูลกลับไปที่ Main Process (เพื่อส่งต่อให้ Frontend วาด)
+    parentPort.postMessage({
+      type: 'tf-update',
+      data: {
+        translation: tf.translation,
+        rotation: tf.rotation
+      }
+    });
+  });
+}
 
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });
-
-module.exports = {
-  connectROSBridge,
-  sendDrive,
-  sendCommand,
-  sendServo
-};
