@@ -9,10 +9,6 @@ const offscreenCtx = offscreenCanvas.getContext('2d');
 let latestRobotPose = null;
 let currentMapInfo = null;
 let isLiveMapReady = false;
-/**
- * ประมวลผลและเก็บข้อมูลแผนที่ลงบน Off-screen canvas
- * @param {object} mapData - The OccupancyGrid message from ROS.
- */
 
 
 export function processLiveMapData(mapData) {
@@ -130,10 +126,6 @@ function setupLiveCanvasEvents() {
   });
 }
 
-/**
- * วาดแผนที่จาก Off-screen canvas ลงบน Canvas จริง
- * @param {HTMLCanvasElement} visibleCanvas - The canvas element to draw on.
- */
 export function drawLiveMap() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');

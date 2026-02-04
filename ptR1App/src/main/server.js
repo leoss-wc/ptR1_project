@@ -6,7 +6,6 @@ let ros;
 let reconnectInterval = 5000; // ระยะเวลาในการลองเชื่อมต่อใหม่ (ms)
 let rosbridgeURL = '';
 let reconnectTimer = null;
-let rosAutoConnected = false;
 
 let slamPoseSubscriber = null;
 let amclPoseSubscriber = null;
@@ -104,8 +103,11 @@ parentPort.on('message', (message) => {
       case 'sendTwist':
         publishTwist(message.data);
         break;
-      case 'sendServoInt16':
-        publishServoAngle(message.angle);
+      case 'sendServoTiltInt16':
+        publishServoTiltAngle(message.angle);
+        break;
+      case 'sendServoPanInt16':
+        publishServoPanAngle(message.angle);
         break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
@@ -902,12 +904,24 @@ function publishTwist(data) {
   console.log('Published Twist:', data);
 }
 
-// ฟังก์ชัน Publish Servo (Int16)
-function publishServoAngle(angle) {
+// ฟังก์ชัน Publish ServoTilt (Int16)
+function publishServoTiltAngle(angle) {
   if (!ros || !ros.isConnected) return;
   const topic = new ROSLIB.Topic({
     ros: ros,
-    name: '/servo/angle',
+    name: '/camera/tilt',
+    messageType: 'std_msgs/Int16'
+  });
+  topic.publish(new ROSLIB.Message({ data: angle }));
+}
+
+parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });
+
+function publishServoPanAngle(angle) {
+  if (!ros || !ros.isConnected) return;
+  const topic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/camera/pan',
     messageType: 'std_msgs/Int16'
   });
   topic.publish(new ROSLIB.Message({ data: angle }));

@@ -75,15 +75,6 @@
           <label for="pwm-slider">Speed Intensity: <span id="pwm-value-label">70</span></label><br>
           <input type="range" id="pwm-slider" min="0" max="100" value="70" step="1">
         </div>
-        <div class="cmd-section">
-          <label for="cmd-dropdown">Select Command:</label>
-          <select id="cmd-dropdown">
-            <option value="0x07000000">global variable (0x07000000)</option>
-            <option value="0x05000000">drive mode MANUAL OFF (0x05000000)</option>
-            <option value="0x05000001">drive mode MANUAL ON (0x05000001)</option>
-          </select>
-          <button id="send-selected-cmd-button">Send Selected</button>
-        </div>
         <div class="cmd-input-section">
           <label for="cmd-input">Enter Custom Command (HEX):</label>
           <input type="text" id="cmd-input" placeholder="0x05000001" />

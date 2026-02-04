@@ -118,11 +118,18 @@ ipcMain.on('twist-command', (_, data) => {
   }
 });
 
-ipcMain.on('ros:send-servo-int16', (event, angle) => {
+ipcMain.on('ros:send-servo-tilt-int16', (_, angle) => {
   if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendServoInt16', angle: angle });
+    rosWorker.postMessage({ type: 'sendServoTiltInt16',  angle });
   }
 });
+
+ipcMain.on('ros:send-servo-pan-int16', (_, angle) => {
+  if (rosWorker) {
+    rosWorker.postMessage({ type: 'sendServoPanInt16',  angle });
+  }
+});
+
 
 ipcMain.handle('get-default-video-path', () => {
   // app.getPath('videos') จะได้ /home/leoss/Videos (หรือตาม username)
