@@ -17,6 +17,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadRobots: () => ipcRenderer.invoke('robots:load'),
   saveRobots: (robots) => ipcRenderer.invoke('robots:save', robots),
 
+  // Robot movement related api
+  sendTwistCommand: (data) => ipcRenderer.send('twist-command', data),
+  sendServoAngle: (angle) => ipcRenderer.send('ros:send-servo-int16', angle),
+
 
   //ROSBridge related api
   connectROSBridge: (ip) => ipcRenderer.send('connect-rosbridge', ip),

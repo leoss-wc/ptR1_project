@@ -102,9 +102,17 @@ parentPort.on('message', (message) => {
         callStopPatrolService();
         break;
       case 'getParam': 
-        getRosParam(message.name); break;
+        getRosParam(message.name); 
+        break;
       case 'setParam': 
-        setRosParam(message.name, message.value); break;
+        setRosParam(message.name, message.value); 
+        break;
+      case 'sendTwist':
+        publishTwist(message.data);
+        break;
+      case 'sendServoInt16':
+        publishServoAngle(message.angle);
+        break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -918,6 +926,28 @@ function subscribeTF() {
       }
     });
   });
+}
+
+// ฟังก์ชัน Publish Twist
+function publishTwist(data) {
+  if (!ros || !ros.isConnected) return;
+  const topic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/cmd_vel', // ต้องตรงกับที่ ESP32 subscribe
+    messageType: 'geometry_msgs/Twist'
+  });
+  topic.publish(new ROSLIB.Message(data));
+}
+
+// ฟังก์ชัน Publish Servo (Int16)
+function publishServoAngle(angle) {
+  if (!ros || !ros.isConnected) return;
+  const topic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/servo/angle',
+    messageType: 'std_msgs/Int16'
+  });
+  topic.publish(new ROSLIB.Message({ data: angle }));
 }
 
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });

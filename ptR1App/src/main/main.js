@@ -128,6 +128,16 @@ ipcMain.on('uint32-command', (_, { command }) => {
   rosWorker.postMessage({ type: 'sendCmd', command: command });
 });
 
+ipcMain.on('twist-command', (_, data) => {
+  if (rosWorker) {
+    rosWorker.postMessage({ type: 'sendTwist', data: data });
+  }
+});
+
+ipcMain.on('ros:send-servo-int16', (_, angle) => {
+  rosWorker?.postMessage({ type: 'sendServoInt16', angle: angle });
+});
+
 ipcMain.handle('get-default-video-path', () => {
   // app.getPath('videos') จะได้ /home/leoss/Videos (หรือตาม username)
   return path.join(app.getPath('videos'), 'ptR1');

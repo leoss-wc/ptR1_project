@@ -345,107 +345,80 @@ document.addEventListener('DOMContentLoaded', async() => {
   }
 });
 
-// ฟังก์ชันส่ง Drive command เฉพาะตอน MANUAL ON
 
-const pressedKeys = new Set();
-const intervalMap = new Map();
-const pwmMap = new Map();
-const pwmStep = 5;
-const pwmInitial = 40;
+const ABSOLUTE_MAX_LINEAR = 1.0;  // ความเร็วเชิงเส้นสูงสุด (m/s)
+const ABSOLUTE_MAX_ANGULAR = 2.0; // ความเร็วการหมุนสูงสุด (rad/s)
+const SERVO_STEP = 5;        // องศาที่เปลี่ยนต่อการกดหนึ่งครั้ง
+let currentServoAngle = 90;  // มุมเริ่มต้นของ Servo
 
-const sendKeyDrive = (event) => {
-  if (!event || !event.code) return;
+let speedMultiplier = 0.7;
 
-  const keyboardToggle = document.getElementById('keyboard-toggle');
-  let pwmInput = document.getElementById('pwm-slider');
+const activeKeys = new Set();
+let inputInterval = null;
+
+// ฟังก์ชันหลักในการคำนวณและส่งคำสั่ง
+const processInputs = () => {
   const modeLabel = document.getElementById('mode-label');
+  if (modeLabel?.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
 
-  if (!keyboardToggle || !pwmInput || !modeLabel) return;
+  // คำนวณความเร็วสูงสุดที่อนุญาต ณ ขณะนั้นจากค่าที่เก็บไว้
+  const currentMaxLinear = ABSOLUTE_MAX_LINEAR * speedMultiplier;
+  const currentMaxAngular = ABSOLUTE_MAX_ANGULAR * speedMultiplier;
 
-  if (modeLabel.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
-  const pwmInputValue = parseInt(pwmInput.value);
-  const pwmMax = (!isNaN(pwmInputValue) && pwmInputValue > 0) ? pwmInputValue : 255;
+  let vx = 0, vy = 0, wz = 0;
 
-  //const hadPwm = pwmMap.has(event.code);
-  //let pwm = hadPwm ? pwmMap.get(event.code) : pwmInitial;
-  //let command;
-  //let pwm = pwmMap.has(event.code) ? pwmMap.get(event.code) : pwmInitial;
-  //pwm = Math.min(pwm + pwmStep, pwmMax);
-  //pwmMap.set(event.code, pwm);  // เก็บ pwm ล่าสุด
-  const pwm = pwmMax;
-  let command;
+  // ตรวจสอบทิศทางจากปุ่มที่กดค้างไว้
+  if (activeKeys.has('KeyW')) vx += currentMaxLinear;
+  if (activeKeys.has('KeyS')) vx -= currentMaxLinear;
+  if (activeKeys.has('KeyA')) vy += currentMaxLinear;
+  if (activeKeys.has('KeyD')) vy -= currentMaxLinear;
+  if (activeKeys.has('KeyQ')) wz += currentMaxAngular; // หมุนซ้าย (CCW)
+  if (activeKeys.has('KeyE')) wz -= currentMaxAngular; // หมุนขวา (CW)
 
-
-  switch (event.code) {
-    case 'KeyW': command = 0x0100 + pwm; break; // Forward
-    case 'KeyS': command = 0x0400 + pwm; break; // Backward
-    case 'KeyA': command = 0x0200 + pwm; break; // Left
-    case 'KeyD': command = 0x0300 + pwm; break; // Right
-    case 'KeyR': command = 0x0500 + pwm; break; // turn left
-    case 'KeyF': command = 0x0600 + pwm; break; // turn right
-    case 'KeyQ': command = 0x0700 + pwm; break; // forward left
-    case 'KeyE': command = 0x0800 + pwm; break; // forward right
-    default: return;
-  }
-  command = command & 0xFFFF;
-  console.log(`Key pressed: ${event.code} -> Command: ${command.toString(16).toUpperCase()}, PWM: ${pwm}`);
-  window.robotControl.sendKeyCommand(command);
+  // ส่งข้อมูลไปยัง ESP32 ผ่าน Topic /cmd_vel
+  window.electronAPI.sendTwistCommand({
+    linear: { x: vx, y: vy, z: 0 },
+    angular: { x: 0, y: 0, z: wz }
+  });
 };
+
 document.addEventListener('keydown', (event) => {
-  const code = event.code;
+  if (event.repeat) return; // ป้องกัน browser ส่ง event รัวๆ เมื่อกดค้าง
+  
+  activeKeys.add(event.code);
 
-  if (pressedKeys.has(code)) return;
-  pressedKeys.add(code);
-
-  const isServoKey = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code);
-
-  if (!isServoKey) {
-    pwmMap.set(code, pwmInitial);
+  // ส่วนควบคุม Servo (ส่งค่าทันทีเมื่อกด หรือใช้ระบบกดค้าง)
+  if (['ArrowUp', 'ArrowDown'].includes(event.code)) {
+    if (event.code === 'ArrowUp') currentServoAngle = Math.min(180, currentServoAngle + SERVO_STEP);
+    if (event.code === 'ArrowDown') currentServoAngle = Math.max(0, currentServoAngle - SERVO_STEP);
+    
+    console.log(`Sending Servo Angle: ${currentServoAngle}`);
+    window.electronAPI.sendServoAngle(currentServoAngle); // ส่งเป็น Int16
   }
 
-  const intervalId = setInterval(() => {
-    if (isServoKey) {
-      sendServoControl(event);
-    } else {
-      sendKeyDrive(event);
-    }
-  }, isServoKey ? 150 : 100);// 150ms สำหรับ Servo, 100ms สำหรับ Drive
-
-  intervalMap.set(code, intervalId);
+  // เริ่ม Loop การส่งข้อมูลถ้ายังไม่ได้เริ่ม
+  if (!inputInterval && activeKeys.size > 0) {
+    inputInterval = setInterval(processInputs, 100); // ส่งทุก 100ms ตามมาตรฐาน ROS
+  }
 });
+
 document.addEventListener('keyup', (event) => {
-  const code = event.code;
-  if (intervalMap.has(code)) {
-    clearInterval(intervalMap.get(code));
-    intervalMap.delete(code);
+  activeKeys.delete(event.code);
+
+  // ถ้าไม่มีปุ่มควบคุมถูกกดแล้ว ให้หยุดหุ่นยนต์และเคลียร์ Interval
+  if (activeKeys.size === 0 && inputInterval) {
+    clearInterval(inputInterval);
+    inputInterval = null;
+    
+    // ส่งคำสั่งหยุด (Zero Velocity)
+    window.electronAPI.sendTwistCommand({
+      linear: { x: 0, y: 0, z: 0 },
+      angular: { x: 0, y: 0, z: 0 }
+    });
   }
-  pwmMap.delete(code);
-  pressedKeys.delete(code);
 });
 
-//ฟังก์ชันส่ง Servo command 
-const sendServoControl = (event) => {
-  if (!event || !event.code) return;
 
-  const keyboardToggle = document.getElementById('keyboard-toggle');
-  const modeLabel = document.getElementById('mode-label');
-
-  if (!keyboardToggle || !modeLabel) return;
-  //if (modeLabel.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
-
-  let command;
-
-  switch (event.code) {
-    case 'ArrowRight':    command = 0x01; break;
-    case 'ArrowLeft':  command = 0x02; break;
-    case 'ArrowUp':  command = 0x03; break;
-    case 'ArrowDown': command = 0x04; break;
-    default: return;
-  }
-
-  console.log(`Servo key: ${event.code} -> Command: ${command}`);
-  window.robotControl.sendServoCommand(command);
-};
 
 window.electronAPI.onSlamMap((mapData) => {
   // 1. ประมวลผลและให้ mapLive.js เก็บ state
