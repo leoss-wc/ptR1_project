@@ -2,12 +2,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 console.log('[PRELOAD] Using raw preload:', __filename);
 
-contextBridge.exposeInMainWorld('robotControl', {
-  sendKeyCommand: (command) => ipcRenderer.send('key-command', {command}),
-  sendServoCommand: (command) => ipcRenderer.send('servo-command', {command}),
-  sendCommand: (command) => ipcRenderer.send('uint32-command', {command}),
-});
-
 contextBridge.exposeInMainWorld('electronAPI', {
   getVideoFileURL: (relativePath) => ipcRenderer.invoke('get-video-path', relativePath),
   startFFmpegStream: () => ipcRenderer.send('start-stream'),
@@ -19,6 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // Robot movement related api
   sendTwistCommand: (data) => ipcRenderer.send('twist-command', data),
+  sendServoAngle: (angle) => ipcRenderer.send('ros:send-servo-int16', angle),
+  sendCommand: (command) => ipcRenderer.send('uint32-command', {command}),
   sendServoAngle: (angle) => ipcRenderer.send('ros:send-servo-int16', angle),
 
 

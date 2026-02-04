@@ -103,22 +103,6 @@ ipcMain.handle('mapcache:load', async (_, mapName) => {
   }
 });
 
-ipcMain.on('key-command', (_, { command }) => {
-  if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendDrive', command: command });
-  } else {
-    console.error('❌ Worker not initialized when sending key-command');
-  }
-});
-
-ipcMain.on('servo-command', (_, { command }) => {
-  if (rosWorker) {
-    rosWorker.postMessage({ type: 'sendServo', command: command });
-  } else {
-    console.error('❌ Worker not initialized when sending servo-command');
-  }
-});
-
 ipcMain.on('uint32-command', (_, { command }) => {
   if (!rosWorker) {
     console.error('❌ Worker not initialized when sending uint32-command');
@@ -134,8 +118,10 @@ ipcMain.on('twist-command', (_, data) => {
   }
 });
 
-ipcMain.on('ros:send-servo-int16', (_, angle) => {
-  rosWorker?.postMessage({ type: 'sendServoInt16', angle: angle });
+ipcMain.on('ros:send-servo-int16', (event, angle) => {
+  if (rosWorker) {
+    rosWorker.postMessage({ type: 'sendServoInt16', angle: angle });
+  }
 });
 
 ipcMain.handle('get-default-video-path', () => {

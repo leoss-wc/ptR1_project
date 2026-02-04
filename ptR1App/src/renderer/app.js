@@ -92,6 +92,7 @@ function startMockPathTest() {
   }, 150); // อัปเดตทุกๆ 150ms
 }
 
+
 document.addEventListener('DOMContentLoaded', async() => {
   console.log("app: DOMContentLoaded fired!");
   // Video Player view setup
@@ -100,11 +101,22 @@ document.addEventListener('DOMContentLoaded', async() => {
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => switchView(item.dataset.view));
   });
+
   const pwmSlider = document.getElementById('pwm-slider');
   const pwmValueLabel = document.getElementById('pwm-value-label');
   if (pwmSlider && pwmValueLabel) {
-    pwmSlider.addEventListener('input', () => pwmValueLabel.textContent = pwmSlider.value);
+    // อัปเดตค่าความเร็วเฉพาะเมื่อมีการเปลี่ยน Slider เท่านั้น
+    pwmSlider.addEventListener('input', () => {
+      const val = parseInt(pwmSlider.value);
+      pwmValueLabel.textContent = val;
+      
+      // อัปเดตตัวแปร Global เพื่อให้ processInputs นำไปใช้ในครั้งถัดไป
+      speedMultiplier = val / 100; 
+      console.log(`Speed updated to: ${val}% (Multiplier: ${speedMultiplier})`);
+    });
   }
+
+
   // Map Mode Toggle (Static/Live)
   document.getElementById('btn-static-map').addEventListener('click', () => {
     document.getElementById('map-background-layer').classList.remove('hidden');
@@ -305,7 +317,7 @@ document.addEventListener('DOMContentLoaded', async() => {
       return;
     }
     console.log(`Sending UInt32 Command: ${command}`);
-    window.robotControl.sendCommand(command);
+    window.electronAPI.sendCommand(command);
   };
   // ✅ กดปุ่มส่งจาก Dropdown
   sendSelectedCmdButton.addEventListener('click', () => {

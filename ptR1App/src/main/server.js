@@ -23,14 +23,8 @@ parentPort.on('message', (message) => {
       case 'connectROS':
         connectROSBridge(message.url);
         break;
-      case 'sendDrive':
-        sendDrive(message.command);
-        break;
       case 'sendCmd':
         sendCommand(message.command);
-        break;
-      case 'sendServo':
-        sendServo(message.command);
         break;
       case 'sendRelay':
         sendRelayViaCommand(message.relayId, message.command);
@@ -236,39 +230,6 @@ function sendCommand(command) {
   cmdEditTopic.publish(message);
 }
 
-//ส่งคำสั่ง UInt16 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของล้อ
-function sendDrive(command) {
-  const uint16Value = command & 0xFFFF; // ให้แน่ใจว่าอยู่ในช่วง 16-bit
-  console.log(`Server : Sending uint16 Command: ${uint16Value}`);
-  const cmdVelTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/rb/cm/dr',
-    messageType: 'std_msgs/UInt16'
-  });
-
-  const message = new ROSLIB.Message({
-    data: uint16Value
-  });
-
-  cmdVelTopic.publish(message);
-}
-
-//ส่งคำสั่ง UInt8 Command ไปยัง ROSBridge สำหรับการเคลื่อนไหวของ servo
-function sendServo(command) {
-  const uint8Value = command & 0xFF; // ให้แน่ใจว่าอยู่ในช่วง 8-bit
-  console.log(`Server : Sending uint8 Command: ${uint8Value}`);
-  const cmdVelTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/rb/cm/sv',
-    messageType: 'std_msgs/UInt8'
-  });
-
-  const message = new ROSLIB.Message({
-    data: uint8Value
-  });
-
-  cmdVelTopic.publish(message);
-}
 //Subscribe ข้อมูลแผนที่จาก ROS
 function subscribeMapData() {
   const mapTopic = new ROSLIB.Topic({
@@ -311,6 +272,7 @@ function subscribeSlamMapData() {
     });
   });
 }
+
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
   console.log('Server: Subscribing to SLAM pose topic /robot_pose_sample...');
@@ -902,7 +864,7 @@ function callStopPatrolService() {
 function subscribeTF() {
   if (!ros || !ros.isConnected) return;
 
-  console.log('Server : 📡 Initializing TF Client...');
+  console.log('Server : Initializing TF Client...');
 
   // สร้าง TF Client โดยระบุว่าเรายึด 'map' เป็นเฟรมหลัก
   tfClient = new ROSLIB.TFClient({
@@ -937,6 +899,7 @@ function publishTwist(data) {
     messageType: 'geometry_msgs/Twist'
   });
   topic.publish(new ROSLIB.Message(data));
+  console.log('Published Twist:', data);
 }
 
 // ฟังก์ชัน Publish Servo (Int16)
