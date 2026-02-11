@@ -1,8 +1,8 @@
 // modules/inputControl.js
 
-const ABSOLUTE_MAX_LINEAR = 1.0;
-const ABSOLUTE_MAX_ANGULAR = 2.0;
-const SERVO_STEP = 2;
+const ABSOLUTE_MAX_LINEAR = 1.1;
+const ABSOLUTE_MAX_ANGULAR = 5.0;
+const SERVO_STEP = 4;
 
 let currentTiltAngle = 90;
 let currentPanAngle = 90;
@@ -26,35 +26,14 @@ export function initInputControl() {
   // Setup Key Listeners
   document.addEventListener('keydown', handleKeyDown);
   document.addEventListener('keyup', handleKeyUp);
+
+  console.log('Input Control: Initialized keyboard and servo controls.');
 }
 
 function handleKeyDown(event) {
   if (event.repeat) return;
   activeKeys.add(event.code);
-
-  // Servo Control Logic
-  let servoChanged = false;
-  if (activeKeys.has('ArrowUp')) {
-    currentTiltAngle = Math.min(180, currentTiltAngle + SERVO_STEP);
-    servoChanged = true;
-  }
-  if (activeKeys.has('ArrowDown')) {
-    currentTiltAngle = Math.max(0, currentTiltAngle - SERVO_STEP);
-    servoChanged = true;
-  }
-  if (activeKeys.has('ArrowLeft')) {
-    currentPanAngle = Math.min(180, currentPanAngle + SERVO_STEP);
-    servoChanged = true;
-  }
-  if (activeKeys.has('ArrowRight')) {
-    currentPanAngle = Math.max(0, currentPanAngle - SERVO_STEP);
-    servoChanged = true;
-  }
-
-  if (servoChanged) {
-    window.electronAPI.sendServoAngleTilt(currentTiltAngle);
-    window.electronAPI.sendServoAnglePan(currentPanAngle);
-  }
+  console.log(`Key Down: ${event.code}`);
 
   if (!inputInterval && activeKeys.size > 0) {
     inputInterval = setInterval(processInputs, 100);
@@ -66,27 +45,58 @@ function handleKeyUp(event) {
   if (activeKeys.size === 0 && inputInterval) {
     clearInterval(inputInterval);
     inputInterval = null;
-    window.electronAPI.sendTwistCommand({ linear: { x: 0, y: 0, z: 0 }, angular: { x: 0, y: 0, z: 0 } });
   }
 }
 
 function processInputs() {
   const modeLabel = document.getElementById('mode-label');
+
+  let servoChanged = false;
+  
+  if (activeKeys.has('ArrowUp')) {
+    currentTiltAngle = Math.max(20, currentTiltAngle - SERVO_STEP);
+    servoChanged = true;
+  }
+  if (activeKeys.has('ArrowDown')) {
+    currentTiltAngle = Math.min(105, currentTiltAngle + SERVO_STEP);
+    servoChanged = true;
+  }
+  if (activeKeys.has('ArrowLeft')) {
+    currentPanAngle = Math.min(110, currentPanAngle + SERVO_STEP);
+    servoChanged = true;
+  }
+  if (activeKeys.has('ArrowRight')) {
+    currentPanAngle = Math.max(75, currentPanAngle - SERVO_STEP);
+    servoChanged = true;
+  }
+
+  if (servoChanged) {
+    window.electronAPI.sendServoAngleTilt(currentTiltAngle);
+    window.electronAPI.sendServoAnglePan(currentPanAngle);
+    return;
+  }
+
   if (modeLabel?.textContent.trim().toUpperCase() !== 'MANUAL ON') return;
 
   const currentMaxLinear = ABSOLUTE_MAX_LINEAR * speedMultiplier;
   const currentMaxAngular = ABSOLUTE_MAX_ANGULAR * speedMultiplier;
 
   let vx = 0, vy = 0, wz = 0;
+  // แบบแก้ไข: ให้ A/D เป็นการเลี้ยว (Angular Z)
   if (activeKeys.has('KeyW')) vx += currentMaxLinear;
   if (activeKeys.has('KeyS')) vx -= currentMaxLinear;
-  if (activeKeys.has('KeyA')) vy += currentMaxLinear;
-  if (activeKeys.has('KeyD')) vy -= currentMaxLinear;
-  if (activeKeys.has('KeyQ')) wz += currentMaxAngular;
-  if (activeKeys.has('KeyE')) wz -= currentMaxAngular;
+  
+  // ย้ายการเลี้ยวมาไว้ที่ A/D
+  if (activeKeys.has('KeyA')) wz += currentMaxAngular; // เลี้ยวซ้าย
+  if (activeKeys.has('KeyD')) wz -= currentMaxAngular; // เลี้ยวขวา
+
+  // ถ้าหุ่นยนต์ของคุณเป็นล้อ Mecanum สามารถใช้ Q/E เพื่อสไลด์ข้างได้ (Optional)
+  if (activeKeys.has('KeyQ')) vy += currentMaxLinear; 
+  if (activeKeys.has('KeyE')) vy -= currentMaxLinear;
 
   window.electronAPI.sendTwistCommand({
     linear: { x: vx, y: vy, z: 0 },
     angular: { x: 0, y: 0, z: wz }
   });
+  console.log(`Twist Command Sent: linear(${vx.toFixed(2)}, ${vy.toFixed(2)}, 0) angular(0, 0, ${wz.toFixed(2)})`);
 }

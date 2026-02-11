@@ -1,36 +1,46 @@
 DWAPlannerROS:
-  # ✅ ตั้งค่าระบบล้อ
+  # --- 1. Robot Configuration Parameters ---
   holonomic_robot: true
+  
+  # ความเร็วสูงสุด/ต่ำสุด
+  max_vel_x: 0.5       # ความเร็วเดินหน้าสูงสุด (m/s)
+  min_vel_x: -0.3      # ความเร็วถอยหลังสูงสุด (ต้องติดลบ) ให้ถอยหลังได้
 
-  # ✅ ความเร็ว/เร่ง
-  max_vel_x: 0.5
-  min_vel_x: -0.3
+  max_vel_y: 0.5       # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นบวกเพราะถอยข้างขวา
+  min_vel_y: -0.5      # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นลบเพราะถอยข้างซ้าย
 
-  max_vel_y: 0.5
-  min_vel_y: -0.5
+  # ป้องกัน Dead Zone ของมอเตอร์ 
+  max_trans_vel: 0.5   # ความเร็วรวมสูงสุด (Absolute speed) ไม่ว่าจะวิ่งทิศไหน
+  min_trans_vel: 0.15  # ความเร็วต่ำสุดที่มอเตอร์เริ่มหมุนได้จริง
 
-  max_vel_theta: 1.5
-  min_vel_theta: -1.5
+  max_vel_theta: 1.0   # ความเร็วหมุนสูงสุด (rad/s)
+  min_vel_theta: 0.2   # ความเร็วหมุนต่ำสุดที่เริ่มขยับได้
 
-  acc_lim_x: 2.0
-  acc_lim_y: 2.0
-  acc_lim_theta: 3.2
+  # --- 2. Acceleration Limits ---
+  acc_lim_x: 0.5       # ความเร่งเดินหน้า (m/s²)
+  acc_lim_y: 0.5       # ความเร่งสไลด์ข้าง (m/s²)
+  acc_lim_theta: 1.0   # ความเร่งการหมุน (rad/s²)
 
-  # ✅ การจำลอง trajectory
-  sim_time: 2.0
-  vx_samples: 20
-  vy_samples: 20
-  vtheta_samples: 40
-  sim_granularity: 0.025
+  # --- 3. Forward Simulation Parameters ---
+  sim_time: 2.0        # เวลาที่จำลองเส้นทางล่วงหน้า (วินาที)
+  vx_samples: 20       # จำนวนเส้นทางที่จะสุ่มความเร็วแกน X
+  vy_samples: 20       # จำนวนเส้นทางที่จะสุ่มความเร็วแกน Y
+  vtheta_samples: 40   # จำนวนเส้นทางที่จะสุ่มความเร็วเชิงมุม
+  sim_granularity: 0.025 # ความละเอียดของก้าวเดินใน Simulation (เมตร)
 
-  # ✅ ค่าน้ำหนักการวาง path
-  path_distance_bias: 32.0     # อยู่ใกล้เส้นทางเดิม
-  goal_distance_bias: 20.0     # มุ่งไปยังเป้าหมาย
-  occdist_scale: 0.05          # หลีกเลี่ยง obstacle
-  forward_point_distance: 0.325
-  stop_time_buffer: 0.2
+  # --- 4. Trajectory Scoring Parameters ---
+  path_distance_bias: 32.0      # ค่าเน้นให้เดินตามเส้นทางที่กำหนด
+  goal_distance_bias: 24.0      # ค่าเน้นให้ไปถึงเป้าหมาย
+  occdist_scale: 0.1            # ค่าน้ำหนักการหลบสิ่งกีดขวาง
+  forward_point_distance: 0.325 # จุดด้านหน้าหุ่นที่ใช้วัดระยะจากสิ่งกีดขวาง
+  stop_time_buffer: 0.2         # เวลาที่หุ่นต้องหยุดนิ่งก่อนตัดสินใจว่าติดหล่ม
+  scaling_speed: 0.25           # เริ่มลดความเร็วเมื่อใกล้สิ่งกีดขวาง
+  max_scaling_factor: 0.2       # ลดความเร็วได้ไม่เกิน 20%
 
-  # ✅ การหยุดที่ goal
+  # --- 5. Oscillation Prevention ---
+  oscillation_reset_dist: 0.05  # ขยับ 5cm ก็ถือว่าหายติดหล่มแล้ว
+
+  # --- 6. Goal Tolerance ---
+  xy_goal_tolerance: 0.10       # ระยะห่างที่ยอมรับได้ (เมตร) 10cm กำลังแม่น
+  yaw_goal_tolerance: 0.1       # ~5 องศา
   latch_xy_goal_tolerance: true
-  xy_goal_tolerance: 0.15
-  yaw_goal_tolerance: 0.15

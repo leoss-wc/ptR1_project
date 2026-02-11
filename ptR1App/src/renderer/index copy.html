@@ -13,7 +13,6 @@
     <div class="sidebar-item" data-view="map">🗺️</div>
     <div class="sidebar-item" data-view="settings">⚙️</div>
   </div>
-
   <div class="main-content">
     <!-- Home View -->
     <div id="view-home" class="view">
@@ -37,26 +36,9 @@
           </div>
 
           <div>
-            <!--
-            <label for="ipInput">Camera ip:</label>
-            <select id="ipInput">
-              <option value="localhost">localhost:8181</option>
-              <option value="100.65.44.67">100.65.44.67:8181</option>
-              <option value="192.168.237.184">192.168.237.184:8181</option>
-            </select>
-            -->
+ 
             <button id="connectButton">Connect</button>
-            <!--
-            <div class="ip-section" style="margin: 4px;">
-              <label for="ip-dropdown">Select Command:</label>
-              <select id="ip-dropdown">
-                <option value="127.0.0.1">localhost:9090</option>
-                <option value="100.65.44.67">100.65.44.67:9090</option>
-                <option value="192.168.237.184">192.168.237.184:9090</option>
-              </select>
-              <button id="selected-ip">Selected ip address</button>
-            </div>
-            -->
+  
             <div class="controls" style="margin-top: 5px;">
               <div class="toggle">
                 <label for="keyboard-toggle">Control:</label>
@@ -113,23 +95,6 @@
           </label><br>
           <input type="range" id="pwm-slider" min="0" max="200" value="70" step="1">
         </div>
-
-        <div class="cmd-section">
-          <label for="cmd-dropdown">Select Command:</label>
-          <select id="cmd-dropdown">
-            <option value="0x07000000">global variable (0x07000000)</option>
-            <option value="0x05000000">drive mode MANUAL OFF (0x05000000)</option>
-            <option value="0x05000001">drive mode MANUAL ON (0x05000001)</option>
-          </select>
-          <button id="send-selected-cmd-button">Send Selected Command</button>
-        </div>
-
-        <div class="cmd-input-section">
-          <label for="cmd-input">Enter Custom Command:</label>
-          <input type="text" id="cmd-input" placeholder="0x05000001" />
-          <button id="send-custom-cmd-button">Send Custom Command</button>
-        </div>
-
         <div id="power-panel" style="margin-top: 20px;">
           <h4>🔋 Voltage: <span id="voltage">--</span></h4>
           <h4>📊 Battery: <span id="percent">--</span></h4>
@@ -210,8 +175,6 @@
 
             </div>
 
-
-
           </div>
           <div class="map-right">
             <button id="open-map-folder-btn">📂 Open Map Folder</button>
@@ -260,7 +223,5 @@
 
   <script src="page_script.js"></script>
   <script type="module" src="app.js"></script>
-  <!--<script type="module" src="renderer.js"></script>-->
-  
 </body>
 </html>

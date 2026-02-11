@@ -23,4 +23,5 @@ export function initRelayButtons() {
     document.getElementById(id).addEventListener("click", () => toggleRelay(id));
     updateButton(id);
   });
+  console.log('Relay Control: Initialized relay buttons.');
 }

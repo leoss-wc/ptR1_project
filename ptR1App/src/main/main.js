@@ -103,12 +103,11 @@ ipcMain.handle('mapcache:load', async (_, mapName) => {
   }
 });
 
-ipcMain.on('uint32-command', (_, { command }) => {
+ipcMain.on('robot-command', (_, { command }) => {
   if (!rosWorker) {
-    console.error('❌ Worker not initialized when sending uint32-command');
+    console.error('❌ Worker not initialized when sending robot-command');
     return;
   }
-  console.log(`🎮 Received uint32 Command: ${command} (main log)`);
   rosWorker.postMessage({ type: 'sendCmd', command: command });
 });
 
@@ -208,14 +207,13 @@ ipcMain.on('relay-command', (_, { relayId, command }) => {
 
 ipcMain.on('set-manual-mode', (event, { state }) => {
   if (state) {
-    const command = 0x05000001; // เปิด MANUAL
-    console.log(`Main: Switching MANUAL MODE ON → Send: 0x${command.toString(16)}`);
+    const command = 'manual_on';
+    console.log(`Main: Switching MANUAL MODE ON → Send: ${command}`);
     rosWorker.postMessage({ type: 'sendCmd', command });
   } else {
-    const command = 0x05000000;
-        console.log(`Main: Switching MANUAL MODE OFF → Send: 0x${command.toString(16)}`);
-    rosWorker.postMessage({ type: 'sendCmd', command });
-    // ไม่ส่งอะไร
+    const command = 'manual_off';
+    console.log(`Main: Switching MANUAL MODE OFF → Send: ${command}`);
+    rosWorker.postMessage({ type: 'sendCmd', command });   
   }
 });
 
@@ -602,6 +600,9 @@ app.whenReady().then(() => {
         case 'patrol-stop-result':
             mainWindow?.webContents.send('patrol-stop-result', message.data);
             break;
+        case 'robot-status-update':
+          mainWindow?.webContents.send('ros:status', message.data);
+          break;
 
         default:
           console.warn('[main]: Unknown message from worker:', message);

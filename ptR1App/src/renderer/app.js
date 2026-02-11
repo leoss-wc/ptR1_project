@@ -1,4 +1,4 @@
-console.log('👷 app.js started');
+console.log('app.js started');
 
 import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
@@ -21,6 +21,7 @@ import { updateLaserScan } from './modules/laserScanState.js';
 import { initInputControl } from './modules/inputControl.js';
 import { initProfileManager } from './modules/profileManager.js';
 import { initSlamControl } from './modules/slamControl.js';
+import { RobotStatusRenderer, PidTuner} from './modules/robotStatusView.js';
 
 
 let recorder = null;
@@ -37,7 +38,12 @@ document.addEventListener('DOMContentLoaded', async() => {
   initInputControl();       // จัดการ Keyboard/Servo/Speed
   await initProfileManager(); // จัดการ Profile/Connect
   initSlamControl();        // จัดการ SLAM ปุ่มต่างๆ
-  setupVideoPlayer();
+  patrol.initPatrolManager();
+  requestAnimationFrame(renderLoop);
+  setupPatrolEvents();
+  initRelayButtons();
+  setupRecorder();
+  setupGlobalCallbacks();
   //ตั้งค่าการสลับ View ผ่าน Sidebar
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => switchView(item.dataset.view));
@@ -53,15 +59,23 @@ document.addEventListener('DOMContentLoaded', async() => {
       );
     }
     resetLiveMapView();
-  });
+
   document.getElementById('reset-live-view-btn').addEventListener('click', () => {
-  patrol.initPatrolManager();
-  requestAnimationFrame(renderLoop);
-  setupPatrolEvents();
-  initRelayButtons();
-  setupRecorder();
-  setupGlobalCallbacks()
-});
+    resetLiveMapView();
+  });
+  const statusRenderer = new RobotStatusRenderer();
+  const pidTuner = new PidTuner();
+  if (window.api && window.api.onRobotStatus) {
+        window.api.onRobotStatus((dataString) => {
+            statusRenderer.update(dataString);
+            pidTuner.updateFromStatus(dataString); 
+        });
+    } else {
+        console.warn("window.api.onRobotStatus not found");
+    }
+  });
+
+
 
 // --- Helper Functions ---
 function setupMapToggles() {
@@ -97,6 +111,7 @@ function setupPatrolEvents() {
     document.getElementById('resume-patrol-btn').addEventListener('click', patrol.resumePatrol);
     document.getElementById('stop-patrol-btn').addEventListener('click', patrol.stopPatrol);
     document.getElementById('loop-patrol-checkbox').addEventListener('change', (e) => patrolState.setLooping(e.target.checked));
+    console.log('Patrol: Event listeners set up.');
 }
 function setupRecorder() {
     const canvas = document.getElementById('capture-canvas');
@@ -107,6 +122,7 @@ function setupRecorder() {
         
         startBtn.addEventListener('click', () => { recorder.start(); startBtn.disabled = true; stopBtn.disabled = false; });
         stopBtn.addEventListener('click', () => { recorder.stop(); startBtn.disabled = false; stopBtn.disabled = true; });
+        console.log('Recorder: Canvas recorder initialized.');
     }
 }
 function setupGlobalCallbacks() {
@@ -127,10 +143,6 @@ function setupGlobalCallbacks() {
         document.getElementById('mode-label').textContent = e.target.checked ? 'MANUAL ON' : 'MANUAL OFF';
         window.electronAPI.setManualMode(e.target.checked);
     });
-
-    // Commands
-    document.getElementById('send-selected-cmd-button').addEventListener('click', () => window.electronAPI.sendCommand(parseInt(document.getElementById('cmd-dropdown').value)));
-    document.getElementById('send-custom-cmd-button').addEventListener('click', () => window.electronAPI.sendCommand(parseInt(document.getElementById('cmd-input').value, 16)));
 
     // Power
     if (window.electronAPI?.onPowerUpdate) {
@@ -162,6 +174,7 @@ function setupGlobalCallbacks() {
         renderDashboardMap();
         if (!document.getElementById('map-scan-layer').classList.contains('hidden')) renderScan();
     });
+    console.log('app: Global callbacks set up.');
 }
 
 function renderLoop(currentTime) {

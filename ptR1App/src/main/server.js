@@ -22,9 +22,6 @@ parentPort.on('message', (message) => {
       case 'connectROS':
         connectROSBridge(message.url);
         break;
-      case 'sendCmd':
-        sendCommand(message.command);
-        break;
       case 'sendRelay':
         sendRelayViaCommand(message.relayId, message.command);
         break;
@@ -100,6 +97,9 @@ parentPort.on('message', (message) => {
       case 'setParam': 
         setRosParam(message.name, message.value); 
         break;
+      case 'sendCmd':
+        sendCommand(message.command);
+        break;
       case 'sendTwist':
         publishTwist(message.data);
         break;
@@ -147,11 +147,11 @@ function connectROSBridge(url) {
     console.log('Serverosbridger : Connected to ROSBridge at', url);
     parentPort.postMessage({ type: 'connection', data: 'connected' });
     //subscribe function
-    subscribeSensorData();
     subscribeMapData();
     subscribePlannedPath();
     subscribeMoveBaseResult();
     subscribeLaserScanData();
+    subscribeRobotStatus();
     subscribeTF();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
@@ -216,18 +216,16 @@ function sendCommand(command) {
     console.error('Server : ❌ Cannot send command: ROSBridge is not connected.');
     return;
   }
-  const uint32Value = command >>> 0;
-  console.log(`Server : 📤 Sending UInt32 Command: ${uint32Value}`);
-
   const cmdEditTopic = new ROSLIB.Topic({
     ros: ros,
-    name: '/rb/cm/ed',
-    messageType: 'std_msgs/UInt32',
+    name: '/robot/cmd',
+    messageType: 'std_msgs/String',
   });
 
   const message = new ROSLIB.Message({
-    data: uint32Value,
+    data: command.toString()
   });
+  console.log('Server : Publishing command to /robot/cmd:', command);
 
   cmdEditTopic.publish(message);
 }
@@ -458,19 +456,17 @@ function subscribeSensorData() {
   });
 
   sensorTopic.subscribe((message) => {
-    const raw = message.data >>> 0;
-    const current_mA = (raw >> 16) & 0xFFFF;
-    const voltage_cV = raw & 0xFFFF;
+    const data = message.data;
 
-    const voltage_V = voltage_cV / 100.0;
-    const current_A = current_mA / 1000.0;
+
+    const voltage_V = data.voltage;
+    const current_A = data.current;
 
     // เติมค่าใหม่เข้า buffer
     voltageBuffer.push(voltage_V);
     if (voltageBuffer.length > BUFFER_SIZE_VOLTAGE) {
         voltageBuffer.shift(); // ลบค่าที่เก่าที่สุดออก
     }
-
     // คำนวณค่าเฉลี่ย
     let sum = 0;
     for (let i = 0; i < voltageBuffer.length; i++) {
@@ -482,9 +478,6 @@ function subscribeSensorData() {
     } else {
         avgVoltage = 0; // ค่า default 
     }
-
-
-
     // คำนวณ % SOC แบบ linear (12.0V = 0%, 14.6V = 100%)
     let soc = 0;
     const maxVoltage = 13.50;
@@ -500,6 +493,27 @@ function subscribeSensorData() {
         current: current_A.toFixed(2),
         percent: soc.toFixed(0)
       }
+    });
+  });
+}
+
+function subscribeRobotStatus() {
+  if (!ros || !ros.isConnected) return;
+
+  const statusTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/robot/status', 
+    messageType: 'std_msgs/String',
+    throttle_rate: 500 // รับข้อมูลทุกๆ 500ms
+  });
+
+  console.log('[Server] Subscribing to Robot Status: /robot/status');
+
+  statusTopic.subscribe((message) => {
+    // ส่งข้อมูล String ดิบๆ กลับไปให้ Main Process
+    parentPort.postMessage({
+      type: 'robot-status-update',
+      data: message.data
     });
   });
 }
@@ -897,7 +911,7 @@ function publishTwist(data) {
   if (!ros || !ros.isConnected) return;
   const topic = new ROSLIB.Topic({
     ros: ros,
-    name: '/cmd_vel', // ต้องตรงกับที่ ESP32 subscribe
+    name: '/robot/cmdvel_manual',
     messageType: 'geometry_msgs/Twist'
   });
   topic.publish(new ROSLIB.Message(data));
@@ -913,10 +927,8 @@ function publishServoTiltAngle(angle) {
     messageType: 'std_msgs/Int16'
   });
   topic.publish(new ROSLIB.Message({ data: angle }));
+  console.log('Published Servo Tilt Angle:', angle);
 }
-
-parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });
-
 function publishServoPanAngle(angle) {
   if (!ros || !ros.isConnected) return;
   const topic = new ROSLIB.Topic({
@@ -925,6 +937,9 @@ function publishServoPanAngle(angle) {
     messageType: 'std_msgs/Int16'
   });
   topic.publish(new ROSLIB.Message({ data: angle }));
+  console.log('Published Servo Pan Angle:', angle);
 }
 
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });
+
+

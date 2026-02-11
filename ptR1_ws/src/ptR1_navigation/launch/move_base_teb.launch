@@ -1,15 +1,5 @@
 <launch>
-  <!-- 🗺️ โหลดแผนที่ -->
-  <node name="map_server" pkg="map_server" type="map_server" args="$(find your_package)/maps/map.yaml"/>
-
-  <!-- 📍 AMCL -->
-  <node name="amcl" pkg="amcl" type="amcl" output="screen">
-    <param name="odom_frame_id" value="odom"/>
-    <param name="base_frame_id" value="base_link"/>
-    <param name="global_frame_id" value="map"/>
-  </node>
-
-  <!-- 🧠 Move Base with TebLocalPlanner -->
+  <!--Move Base with TebLocalPlanner -->
   <node pkg="move_base" type="move_base" name="move_base" output="screen">
     <!-- เปลี่ยน planner -->
     <param name="base_local_planner" value="teb_local_planner/TebLocalPlannerROS"/>

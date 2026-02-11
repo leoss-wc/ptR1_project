@@ -1,8 +1,8 @@
-const CMD = {
-  RELAY1_ON: 0x08000001,
-  RELAY1_OFF: 0x08000000,
-  RELAY2_ON: 0x08000003,
-  RELAY2_OFF: 0x08000002,
-  MANUAL_ON: 0x05000001,
-  MANUAL_OFF: 0x05000000,
+export const CMD = {
+  RELAY1_ON: 'r1_on',
+  RELAY1_OFF: 'r1_off',
+  RELAY2_ON: 'r2_on',
+  RELAY2_OFF: 'r2_off',
+  MANUAL_ON: 'manual_on',
+  MANUAL_OFF: 'manual_off',
 };

@@ -1,3 +1,4 @@
+# Global Costmap Parameters for ptR1 Robot
 global_costmap:
   global_frame: map             # กรอบอ้างอิงหลักของ global costmap มักใช้ "map" เมื่อใช้ AMCL
   robot_base_frame: base_link   # กรอบฐานของหุ่นยนต์ เช่น "base_link" หรือ "base_footprint"
@@ -40,5 +41,5 @@ global_costmap:
 
   inflation_layer:
     enabled: true                     # เปิดใช้งาน inflation layer (พื้นที่กันชน)
-    inflation_radius: 0.2             # ระยะจากสิ่งกีดขวางที่จะใส่ค่า cost เพิ่ม (เมตร)
+    inflation_radius: 0.5             # ระยะจากสิ่งกีดขวางที่จะใส่ค่า cost เพิ่ม (เมตร)
     cost_scaling_factor: 5.0          # ความชันของค่า cost รอบ obstacle → ค่ายิ่งสูง หุ่นยนต์ยิ่งหลีกเลี่ยง

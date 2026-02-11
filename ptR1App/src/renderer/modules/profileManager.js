@@ -19,6 +19,7 @@ export async function initProfileManager() {
   document.getElementById('connectButton').addEventListener('click', connectUsingCurrentProfile);
 
   await loadAndDisplayProfiles();
+  console.log('Profile Manager: Initialized profile manager and loaded profiles.');
 }
 
 async function loadAndDisplayProfiles() {

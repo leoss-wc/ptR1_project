@@ -1,3 +1,4 @@
+# local Costmap Parameters for ptR1 Robot
 local_costmap:
   global_frame: odom             # กรอบอ้างอิงหลักของ local costmap → ใช้ "odom" สำหรับการคำนวณระยะทางระยะสั้นและการเคลื่อนไหว
   robot_base_frame: base_link    # กรอบของหุ่นยนต์ที่ใช้เป็นอ้างอิง (เช่น base_link หรือ base_footprint)
@@ -10,3 +11,7 @@ local_costmap:
   height: 3.0                    # ความสูงของ local costmap (เมตร) → ควรเพียงพอให้วาง path ได้รอบตัวหุ่นยนต์
 
   resolution: 0.05               # ความละเอียดของกริด (เมตร/เซลล์) → ยิ่งเล็กยิ่งแม่นยำแต่ใช้หน่วยความจำมากขึ้น
+  
+  plugins:
+    - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
+    - {name: inflation_layer, type: "costmap_2d::InflationLayer"}

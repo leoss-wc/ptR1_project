@@ -41,6 +41,7 @@ export function initSlamControl() {
             document.getElementById('sync-maps-btn').click(); 
         }
     });
+    console.log('Slam Control: Initialized SLAM control buttons and callbacks.');
 }
 
 function updateLabel(data) {

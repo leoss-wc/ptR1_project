@@ -75,17 +75,48 @@
           <label for="pwm-slider">Speed Intensity: <span id="pwm-value-label">70</span></label><br>
           <input type="range" id="pwm-slider" min="0" max="100" value="70" step="1">
         </div>
-        <div class="cmd-input-section">
-          <label for="cmd-input">Enter Custom Command (HEX):</label>
-          <input type="text" id="cmd-input" placeholder="0x05000001" />
-          <button id="send-custom-cmd-button">Send Custom</button>
+        <div class="status-card" style="background: #222; color: #fff; padding: 15px; border-radius: 8px; margin-top: 10px;">
+        <h3>🤖 Monitor Status</h3>
+        <div style="display: flex; gap: 20px;">
+            <div>
+                <span style="color: #aaa;">Mode:</span> 
+                <span id="mon-mode" style="font-weight: bold; color: #00C851;">--</span>
+            </div>
+            
+            <div>
+                <span style="color: #aaa;">Watchdog:</span> 
+                <span id="mon-wd" style="font-weight: bold;">--</span>
+                <small id="mon-wd-time" style="color: #777;">(0ms)</small>
+            </div>
         </div>
-        <div id="power-panel" style="margin-top: 20px;">
-          <h4>Voltage: <span id="voltage">--</span></h4>
-          <h4>Battery: <span id="percent">--</span></h4>
+        <div style="margin-top: 10px;">
+            <span style="color: #aaa;">PID:</span> 
+            <span id="mon-pid" style="font-family: monospace; color: #33b5e5;">P:0.0 I:0.0 D:0.0</span>
+        </div>
+
+        <div style="margin-top: 5px;">
+            <span style="color: #aaa;">Relay:</span> <span id="mon-relay">--</span> | 
+            <span style="color: #aaa;">Bat:</span> <span id="mon-bat">--</span>
+        </div>
+        </div>
+              <div class="card pid-tuner-card" style="margin-top: 15px; background: #222; padding: 15px; border-radius: 8px;">
+        <h3>🎛️ PID Tuner</h3>
+        <div class="input-group" style="margin: auto;">
+            <label>Kp:</label>
+                <input type="number" id="input-kp" step="0.1" placeholder="1.5">
+            </div>
+            <div class="input-group">
+                <label>Ki:</label>
+                <input type="number" id="input-ki" step="0.1" placeholder="5.0">
+            </div>        
+            <div class="input-group">
+                <label>Kd:</label>
+                <input type="number" id="input-kd" step="0.01" placeholder="0.05">
+            </div>
+            <button id="btn-update-pid" class="btn-primary">Update PID</button>
+        </div>
         </div>
       </div>
-    </div>
 
     <div id="view-video" class="view hidden">
       <h2>📹 Recording</h2>

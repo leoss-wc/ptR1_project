@@ -2,81 +2,103 @@
 
 import rospy
 import subprocess
+import time
+import os
+import signal
 from std_srvs.srv import Trigger, TriggerResponse
 
-# ตัวแปรสำหรับเก็บ FFmpeg process ที่กำลังทำงานอยู่
+# ตัวแปรสำหรับเก็บ FFmpeg process
 ffmpeg_process = None
 
-def handle_start_stream(req):
-    """
-    Service handler สำหรับเริ่มการสตรีม
-    """
+def cleanup():
+    """ฟังก์ชันสำหรับเคลียร์ Process เมื่อปิด Node"""
     global ffmpeg_process
-    rospy.loginfo("Received request to start FFmpeg stream.")
-
-    # ตรวจสอบว่ามี process ทำงานอยู่แล้วหรือไม่
     if ffmpeg_process is not None and ffmpeg_process.poll() is None:
-        rospy.logwarn("FFmpeg stream is already running.")
+        rospy.logwarn("Shutting down ROS node, killing FFmpeg...")
+        # ส่งสัญญาณ SIGINT (เหมือนกด Ctrl+C ให้ FFmpeg)
+        os.kill(ffmpeg_process.pid, signal.SIGINT)
+        # รอให้จบจริง
+        try:
+            ffmpeg_process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            ffmpeg_process.kill()
+
+def handle_start_stream(req):
+    global ffmpeg_process
+    rospy.loginfo("Received request to start stream.")
+
+    if ffmpeg_process is not None and ffmpeg_process.poll() is None:
         return TriggerResponse(success=False, message="Stream is already running.")
 
-    # --- 🔧 แก้ไขคำสั่ง FFmpeg ของคุณที่นี่ ---
-    # ตัวอย่าง: สตรีมจากกล้อง USB (/dev/video0) ไปยัง MediaMTX
+    # --- 🔧 ปรับปรุงคำสั่ง FFmpeg ---
     ffmpeg_command = [
         'ffmpeg',
-        '-f', 'v4l2',      # Source format
-        '-i', '/dev/video0', # Source device 
-        '-c:v', 'libx264', # Video codec
+        '-y', # Overwrite output files
+        '-f', 'v4l2',
+        '-input_format', 'mjpeg', # บังคับใช้ mjpeg เพื่อลด load usb
+        '-framerate', '30',       # กำหนด fps ขาเข้า
+        '-video_size', '640x480', # กำหนดขนาดภาพ
+        '-i', '/dev/video0',
+        '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-tune', 'zerolatency',
-        '-f', 'rtsp',      # Output format
-        'rtsp://localhost:8554/live' # Destination MediaMTX 
+        '-b:v', '600k',           # จำกัด Bitrate ไม่ให้กิน Bandwidth เกิน
+        '-f', 'rtsp',
+        '-rtsp_transport', 'tcp', # สำคัญ! ใช้ TCP เพื่อความเสถียร
+        'rtsp://localhost:8554/mystream'
     ]
-    
+
     try:
-        rospy.loginfo(f"Executing command: {' '.join(ffmpeg_command)}")
-        # รัน FFmpeg เป็น background process
+        # redirect stdout/stderr เพื่อไม่ให้รก Terminal (หรือเอาออกถ้าอยากเห็น Log)
+        # ffmpeg_process = subprocess.Popen(ffmpeg_command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        
+        # รันแบบปกติ (เห็น Log ของ FFmpeg ใน Terminal ROS)
         ffmpeg_process = subprocess.Popen(ffmpeg_command)
-        return TriggerResponse(success=True, message="FFmpeg stream started successfully.")
+
+        # --- Safety Check: รอ 1 วินาทีเพื่อดูว่ารอดไหม ---
+        time.sleep(1.0) 
+        if ffmpeg_process.poll() is not None:
+            # ถ้า poll() ไม่ใช่ None แปลว่า Process ตายไปแล้ว
+            return TriggerResponse(success=False, message="FFmpeg started but crashed immediately (Check camera/RTSP server).")
+
+        rospy.loginfo(f"Stream started with PID: {ffmpeg_process.pid}")
+        return TriggerResponse(success=True, message="Stream started successfully.")
+
     except Exception as e:
-        rospy.logerr(f"Failed to start FFmpeg: {e}")
+        rospy.logerr(f"Failed to start: {e}")
         return TriggerResponse(success=False, message=str(e))
 
 def handle_stop_stream(req):
-    """
-    Service handler สำหรับหยุดการสตรีม
-    """
     global ffmpeg_process
-    rospy.loginfo("Received request to stop FFmpeg stream.")
+    rospy.loginfo("Request to stop stream.")
 
     if ffmpeg_process is None or ffmpeg_process.poll() is not None:
-        rospy.logwarn("FFmpeg stream is not running.")
         return TriggerResponse(success=False, message="Stream is not running.")
 
     try:
-        rospy.loginfo(f"Terminating FFmpeg process with PID: {ffmpeg_process.pid}")
-        ffmpeg_process.terminate() # ส่งสัญญาณให้ process หยุดทำงาน
-        ffmpeg_process.wait(timeout=5) # รอ 5 วินาที
+        # ใช้ os.kill เพื่อส่ง SIGINT (นุ่มนวลกว่า terminate สำหรับ ffmpeg)
+        os.kill(ffmpeg_process.pid, signal.SIGINT)
+        ffmpeg_process.wait(timeout=3)
         ffmpeg_process = None
-        return TriggerResponse(success=True, message="FFmpeg stream stopped successfully.")
+        return TriggerResponse(success=True, message="Stream stopped.")
     except subprocess.TimeoutExpired:
-        rospy.logerr("FFmpeg process did not terminate in time, killing.")
+        rospy.logwarn("FFmpeg stuck, forcing kill.")
         ffmpeg_process.kill()
         ffmpeg_process = None
-        return TriggerResponse(success=False, message="Stream was forcefully killed.")
+        return TriggerResponse(success=True, message="Stream killed forcefully.")
     except Exception as e:
-        rospy.logerr(f"Failed to stop FFmpeg: {e}")
         return TriggerResponse(success=False, message=str(e))
 
 def stream_manager_server():
     rospy.init_node('stream_manager_server')
     
-    # สร้าง Service ชื่อ /stream_manager/start
+    # ลงทะเบียนฟังก์ชัน cleanup ให้ทำงานตอนปิด Node
+    rospy.on_shutdown(cleanup)
+
     rospy.Service('/stream_manager/start', Trigger, handle_start_stream)
-    
-    # สร้าง Service ชื่อ /stream_manager/stop
     rospy.Service('/stream_manager/stop', Trigger, handle_stop_stream)
     
-    rospy.loginfo("🚀 Stream Manager is ready.")
+    rospy.loginfo("Stream Manager Ready (Robust Mode)")
     rospy.spin()
 
 if __name__ == "__main__":
