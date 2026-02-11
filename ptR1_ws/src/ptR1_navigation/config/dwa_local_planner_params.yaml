@@ -6,8 +6,8 @@ DWAPlannerROS:
   max_vel_x: 0.5       # ความเร็วเดินหน้าสูงสุด (m/s)
   min_vel_x: -0.3      # ความเร็วถอยหลังสูงสุด (ต้องติดลบ) ให้ถอยหลังได้
 
-  max_vel_y: 0.5       # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นบวกเพราะถอยข้างขวา
-  min_vel_y: -0.5      # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นลบเพราะถอยข้างซ้าย
+  max_vel_y: 0.5       # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นบวกเพราะถอยข้างซ้าย
+  min_vel_y: -0.5      # ความเร็วสไลด์ข้างสูงสุด (m/s) //เป็นลบเพราะถอยข้างขวา
 
   # ป้องกัน Dead Zone ของมอเตอร์ 
   max_trans_vel: 0.5   # ความเร็วรวมสูงสุด (Absolute speed) ไม่ว่าจะวิ่งทิศไหน
@@ -29,6 +29,7 @@ DWAPlannerROS:
   sim_granularity: 0.025 # ความละเอียดของก้าวเดินใน Simulation (เมตร)
 
   # --- 4. Trajectory Scoring Parameters ---
+  meter_scoring: true           # ใช้ระยะทางจริงในการคำนวณคะแนน(บังคับใช้หน่วยเมตร)
   path_distance_bias: 32.0      # ค่าเน้นให้เดินตามเส้นทางที่กำหนด
   goal_distance_bias: 24.0      # ค่าเน้นให้ไปถึงเป้าหมาย
   occdist_scale: 0.1            # ค่าน้ำหนักการหลบสิ่งกีดขวาง
@@ -44,3 +45,7 @@ DWAPlannerROS:
   xy_goal_tolerance: 0.10       # ระยะห่างที่ยอมรับได้ (เมตร) 10cm กำลังแม่น
   yaw_goal_tolerance: 0.1       # ~5 องศา
   latch_xy_goal_tolerance: true
+
+  # --- 7. Debugging---
+  publish_cost_grid_pc: true    # เปิดอันนี้ จะเห็นเส้นทางคำนวณเป็นจุดๆ ใน Rviz (topic: /move_base/DWAPlannerROS/cost_cloud)
+  publish_traj_pc: true

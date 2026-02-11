@@ -1,0 +1,15 @@
+<launch>
+    <arg name="map_file" default="$(find ptR1_navigation)/maps/test01.yaml"/>
+    
+    <node name="map_server" pkg="map_server" type="map_server" args="$(arg map_file)" />
+
+<node pkg="amcl" type="amcl" name="amcl" output="screen">
+    <rosparam file="$(find ptR1_navigation)/config/amcl_params.yaml" command="load" />
+
+    <remap from="scan" to="/scan"/>
+    
+    <param name="initial_pose_x" value="0.0"/>
+    <param name="initial_pose_y" value="0.0"/>
+    <param name="initial_pose_a" value="0.0"/>
+  </node>
+</launch>

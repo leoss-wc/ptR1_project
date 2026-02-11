@@ -1,0 +1,37 @@
+# amcl_params.yaml
+
+# --- Filter Parameters ---
+min_particles: 500
+max_particles: 3000
+kld_err: 0.05
+kld_z: 0.99
+update_min_d: 0.1          # ขยับ 10cm อัปเดตที
+update_min_a: 0.1          # หมุน 0.1 rad อัปเดตที
+resample_interval: 1       # Resample ทุกครั้ง
+transform_tolerance: 0.5   # รอ TF ได้นานสุด 0.5 วิ
+recovery_alpha_slow: 0.001 # ค่าการกู้คืนเมื่อหลงทาง (ช้า)
+recovery_alpha_fast: 0.1   # ค่าการกู้คืนเมื่อหลงทาง (เร็ว)
+gui_publish_rate: 10.0     # ความถี่ส่งข้อมูลไป Rviz (-1.0 เพื่อปิด)
+
+# --- Laser Model Parameters ---
+laser_max_beams: 60        # ลดภาระ CPU (สำคัญ!)
+laser_z_hit: 0.95
+laser_z_short: 0.1
+laser_z_max: 0.05
+laser_z_rand: 0.05
+laser_sigma_hit: 0.2
+laser_lambda_short: 0.1
+laser_likelihood_max_dist: 2.0
+laser_model_type: "likelihood_field"
+
+# --- Odometry Model Parameters (Mecanum) ---
+odom_model_type: "omni-corrected" # Mecanum ต้องใช้อันนี้
+odom_alpha1: 0.2
+odom_alpha2: 0.2
+odom_alpha3: 0.2
+odom_alpha4: 0.2
+odom_alpha5: 0.2
+odom_frame_id: "odom"
+base_frame_id: "base_link"
+global_frame_id: "map"
+tf_broadcast: true

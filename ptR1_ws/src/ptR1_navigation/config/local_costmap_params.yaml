@@ -6,6 +6,7 @@ local_costmap:
   update_frequency: 5.0          # ความถี่ในการอัปเดตข้อมูล costmap (Hz) → ยิ่งสูง หุ่นยนต์ตอบสนองเร็วขึ้น แต่กิน CPU มากขึ้น
   publish_frequency: 2.0         # ความถี่ในการเผยแพร่ข้อมูล costmap สำหรับ visualization ใน RViz
 
+  static_map: false
   rolling_window: true           # เปิดใช้ "หน้าต่างเลื่อน" → ทำให้ costmap เคลื่อนที่ตามหุ่นยนต์ เหมาะกับ local planner
   width: 3.0                     # ความกว้างของ local costmap (เมตร) → กำหนดขนาดกริดรอบหุ่นยนต์
   height: 3.0                    # ความสูงของ local costmap (เมตร) → ควรเพียงพอให้วาง path ได้รอบตัวหุ่นยนต์
@@ -15,3 +16,8 @@ local_costmap:
   plugins:
     - {name: obstacle_layer,  type: "costmap_2d::ObstacleLayer"}
     - {name: inflation_layer, type: "costmap_2d::InflationLayer"}
+
+  inflation_layer:
+    enabled: true
+    inflation_radius: 0.25      # ลดลงจาก Global (0.5) เพื่อให้มุดช่องแคบ/ประตูได้
+    cost_scaling_factor: 5.0    # กราฟ Cost ชันหน่อย เพื่อให้พยายามอยู่กลางๆ ช่อง
