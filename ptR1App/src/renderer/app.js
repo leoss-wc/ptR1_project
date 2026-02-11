@@ -63,10 +63,13 @@ document.addEventListener('DOMContentLoaded', async() => {
   document.getElementById('reset-live-view-btn').addEventListener('click', () => {
     resetLiveMapView();
   });
+
   const statusRenderer = new RobotStatusRenderer();
   const pidTuner = new PidTuner();
-  if (window.api && window.api.onRobotStatus) {
-        window.api.onRobotStatus((dataString) => {
+  
+  if (window.electronAPI && window.electronAPI.onRobotStatus) {
+        window.electronAPI.onRobotStatus((dataString) => {
+          console.log("Robot Status Data Received:", dataString);
             statusRenderer.update(dataString);
             pidTuner.updateFromStatus(dataString); 
         });
@@ -74,8 +77,6 @@ document.addEventListener('DOMContentLoaded', async() => {
         console.warn("window.api.onRobotStatus not found");
     }
   });
-
-
 
 // --- Helper Functions ---
 function setupMapToggles() {
@@ -143,16 +144,6 @@ function setupGlobalCallbacks() {
         document.getElementById('mode-label').textContent = e.target.checked ? 'MANUAL ON' : 'MANUAL OFF';
         window.electronAPI.setManualMode(e.target.checked);
     });
-
-    // Power
-    if (window.electronAPI?.onPowerUpdate) {
-        window.electronAPI.onPowerUpdate(({ voltage, percent }) => {
-            document.getElementById('voltage').textContent = `${voltage} V`;
-            const pEl = document.getElementById('percent');
-            pEl.textContent = `${percent} %`;
-            pEl.style.color = parseFloat(percent) < 20 ? 'red' : 'white';
-        });
-    }
 
     // SLAM / Map Updates
     window.electronAPI.onSlamMap((mapData) => {

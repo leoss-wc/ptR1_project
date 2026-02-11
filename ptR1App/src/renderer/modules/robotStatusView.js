@@ -9,12 +9,12 @@ export class RobotStatusRenderer {
         this.elPid = document.getElementById('mon-pid');
         this.elBat = document.getElementById('mon-bat');
         this.elRelay = document.getElementById('mon-relay');
+        console.log("RobotStatusRenderer initialized.");
     }
 
     // ฟังก์ชันนี้จะถูกเรียกโดย app.js เมื่อมีข้อมูลมา
     update(str) {
         if (!str) return;
-
         try {
             // 1. Mode
             const modeMatch = str.match(/\[(.*?)\]/);
@@ -61,6 +61,7 @@ export class PidTuner {
         this.isUserTyping = false; // ป้องกันเลขเด้งตอนกำลังพิมพ์
 
         this.init();
+        console.log("PidTuner initialized.");
     }
 
     init() {

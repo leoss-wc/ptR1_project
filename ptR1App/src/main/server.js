@@ -446,57 +446,6 @@ function subscribeMoveBaseResult() {
   });
 }
 
-// Power
-function subscribeSensorData() {
-  const sensorTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/sensor/data',
-    messageType: 'std_msgs/UInt32',
-    throttle_rate: 500
-  });
-
-  sensorTopic.subscribe((message) => {
-    const data = message.data;
-
-
-    const voltage_V = data.voltage;
-    const current_A = data.current;
-
-    // เติมค่าใหม่เข้า buffer
-    voltageBuffer.push(voltage_V);
-    if (voltageBuffer.length > BUFFER_SIZE_VOLTAGE) {
-        voltageBuffer.shift(); // ลบค่าที่เก่าที่สุดออก
-    }
-    // คำนวณค่าเฉลี่ย
-    let sum = 0;
-    for (let i = 0; i < voltageBuffer.length; i++) {
-        sum += voltageBuffer[i];
-    }
-    let avgVoltage = 0;
-    if (voltageBuffer.length > 0) {
-        avgVoltage = sum / voltageBuffer.length;
-    } else {
-        avgVoltage = 0; // ค่า default 
-    }
-    // คำนวณ % SOC แบบ linear (12.0V = 0%, 14.6V = 100%)
-    let soc = 0;
-    const maxVoltage = 13.50;
-    const minVoltage = 12.60;
-    if (avgVoltage >= maxVoltage) soc = 100;
-    else if (avgVoltage <= minVoltage) soc = 0;
-    else soc = ((avgVoltage - minVoltage) / (maxVoltage - minVoltage)) * 100;
-
-    parentPort.postMessage({
-      type: 'power',
-      data: {
-        voltage: voltage_V.toFixed(2),
-        current: current_A.toFixed(2),
-        percent: soc.toFixed(0)
-      }
-    });
-  });
-}
-
 function subscribeRobotStatus() {
   if (!ros || !ros.isConnected) return;
 

@@ -10,8 +10,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   loadRobots: () => ipcRenderer.invoke('robots:load'),
   saveRobots: (robots) => ipcRenderer.invoke('robots:save', robots),
-  onRobotStatus: (callback) => ipcRenderer.on('ros:status', (event, data) => callback(data)),
-
+  onRobotStatus: (callback) => {
+    ipcRenderer.on('robot-status', (_event, data) => {
+    callback(data);
+    });
+  },
   // Robot movement related api
   sendTwistCommand: (data) => ipcRenderer.send('twist-command', data),
   sendServoAngleTilt: (angle) => ipcRenderer.send('ros:send-servo-tilt-int16', angle),
@@ -30,7 +33,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.send('save-video', { buffer: nodeBuffer, date, filename });
     },
   onImage: (callback) => ipcRenderer.on('camera:image', (_, data) => callback(data)),
-  onPowerUpdate: (callback) => ipcRenderer.on('power', (_, data) => callback(data)),
   sendCommand_vairable: (variableId, value) => {ipcRenderer.send('uint32-command', { variableId, value });},
   onConnectionStatus: (callback) => {ipcRenderer.on('connection-status', (_, status) => callback(status));},
     

@@ -4,14 +4,29 @@
   <meta charset="UTF-8" />
   <title>Robot Control App</title>
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="../../assets/fontawesome/css/all.min.css">
 </head>
 <body>
   <div class="sidebar">
-    <div class="sidebar-item active" data-view="home">🏠</div>
-    <div class="sidebar-item" data-view="commd">🤖</div>
-    <div class="sidebar-item" data-view="video">📹</div>
-    <div class="sidebar-item" data-view="map">🗺️</div>
-    <div class="sidebar-item" data-view="settings">⚙️</div>
+    <div class="sidebar-item active" data-view="home">
+        <i class="fa-solid fa-house"></i>
+    </div>
+
+    <div class="sidebar-item" data-view="commd">
+        <i class="fa-solid fa-robot"></i>
+    </div>
+
+    <div class="sidebar-item" data-view="video">
+        <i class="fa-solid fa-video"></i>
+    </div>
+
+    <div class="sidebar-item" data-view="map">
+        <i class="fa-solid fa-map-location-dot"></i>
+    </div>
+
+    <div class="sidebar-item" data-view="settings">
+        <i class="fa-solid fa-gear"></i>
+    </div>
   </div>
 
   <div class="main-content">
@@ -69,7 +84,7 @@
     </div>
 
     <div id="view-commd" class="view hidden">
-      <h2>🤖 Robot Control</h2>
+      <h2>Robot Control</h2>
       <div class="controls-main">
         <div>
           <label for="pwm-slider">Speed Intensity: <span id="pwm-value-label">70</span></label><br>
@@ -100,7 +115,7 @@
         </div>
         </div>
               <div class="card pid-tuner-card" style="margin-top: 15px; background: #222; padding: 15px; border-radius: 8px;">
-        <h3>🎛️ PID Tuner</h3>
+        <h3>PID Tuner</h3>
         <div class="input-group" style="margin: auto;">
             <label>Kp:</label>
                 <input type="number" id="input-kp" step="0.1" placeholder="1.5">

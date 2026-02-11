@@ -302,3 +302,26 @@ input:checked + .slider:before { transform: translateX(26px); }
 .status-disconnected { color: #ff6b6b; }
 .status-connected { color: #6bff9d; }
 .status-connecting { color: #ffe06b; }
+
+
+/* จัดไอคอนให้อยู่กึ่งกลาง */
+.sidebar-item {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 24px; /* ขนาดไอคอน */
+    padding: 15px 0;
+    transition: color 0.3s;
+}
+
+/* สีไอคอนปกติ */
+.sidebar-item i {
+    color: #888; /* สีเทา */
+}
+
+/* สีไอคอนเมื่อ Active (เลือกอยู่) หรือเอาเมาส์ชี้ */
+.sidebar-item.active i,
+.sidebar-item:hover i {
+    color: #33b5e5; /* สีฟ้า (หรือสีตามธีมของคุณ) */
+}

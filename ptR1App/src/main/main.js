@@ -534,9 +534,6 @@ app.whenReady().then(() => {
         case 'robot-pose-amcl':
           mainWindow?.webContents.send('robot-pose-amcl', message.data);
           break;
-        case 'power':
-          mainWindow?.webContents.send('power', message.data);
-          break;
         case 'log':
           console.log('Worker Log:', message.data);
           break;
@@ -601,7 +598,7 @@ app.whenReady().then(() => {
             mainWindow?.webContents.send('patrol-stop-result', message.data);
             break;
         case 'robot-status-update':
-          mainWindow?.webContents.send('ros:status', message.data);
+          mainWindow?.webContents.send('robot-status', message.data);
           break;
 
         default:
