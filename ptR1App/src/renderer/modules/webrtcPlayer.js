@@ -1,3 +1,4 @@
+//webrtc-player.js
 /**
  * A class to handle the WebRTC connection to a MediaMTX WHEP endpoint.
  */

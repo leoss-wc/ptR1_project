@@ -210,10 +210,14 @@ function sendRelayViaCommand(relayId, command) {
   sendCommand(cmdValue);
 }
 
-// ส่งคำสั่ง UInt32 Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
+// ส่งคำสั่ง String Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
 function sendCommand(command) {
   if (!ros || !ros.isConnected) {
     console.error('Server : ❌ Cannot send command: ROSBridge is not connected.');
+    return;
+  }
+  if (!command) {
+    console.error('Server : ❌ Error: Command is undefined or null');
     return;
   }
   const cmdEditTopic = new ROSLIB.Topic({
@@ -223,7 +227,7 @@ function sendCommand(command) {
   });
 
   const message = new ROSLIB.Message({
-    data: command.toString()
+    data: String(command)
   });
   console.log('Server : Publishing command to /robot/cmd:', command);
 

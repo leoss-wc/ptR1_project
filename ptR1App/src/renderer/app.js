@@ -69,7 +69,6 @@ document.addEventListener('DOMContentLoaded', async() => {
   
   if (window.electronAPI && window.electronAPI.onRobotStatus) {
         window.electronAPI.onRobotStatus((dataString) => {
-          console.log("Robot Status Data Received:", dataString);
             statusRenderer.update(dataString);
             pidTuner.updateFromStatus(dataString); 
         });

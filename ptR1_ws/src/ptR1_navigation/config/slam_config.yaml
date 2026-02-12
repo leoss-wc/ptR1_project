@@ -1,12 +1,37 @@
+# --- Frames & Topics ---
 odom_frame: odom
-map_frame: map
 base_frame: base_link
+map_frame: map
 scan_topic: /scan
 
-use_scan_matching: true
-max_laser_range: 10.0
-transform_timeout: 0.5
-    
-minimum_travel_distance: 0.2
-minimum_travel_heading: 0.17
-map_update_interval: 1.0
+# --- Map Configuration ---
+map_update_interval: 1.0  # อัปเดตแผนที่ทุก 1 วินาที (ถ้าเร็วไป CPU จะทำงานหนัก)
+delta: 0.05               # ความละเอียด 5cm (มาตรฐาน)
+
+# --- Laser Parameters ---
+maxRange: 12.0            # ระยะไกลสุดที่ LiDAR ยิงถึง (ตามสเปค LiDAR คุณ)
+maxUrange: 10.0           # ระยะที่นำมาใช้สร้างแผนที่จริง (ควรน้อยกว่า maxRange)
+sigma: 0.05
+kernelSize: 1
+lstep: 0.05
+astep: 0.05
+iterations: 5
+lsigma: 0.075
+ogain: 3.0
+lskip: 0
+
+# --- Motion Update (หุ่นขยับแค่ไหนถึงจะอัปเดตแผนที่) ---
+linearUpdate: 0.2         # เดิน 20cm อัปเดตที
+angularUpdate: 0.2        # หมุน ~11 องศา อัปเดตที (ชื่อมาตรฐานคือ angularUpdate)
+temporalUpdate: 3.0       # ถ้าหุ่นไม่ขยับเลย ให้บังคับอัปเดตทุก 3 วิ (กัน Map ค้าง)
+resampleThreshold: 0.5
+
+# --- Particle Filter (หัวใจหลักของความแม่นยำ) ---
+particles: 80             # เพิ่มจาก 30 -> 80 (ช่วยแก้ปัญหา Odom เพี้ยนได้ดีมาก)
+
+# --- Odometry Error (Mecanum ต้องจูนตรงนี้!) ---
+# ค่าความผิดพลาดของ Odom: Mecanum ลื่นกว่าล้อปกติ ให้ใส่ค่าเยอะหน่อย (0.2 - 0.3)
+srr: 0.25  # Translation error from translation (เดินหน้าแล้วระยะเพี้ยน)
+srt: 0.25  # Translation error from rotation (หมุนแล้วตำแหน่งเคลื่อน)
+str: 0.25  # Rotation error from translation (เดินหน้าแล้วตัวหมุนเอง)
+stt: 0.25  # Rotation error from rotation (หมุนแล้วมุมเพี้ยน)

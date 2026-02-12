@@ -40,7 +40,22 @@ export class RobotStatusRenderer {
 
             // 4. Battery & Relay
             const batMatch = str.match(/Bat:([\d\.]+)V/);
-            if (batMatch && this.elBat) this.elBat.innerText = batMatch[1] + " V";
+            if (batMatch && this.elBat) {
+                const voltage = parseFloat(batMatch[1]); // แปลง String เป็น Float
+                const percent = this.getBatteryPercent(voltage); // คำนวณ %
+                
+                // แสดงผล: "12.5 V (85%)"
+                this.elBat.innerText = `${percent}% (${voltage.toFixed(2)} V)`;
+                
+                // เปลี่ยนสีตามระดับแบตเตอรี่
+                if (percent <= 20) {
+                    this.elBat.style.color = '#ff4444'; // แดง (ต่ำ)
+                } else if (percent <= 50) {
+                    this.elBat.style.color = '#ffbb33'; // เหลือง (กลาง)
+                } else {
+                    this.elBat.style.color = '#00C851'; // เขียว (สูง)
+                }
+            }
 
             const rMatch = str.match(/R:(\d+),(\d+)/);
             if (rMatch && this.elRelay) this.elRelay.innerText = `R1:${rMatch[1]} R2:${rMatch[2]}`;
@@ -48,8 +63,46 @@ export class RobotStatusRenderer {
         } catch (err) {
             console.error("Error parsing robot status:", err);
         }
+
+    }
+    // --- ฟังก์ชันคำนวณ % สำหรับ LiFePO4 4S โดยเฉพาะ ---
+    getBatteryPercent(voltage) {
+        // LiFePO4 กราฟไม่เป็นเส้นตรง (Non-linear)
+        // ช่วง 13.0V - 13.4V แบตจะอยู่นานมาก (คือช่วง 30% - 90%)
+        // ต่ำกว่า 12.0V คือร่วงเร็วมาก
+        
+        // กำหนดจุดช่วงแรงดัน (Voltage Points)
+        // > 13.40V = 100% (เต็ม)
+        //   13.20V = 70%
+        //   13.00V = 40%
+        //   12.80V = 20% (เริ่มเตือน)
+        // < 12.00V = 0% (ควรชาร์จทันที)
+
+        let pct = 0;
+
+        if (voltage >= 13.40) {
+            // ช่วงเต็ม (13.4 - 14.6V)
+            pct = 100; 
+        } else if (voltage >= 13.20) {
+            // ช่วง 70% - 100% (Linear mapping ในช่วงสั้นๆ)
+            pct = 70 + ((voltage - 13.20) / (13.40 - 13.20) * 30);
+        } else if (voltage >= 12.90) {
+            // ช่วง 30% - 70% (ช่วงใช้งานปกติ)
+            pct = 30 + ((voltage - 12.90) / (13.20 - 12.90) * 40);
+        } else if (voltage >= 12.00) {
+            // ช่วง 0% - 30% (ช่วงแบตอ่อน แรงดันเริ่มตกไว)
+            pct = ((voltage - 12.00) / (12.90 - 12.00) * 30);
+        } else {
+            // ต่ำกว่า 12V ถือว่าหมด
+            pct = 0;
+        }
+        
+        return Math.floor(pct);
     }
 }
+
+
+
 
 export class PidTuner {
     constructor() {
@@ -89,8 +142,8 @@ export class PidTuner {
         
         console.log("Sending:", commandString);
 
-        if (window.api && window.api.sendCommand) {
-            window.api.sendCommand(commandString);
+        if (window.electronAPI && window.electronAPI.sendCommand) {
+            window.electronAPI.sendCommand(commandString);
         }
     }
     // ฟังก์ชันนี้จะรับ String จาก Robot Status มาอัปเดตใส่ช่อง Input

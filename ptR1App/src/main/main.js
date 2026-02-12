@@ -103,7 +103,7 @@ ipcMain.handle('mapcache:load', async (_, mapName) => {
   }
 });
 
-ipcMain.on('robot-command', (_, { command }) => {
+ipcMain.on('robot-command', (_, command) => {
   if (!rosWorker) {
     console.error('❌ Worker not initialized when sending robot-command');
     return;
@@ -257,7 +257,8 @@ app.on('window-all-closed', function () {
 });
 
 ipcMain.on('connect-rosbridge', (event, ip) => {
-  const url = `ws://${ip}:9090`;
+  const targetPort = port || '9090';
+  const url = `ws://${ip}:${targetPort}`;
   rosWorker.postMessage({ type: 'connectROS', url: url });
   console.log(`Main: 🔌 Connecting to ROSBridge at ${url}`);
 });
@@ -493,7 +494,7 @@ function createWindow(ip) {
     height: 720,
     icon: path.join(__dirname, '../../assets/icon.png'),
     webPreferences: {
-      preload: path.join(__dirname, '../../preload/preload.js'),
+      preload: path.join(__dirname, '/preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
        sandbox: false,   

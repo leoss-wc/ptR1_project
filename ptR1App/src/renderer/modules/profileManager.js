@@ -1,5 +1,5 @@
 // modules/profileManager.js
-import { WebRTCPlayer } from './webrtc-player.js';
+import { WebRTCPlayer } from './webrtcPlayer.js';
 import { FrameProcessor } from './FrameProcessor.js';
 import { OverlayCanvas } from './OverlayCanvas.js';
 
@@ -144,8 +144,8 @@ export function connectUsingCurrentProfile() {
     if (!address || !rosPort) return;
 
     console.log(`🔌 Connecting to ROSBridge at ${address}:${rosPort}`);
-    window.electronAPI.connectROSBridge(address);
-    statusEl.textContent = `🚀 Connecting to ${selectedProfileName}...`;
+    window.electronAPI.connectROSBridge(address, rosPort);
+    statusEl.textContent = `Connecting to ${selectedProfileName}...`;
 }
 
 function connectVideoPlayer() {
@@ -153,7 +153,7 @@ function connectVideoPlayer() {
     const whepPort = document.getElementById('profile-whep-port').value;
     if (!address || !whepPort) return;
 
-    const whepUrl = `http://${address}:${whepPort}/live/whep`;
+    const whepUrl = `http://${address}:${whepPort}/mystream/whep`;
     const videoElement = document.getElementById('stream');
     const webrtcStatusElement = document.getElementById('rtc_status');
     
@@ -165,12 +165,15 @@ function connectVideoPlayer() {
     yoloOverlay = new OverlayCanvas('yolo-overlay', videoElement);
     
     if (frameProcessor) frameProcessor.stop();
+    // สร้าง Instance ใหม่ของ FrameProcessor
     frameProcessor = new FrameProcessor(videoElement, (detections) => {
         if (yoloOverlay) yoloOverlay.drawDetections(detections);
+        // (Optional) ถ้า FrameProcessor ตัวใหม่มีฟังก์ชัน sendFrame()
+        // เราสามารถสั่ง sendFrame() ต่อจากตรงนี้ได้ ถ้าอยากคุม Flow เองแบบ Manual สุดๆ
+        // แต่ใน Class ที่ผมให้ไป มันจัดการเรื่องนี้ให้ใน onmessage แล้ว ดังนั้นไม่ต้องทำอะไรเพิ่มครับ
     });
-
-    setTimeout(() => {
+    frameProcessor.start(); 
+    videoElement.onloadedmetadata = () => {
         if(yoloOverlay) yoloOverlay.resize();
-        frameProcessor.start();
-    }, 2000);
+    };
 }

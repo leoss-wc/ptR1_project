@@ -1,27 +1,35 @@
-#include <Arduino.h>
-#include <PCF8575.h>
-#include <ESP32Servo.h>
-#include <ESP32Encoder.h>  
-#include <math.h>                          
-#include <PID_v1.h>
-#include <stdlib.h>             // IMU normalized
-#include <Wire.h>               // ไลบรารีสำหรับ I2C communication
-#include <MPU6050_light.h>           // Library MPU6050
-#include <QMC5883LCompass.h>         // Library QMC5883L
+// include
+  #include <Arduino.h>
+  #include <PCF8575.h>
+  #include <ESP32Servo.h>
+  #include <ESP32Encoder.h>  
+  #include <math.h>                          
+  #include <PID_v1.h>
+  #include <stdlib.h>             // IMU normalized
+  #include <Wire.h>               // ไลบรารีสำหรับ I2C communication
+  #include <MPU6050_light.h>           // Library MPU6050
+  #include <QMC5883LCompass.h>         // Library QMC5883L
 
-#include <ros.h>                            // ไลบรารีสำหรับ ROS communication
-#include <tf/transform_broadcaster.h> 
-#include <nav_msgs/Odometry.h>
-#include <geometry_msgs/Twist.h>            // ใช้สำหรับรับคำสั่งความเร็ว (cmd_vel) จาก ROS
-#include <sensor_msgs/Imu.h>                // ใช้สำหรับส่งข้อมูลจาก IMU ไปยัง ROS
-#include <sensor_msgs/MagneticField.h>      // เพิ่ม Header Mag
-#include <sensor_msgs/BatteryState.h>
-#include <geometry_msgs/Vector3.h>
-#include <std_msgs/String.h>                // ใช้สำหรับส่งข้อมูลเป็นข้อความ
-#include <std_msgs/UInt32.h>                // ใช้สำหรับส่งค่าประเภท UInt32 ใน ROS
-#include <std_msgs/UInt16.h>                // ใช้สำหรับส่งค่าประเภท UInt16 ใน ROS
-#include <std_msgs/UInt8.h>                 // ใช้สำหรับส่งค่าประเภท UInt8 ใน ROS
-#include <std_msgs/Int16.h>
+  #include <ros.h>                            // ไลบรารีสำหรับ ROS communication
+  #include <tf/transform_broadcaster.h> 
+  #include <nav_msgs/Odometry.h>
+  #include <geometry_msgs/Twist.h>            // ใช้สำหรับรับคำสั่งความเร็ว (cmd_vel) จาก ROS
+  #include <sensor_msgs/Imu.h>                // ใช้สำหรับส่งข้อมูลจาก IMU ไปยัง ROS
+  #include <sensor_msgs/MagneticField.h>      // เพิ่ม Header Mag
+  #include <sensor_msgs/BatteryState.h>
+  #include <geometry_msgs/Vector3.h>
+  #include <std_msgs/Float32MultiArray.h>
+  #include <std_msgs/String.h>                // ใช้สำหรับส่งข้อมูลเป็นข้อความ
+  #include <std_msgs/UInt32.h>                // ใช้สำหรับส่งค่าประเภท UInt32 ใน ROS
+  #include <std_msgs/UInt16.h>                // ใช้สำหรับส่งค่าประเภท UInt16 ใน ROS
+  #include <std_msgs/UInt8.h>                 // ใช้สำหรับส่งค่าประเภท UInt8 ใน ROS
+  #include <std_msgs/Int16.h>
+
+  #include <WiFi.h>
+  #include <ArduinoOTA.h>
+
+const char* ssid = "Jeanne";
+const char* password = "leoleo76";
 
 #define I2C_SDA 8
 #define I2C_SCL 9
@@ -29,7 +37,7 @@
 bool debug_mode = false;
 bool manual_mode = false;
 
-// พินของมอเตอร์ไดรเวอร์ (Motor Driver)
+//---พินของมอเตอร์ไดรเวอร์ (Motor Driver)---
   const uint8_t md1_PWMA  = 6; // to esp32 pin
   const uint8_t md1_AIN2  = 12;   // PCF8575 pin
   const uint8_t md1_AIN1  = 11;   // PCF8575 pin
@@ -47,7 +55,7 @@ bool manual_mode = false;
   const uint8_t md2_BIN2 = 9;   //PCF8575 pin
   const uint8_t md2_PWMB = 21; //esp32 pin
 
-// PCF8575 Pins (0-15)
+//---PCF8575 Pins (0-15)---
   const uint8_t FL_IN1_PCF = md1_AIN1; const uint8_t FL_IN2_PCF = md1_AIN2;
   const uint8_t FR_IN1_PCF = md1_BIN1;  const uint8_t FR_IN2_PCF = md1_BIN2;
   const uint8_t RL_IN1_PCF = md2_AIN1;  const uint8_t RL_IN2_PCF = md2_AIN2;
@@ -59,7 +67,7 @@ bool manual_mode = false;
   const uint8_t RL_PWM_PIN = md2_PWMA;
   const uint8_t RR_PWM_PIN = md2_PWMB;
 
-//Encoder pin
+//---Encoder pin---
   // Motor 1: Front-Left (FL)
     const uint8_t ENCODER_FL_A = 13;
     const uint8_t ENCODER_FL_B = 14;
@@ -84,7 +92,7 @@ bool manual_mode = false;
   const float TICKS_PER_REV = 1320.0;
   const float RADS_PER_TICK = (2.0 * PI) / TICKS_PER_REV;
 
-  const int MIN_PWM = 45;
+  const int MIN_PWM = 13;
 
 // --- Power variable ---
   const uint8_t CURRENT_SENSOR_PIN = 4; // GPIO ที่ต่อ Current sensor
@@ -94,16 +102,18 @@ bool manual_mode = false;
     // V_REF ของ ESP32 ประมาณ 3.3V
     const float ADC_VREF = 3.2; 
     const float ADC_RES = 4095.0;
-    const float VOLTAGE_MULTIPLIER = 12.5;
+    const float VOLTAGE_MULTIPLIER = 10.495;
     int current_zero_point = 0;
+    float voltage = 0;
+    float current = 0;
   //Exponential Moving Average (EMA) 
   float filter_volt = 0; //ของ current sensor
   float filter_amp = 0;  //ของ current sensor
-  const float alpha = 0.1; //ของ current sensor
+  const float alpha = 0.1; //ของ current voltage sensor
   float filter_amp_adc = 0; // เก็บค่า ADC ที่กรองแล้ว ของ current sensor
 
 // --- PID object and variables ---
-  double Kp = 1.5, Ki = 5.0, Kd = 0.05;
+  double Kp = 4.5, Ki = 14, Kd = 0.0;
   // PID Objects  setpoint(ROS) input(Encoder) output(PID)
   double sp_FL=0, in_FL=0, out_FL=0;
   double sp_FR=0, in_FR=0, out_FR=0;
@@ -121,12 +131,12 @@ bool manual_mode = false;
   const double RAMP_STEP = 5.0; // ค่าความชันการเร่ง (Rad/s ต่อ Loop) ยิ่งน้อยยิ่งนุ่ม
 
 
-//Encoder variable
+//---Encoder variable---
   ESP32Encoder encoderFL;
   ESP32Encoder encoderFR;
   ESP32Encoder encoderRL;
   ESP32Encoder encoderRR;
-// Servo object and variables
+//---Servo object and variables---
   Servo servoPan;
   Servo servoTilt;
   const uint8_t SERVO_PAN_PIN  = 2;    //X
@@ -138,7 +148,7 @@ bool manual_mode = false;
   int step_servo_y = 50;
   const int SERVO_MIN = 500;
   const int SERVO_MAX = 2500;
-// Relay variable
+//---Relay variable---
   const uint8_t RELAY1_PCF = 13; 
   const uint8_t RELAY2_PCF = 14;
 
@@ -151,50 +161,53 @@ bool manual_mode = false;
   double gyro_z = 0;
   geometry_msgs::Quaternion odom_quat;
 
-// --- ROS Globals ---
+//---ROS Globals and Publisher---
   ros::NodeHandle nh;
   nav_msgs::Odometry odom_msg;
   sensor_msgs::Imu imu_msg;
   geometry_msgs::TransformStamped t;
-  tf::TransformBroadcaster broadcaster;
   sensor_msgs::BatteryState bat_msg;
   std_msgs::String status_msg;
+  std_msgs::Float32MultiArray wheels_msg;
+  tf::TransformBroadcaster broadcaster;
+
   char base_link[] = "base_link";
   char odom_frame[] = "odom";
-  // sensor_msgs::MagneticField mag_msg; // Mag Message
+
 
   ros::Publisher odom_pub("/odom", &odom_msg);
   ros::Publisher imu_pub("/imu/data", &imu_msg);
   ros::Publisher battery_pub("/sensor/battery", &bat_msg);
   ros::Publisher status_pub("/robot/status", &status_msg);
-  // ros::Publisher mag_pub("/imu/mag", &mag_msg);
+  ros::Publisher pub_wheels("/wheel_velocities", &wheels_msg);
 
   char status_buffer[150]; //ใช้สำหรับ Topic /robot/status
 
-//Sensor Object
+//---Sensor Object---
   PCF8575 pcf(0x20);
   uint16_t pcf_buffer = 0xFFFF;
 
   MPU6050 mpu(Wire);
   QMC5883LCompass compass;
 
-//Heading Hold variable
+//---Heading Hold variable---
   bool enable_heading_hold = true; // เปิด/ปิด ระบบนี้
-  float heading_kp = 2.0;          // ค่า Kp: ยิ่งมาก ยิ่งสู้แรงไถล (ลองเริ่มที่ 2.0 - 5.0)
+  float heading_kp = 2.0;          // ค่า Kp: ยิ่งมาก ยิ่งสู้แรงไถล
   double target_heading = 0.0;     // มุมที่เราต้องการล็อกไว้
   bool is_turning = false;         // เช็คว่าตอนนี้กำลังตั้งใจหมุนอยู่ไหม
 
-void setPCFBit(uint8_t pin, bool state);
-void setMotorPWM(float pwm, int pin1, int pin2, int pwmPin);
-void configPWMPin(uint8_t pin);
-void updateOdometryAndIMU(float dt, double v_fl, double v_fr, double v_rl, double v_rr);
-void panCallback(const std_msgs::Int16& msg);
-void tiltCallback(const std_msgs::Int16& msg);
-void pidCallback(const geometry_msgs::Vector3& msg);
-void sysCommandCallback(const std_msgs::String& msg);
-void cmdVelCallbackAuto(const geometry_msgs::Twist& msg);
-void cmdVelCallbackManual(const geometry_msgs::Twist& msg);
-// Ros Subscriber
+//---Function declare---
+  void setPCFBit(uint8_t pin, bool state);
+  void setMotorPWM(float pwm, int pin1, int pin2, int pwmPin);
+  void configPWMPin(uint8_t pin);
+  void updateOdometryAndIMU(float dt, double v_fl, double v_fr, double v_rl, double v_rr);
+  void panCallback(const std_msgs::Int16& msg);
+  void tiltCallback(const std_msgs::Int16& msg);
+  void pidCallback(const geometry_msgs::Vector3& msg);
+  void sysCommandCallback(const std_msgs::String& msg);
+  void cmdVelCallbackAuto(const geometry_msgs::Twist& msg);
+  void cmdVelCallbackManual(const geometry_msgs::Twist& msg);
+//---Ros Subscriber---
   ros::Subscriber<std_msgs::Int16> subPan("/camera/pan", panCallback);
   ros::Subscriber<std_msgs::Int16> subTilt("/camera/tilt", tiltCallback);
   ros::Subscriber<geometry_msgs::Vector3> subPID("/config/pid", pidCallback);
@@ -206,14 +219,24 @@ void setup() {
   Wire.begin(I2C_SDA, I2C_SCL);
   Wire.setClock(400000);
   Wire.setTimeOut(20);
+  WiFi.begin(ssid, password);
   setupSensors();
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+    Serial.print(".");
+  }
+    // ตั้งค่า OTA
+  ArduinoOTA.setHostname("ptR1_ESP32S3");
+  ArduinoOTA.begin();
+  Serial.println("พร้อมอัปโหลดผ่าน WiFi แล้ว");
   
   //Setup PCF8575
   pcf.begin();
   pcf_buffer = 0x0000;
   setPCFBit(STBY_PCF_1, HIGH);
   setPCFBit(STBY_PCF_2, HIGH);
-    //Setup Relays (PCF8575)
+  //Setup Relays (PCF8575)
   setPCFBit(RELAY1_PCF, HIGH); // Default OFF
   setPCFBit(RELAY2_PCF, HIGH);
   pcf.write16(pcf_buffer);
@@ -228,12 +251,14 @@ void setup() {
   servoPan.writeMicroseconds(pos_pan);
   servoTilt.writeMicroseconds(pos_tilt);
 
-
   //Setup IMU (MPU6050)
   byte status = mpu.begin();
   if(status != 0){ /* MPU not connected */ }
-  mpu.setGyroOffsets(-4.43, 0.99, -0.02);
-  delay(3000);
+  Serial.println("Do not move! MPU6050 Calibrating in 3 sec...");
+  delay(2000); 
+  Serial.println("Calibrating...");
+  mpu.calcGyroOffsets();
+  Serial.println("Done!");
   
   //Setup Compass (QMC5883L)
   compass.init();
@@ -270,7 +295,11 @@ void setup() {
   pidRL.SetMode(AUTOMATIC); pidRL.SetOutputLimits(-255, 255);
   pidRR.SetMode(AUTOMATIC); pidRR.SetOutputLimits(-255, 255);
 
-  nh.getHardware()->setBaud(250000);
+  //จองพื้นที่สำหรับความเร็วของทั้ง 4 ล้อ
+  wheels_msg.data_length = 4;
+  wheels_msg.data = (float *)malloc(sizeof(float) * 4);
+
+  nh.getHardware()->setBaud(115200);
   nh.initNode();
   broadcaster.init(nh);
   nh.subscribe(subCmdVelManual);
@@ -279,10 +308,12 @@ void setup() {
   nh.subscribe(subTilt);
   nh.subscribe(subPID);
   nh.subscribe(subSys);
+
   nh.advertise(odom_pub);
   nh.advertise(imu_pub);
   nh.advertise(battery_pub);
   nh.advertise(status_pub);
+  nh.advertise(pub_wheels);
 }
 
 // Global variables หรือ static ภายใน loop
@@ -296,12 +327,26 @@ void setup() {
   const unsigned long HEARTBEAT_INTERVAL = 5000;
 
   unsigned long lastCmdTime = 0;
-  const unsigned long CMD_TIMEOUT = 200; // watchdog
+  const unsigned long CMD_TIMEOUT = 300; // watchdog
+
+  unsigned long wifi_previousMillis = 0;
+  const long wifi_interval = 30000;
+
+  unsigned long prevVoltRead = 0;
 
   int compassCounter = 0;
 
 void loop() {
+  ArduinoOTA.handle();
   unsigned long currentMillis = millis();
+
+  // ถ้าผ่านไป 30 วิ และ เน็ตหลุดอยู่ (WL_CONNECTED คือต่อติด)
+  if ((WiFi.status() != WL_CONNECTED) && (currentMillis - wifi_previousMillis >= wifi_interval)) {
+    WiFi.disconnect(); // ตัดการเชื่อมต่อเก่าที่ค้าง
+    WiFi.reconnect();  // สั่งให้ต่อใหม่
+    wifi_previousMillis = currentMillis; // รีเซ็ตเวลาเพื่อนับใหม่
+  }
+
   bool is_timeout = (currentMillis - lastCmdTime > CMD_TIMEOUT);
   bool is_disconnected = !nh.connected();
 
@@ -373,6 +418,12 @@ void loop() {
     setMotorPWM(out_RL, RL_IN1_PCF, RL_IN2_PCF, RL_PWM_PIN);
     setMotorPWM(out_RR, RR_IN1_PCF, RR_IN2_PCF, RR_PWM_PIN);
 
+    wheels_msg.data[0] = in_FL * WHEEL_RADIUS;  // หน้าซ้าย (m/s)
+    wheels_msg.data[1] = in_FR * WHEEL_RADIUS;  // หน้าขวา (m/s)
+    wheels_msg.data[2] = in_RL * WHEEL_RADIUS;  // หลังซ้าย (m/s)
+    wheels_msg.data[3] = in_RR * WHEEL_RADIUS;  // หลังขวา (m/s)
+    pub_wheels.publish(&wheels_msg);
+
     // Send I2C Batch
     setPCFBit(STBY_PCF_1, HIGH);
     setPCFBit(STBY_PCF_2, HIGH);
@@ -386,6 +437,11 @@ void loop() {
       prevHeartbeat = currentMillis;
       publishRobotStatus(); // ส่งสถานะรวม (แบต + ระบบ)
     }
+  if (currentMillis - prevVoltRead >= 200) { 
+    prevVoltRead = currentMillis;
+    voltage = readVoltageEMA();
+    current = readCurrentEMA();
+    }
   nh.spinOnce();
 }
 
@@ -397,7 +453,7 @@ void computeWheelSpeeds(float vx, float vy, float w) {
 
   if (enable_heading_hold) {
     // กรณีที่ 1: เราสั่งให้หยุดหมุน (w = 0) -> เข้าโหมด "ล็อกทิศ"
-    if (abs(w) < 0.01) {
+    if (abs(w) < 0.005) {
       if (is_turning) {
         // เพิ่งหยุดหมุนเมื่อกี้ -> ให้จำมุมปัจจุบันเป็นเป้าหมายใหม่ทันที
         target_heading = theta; 
@@ -428,10 +484,10 @@ void computeWheelSpeeds(float vx, float vy, float w) {
   }
 
   // Inverse Kinematics Mecanum X-Config
-  float v_fl = vx - vy - (ROBOT_GEOMETRY * w);
-  float v_fr = vx + vy + (ROBOT_GEOMETRY * w);
-  float v_rl = vx + vy - (ROBOT_GEOMETRY * w);
-  float v_rr = vx - vy + (ROBOT_GEOMETRY * w);
+  float v_fl = vx - vy - (ROBOT_GEOMETRY * w_final);
+  float v_fr = vx + vy + (ROBOT_GEOMETRY * w_final);
+  float v_rl = vx + vy - (ROBOT_GEOMETRY * w_final);
+  float v_rr = vx - vy + (ROBOT_GEOMETRY * w_final);
 
   target_FL = v_fl / WHEEL_RADIUS;
   target_FR = v_fr / WHEEL_RADIUS; 
@@ -538,10 +594,12 @@ void sysCommandCallback(const std_msgs::String& msg) {
 // --- Helper: Control Motor via PCF8575 & PWM ---
 void setMotorPWM(float pwm, int pin1, int pin2, int pwmPin) {
   int speed = abs((int)pwm);
+
+  
   if (speed > 0 && speed < MIN_PWM) {
     speed = MIN_PWM;
   }
-
+  
   if (speed > 255) speed = 255;
 
   // Update แค่ใน Buffer (ยังไม่ส่ง I2C)
@@ -640,13 +698,16 @@ void publishOdometryAndTF() {
 double mag_heading = 0;
 const float MAGNETIC_DECLINATION = 0.0 * DEG_TO_RAD;
 void calculateOdometry(float dt, double v_fl, double v_fr, double v_rl, double v_rr) {
-    // --- 1. Wheel Odometry ---
+    //Wheel Odometry ---
     linear_x  = (v_fl + v_fr + v_rl + v_rr) * (WHEEL_RADIUS / 4.0);
     linear_y  = (-v_fl + v_fr + v_rl - v_rr) * (WHEEL_RADIUS / 4.0);
 
-    // --- 2. Gyro Integration (ทำทุกรอบ เพื่อความต่อเนื่อง) ---
+    //Gyro Integration (ทำทุกรอบ เพื่อความต่อเนื่อง) ---
     mpu.update();
-    gyro_z = mpu.getGyroZ() * DEG_TO_RAD;
+    double gyro_z_reading = mpu.getGyroZ() * DEG_TO_RAD; 
+    // ถ้าค่า Gyro น้อยมากๆ (Noise ตอนจอดนิ่ง) ให้ตัดเป็น 0 ไปเลย (Deadzone)
+    if (abs(gyro_z_reading) < 0.01) gyro_z_reading = 0;
+    gyro_z = gyro_z_reading;
     
     // บวกค่า Gyro เข้าไปก่อนเลย (Prediction Step)
     theta += gyro_z * dt; 
@@ -655,6 +716,7 @@ void calculateOdometry(float dt, double v_fl, double v_fr, double v_rl, double v
     if (theta > PI)  theta -= TWO_PI;
     if (theta < -PI) theta += TWO_PI;
 
+    /*
     // --- 3. Compass Correction (ทำเฉพาะรอบที่มีข้อมูลใหม่) ---
     compassCounter++;
     if (compassCounter >= 4) {
@@ -685,6 +747,7 @@ void calculateOdometry(float dt, double v_fl, double v_fr, double v_rl, double v
 
         compassCounter = 0; // Reset counter
     }
+    */
 
     // --- 4. Position Integration ---
     // ใช้ Theta ล่าสุดที่ผ่านการ Fusion แล้วมาแตกแรง
@@ -716,8 +779,13 @@ void setupSensors() {
 
 float readVoltageEMA() {
     float raw = analogRead(VOLTAGE_SENSOR_PIN);
-    // สูตร EMA: ใหม่ = (เดิม * 0.9) + (ใหม่ * 0.1)
-    filter_volt = (filter_volt * (1.0 - alpha)) + (raw * alpha);
+    
+    if (filter_volt == 0.0) {
+       filter_volt = raw; 
+    } else {
+       // ถ้าไม่ใช่ครั้งแรก ค่อยเข้าสูตร Filter
+       filter_volt = (filter_volt * (1.0 - alpha)) + (raw * alpha);
+    }
     
     // แปลง filter_volt เป็น Voltage ตามสูตรเดิมของคุณ
     float voltage = (filter_volt / ADC_RES) * ADC_VREF * VOLTAGE_MULTIPLIER;
@@ -762,10 +830,6 @@ void applyRampFilter() {
 }
 
 void publishRobotStatus() {
-  //อ่านค่าแบตเตอรี่ล่าสุด (ผ่าน EMA Filter)
-  float voltage = readVoltageEMA();
-  float current = readCurrentEMA();
-
   //เช็คสถานะโหมด
   String modeStr = manual_mode ? "MAN" : "AUTO"; // ย่อให้สั้นลงนิดนึง
   if (debug_mode) modeStr += "+DBG";
