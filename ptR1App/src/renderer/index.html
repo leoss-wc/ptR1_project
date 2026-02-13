@@ -67,6 +67,9 @@
             <div style="display: flex; gap: 10px; margin-top: 10px;">
               <button class="btn btn-dark btn-small" id="connectButton" style="flex: 1;">Connect ROS</button>
               <button class="btn btn-dark btn-small" id="connect-video-btn" style="flex: 1;">Connect Video</button>
+              <div class="toggle-container">
+                <input type="checkbox" id="ai-toggle"> <label for="ai-toggle">Enable Detection</label>
+              </div>
             </div>
           </div>
           <div class="controls" style="margin-top: 15px;">
@@ -136,8 +139,12 @@
     <div id="view-video" class="view hidden">
       <h2>📹 Recording</h2>
       <div class="video-layout">
-        <div class="video-left">
-          <video id="video-player" controls style="width: 100%; height: 360px; background: #222;"></video>
+        <div class="video-container">
+        <video id="video-player" autoplay playsinline muted></video>
+        
+            <div id="disconnect-overlay" class="overlay hidden">
+                DISCONNECTED
+            </div>
         </div>
         <div class="video-right">
           <button id="select-folder-btn" class="btn btn-blue btn-large">📂 Select Video Folder</button>

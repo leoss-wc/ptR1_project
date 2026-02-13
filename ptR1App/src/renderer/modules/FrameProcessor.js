@@ -5,25 +5,35 @@ export class FrameProcessor {
         this.onMessageCallback = onMessageCallback; // Callback เพื่อส่งผลลัพธ์กลับ
         this.wsUrl = wsUrl;
         this.ws = null;
+        
+        // สร้าง Canvas รอไว้เลย
         this.canvas = document.createElement('canvas');
-        this.ctx = this.canvas.getContext('2d');
-        this.animationFrameId = null;
-        this.isProcessing = false; // ตัวแปรกันส่งซ้อน
+        // willReadFrequently ช่วยเพิ่มประสิทธิภาพเมื่อใช้ drawImage/toDataURL บ่อยๆ
+        this.ctx = this.canvas.getContext('2d', { willReadFrequently: true }); 
+        
+        this.isProcessing = false; // ตัวแปรคุมสถานะการทำงาน
     }
 
     start() {
-        if (this.ws) return; // ป้องกันการ connect ซ้ำ
+        if (this.isProcessing) return; // ป้องกันการ start ซ้ำ
+        this.isProcessing = true;
         
         console.log(`Attempting to connect to YOLO backend at ${this.wsUrl}`);
+        
+        // สร้าง connection ใหม่
         this.ws = new WebSocket(this.wsUrl);
 
         this.ws.onopen = () => {
             console.log("WebSocket connection to YOLO backend established.");
-            this.sendFrameLoop(); // เริ่มส่งภาพแรกเพื่อกระตุ้นลูป
+            // ✅ แก้ไข: เรียกชื่อฟังก์ชันให้ถูกต้อง (จาก sendFrameLoop เป็น sendFrame)
+            this.sendFrame(); 
         };
 
         this.ws.onmessage = (event) => {
-            //ได้รับผลลัพธ์จาก Python
+            // ถ้าสั่งหยุดแล้ว ไม่ต้องทำต่อ
+            if (!this.isProcessing) return;
+
+            // 1. จัดการผลลัพธ์จาก Python
             try {
                 const data = JSON.parse(event.data);
                 if (this.onMessageCallback) {
@@ -33,13 +43,14 @@ export class FrameProcessor {
                 console.error("Error parsing YOLO result:", e);
             }
 
-            // เมื่อได้รับผลแล้ว ค่อยส่งภาพถัดไป (Ping-Pong)
-            // ใช้ requestAnimationFrame เพื่อไม่ให้หนัก Browser เกินไป
+            // 2. ส่งภาพถัดไป (Loop แบบ Ping-Pong)
+            // รอ Python ตอบกลับมาก่อนค่อยส่งภาพใหม่ เพื่อไม่ให้ Server รับภาระหนักเกินไป
             requestAnimationFrame(() => this.sendFrame());
         };
 
         this.ws.onclose = () => {
             console.log("WebSocket connection to YOLO backend closed.");
+            this.isProcessing = false;
             this.ws = null;
         };
 
@@ -50,6 +61,7 @@ export class FrameProcessor {
     }
 
     stop() {
+        this.isProcessing = false; // ตัด Loop ทันที
         if (this.ws) {
             this.ws.close();
             this.ws = null;
@@ -58,18 +70,20 @@ export class FrameProcessor {
     }
 
     sendFrame() {
-        // เช็คสถานะ Connection
-        if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+        // เช็คเงื่อนไขความปลอดภัย
+        if (!this.isProcessing || !this.ws || this.ws.readyState !== WebSocket.OPEN) return;
 
-        // เช็คว่าวิดีโอพร้อมหรือยัง (แก้ปัญหา Canvas width=0)
+        // เช็คว่าวิดีโอพร้อมหรือยัง
         if (this.videoElement.videoWidth === 0 || this.videoElement.videoHeight === 0) {
-            // ถ้าวิดีโอยังไม่มา ให้รอก่อนแล้วลองใหม่
-            requestAnimationFrame(() => this.sendFrame());
+            // ถ้าวิดีโอยังไม่มา ให้รอรอบหน้า
+            if (this.isProcessing) {
+                requestAnimationFrame(() => this.sendFrame());
+            }
             return;
         }
 
-        // ปรับขนาด Canvas ให้เท่ากับวิดีโอ (ทำครั้งเดียวหรือทำทุกครั้งก็ได้ถ้าขนาดเปลี่ยน)
-        if (this.canvas.width !== this.videoElement.videoWidth) {
+        // ปรับขนาด Canvas ให้เท่ากับวิดีโอ (ทำเมื่อขนาดเปลี่ยน)
+        if (this.canvas.width !== this.videoElement.videoWidth || this.canvas.height !== this.videoElement.videoHeight) {
             this.canvas.width = this.videoElement.videoWidth;
             this.canvas.height = this.videoElement.videoHeight;
         }
@@ -77,8 +91,11 @@ export class FrameProcessor {
         // วาดภาพลง Canvas
         this.ctx.drawImage(this.videoElement, 0, 0, this.canvas.width, this.canvas.height);
 
-        // ส่งข้อมูล (ลด Quality ลงเหลือ 0.5-0.7 เพื่อความเร็ว)
-        const dataURL = this.canvas.toDataURL('image/jpeg', 0.6);
-        this.ws.send(dataURL);
+        // ส่งข้อมูลแบบ Base64 (JPEG Quality 0.5 กำลังดีสำหรับ Realtime)
+        const dataURL = this.canvas.toDataURL('image/jpeg', 0.5);
+        
+        if (this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(dataURL);
+        }
     }
 }

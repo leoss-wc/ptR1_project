@@ -42,7 +42,6 @@ export function startPatrol() {
     }
     const shouldLoop = patrolState.isLooping;
 
-
     // แปลง path (array of {x, y}) เป็น geometry_msgs/PoseStamped[]
     // นี่คือส่วนสำคัญที่สร้าง "ภารกิจ" ทั้งหมด
     const goals = drawnPath.map(point => ({

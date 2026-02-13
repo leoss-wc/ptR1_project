@@ -3,14 +3,10 @@
  * A class to handle the WebRTC connection to a MediaMTX WHEP endpoint.
  */
 export class WebRTCPlayer {
-    /**
-     * @param {string} url The WHEP endpoint URL.
-     * @param {HTMLVideoElement} videoElement The video element to display the stream.
-     * @param {HTMLElement} statusElement The element to display connection status.
-     */
-    constructor(url, videoElement, statusElement) {
+    constructor(url, videoElement, statusElement, overlayElement) {
         this.url = url;
         this.videoElement = videoElement;
+        this.overlayElement = overlayElement;
         this.statusElement = statusElement;
         this.peerConnection = null;
     }
@@ -20,6 +16,10 @@ export class WebRTCPlayer {
      */
     async connect() {
         this._updateStatus('Initializing WebRTC connection...');
+
+        if (this.overlayElement) {
+            this.overlayElement.classList.add('hidden');
+        }
         
         if (this.peerConnection) {
             this.disconnect();
@@ -36,6 +36,7 @@ export class WebRTCPlayer {
                 this.videoElement.srcObject = new MediaStream();
             }
             this.videoElement.srcObject.addTrack(event.track);
+            this.videoElement.play().catch(e => console.warn("Auto-play blocked:", e));
         };
         
         // 3. Define the media we want to receive
@@ -80,12 +81,23 @@ export class WebRTCPlayer {
      * Disconnects the WebRTC connection.
      */
     disconnect() {
+        // ปิด PeerConnection
         if (this.peerConnection) {
             this.peerConnection.close();
             this.peerConnection = null;
-            this._updateStatus('Disconnected.');
-            console.log('WebRTC connection closed.');
         }
+
+        // เคลียร์ Video Element
+        if (this.videoElement.srcObject) {
+            this.videoElement.srcObject.getTracks().forEach(track => track.stop()); // หยุด Track ทั้งหมด
+            this.videoElement.srcObject = null; // ล้างค่าทิ้ง
+        }
+        if (this.overlayElement) {
+            this.overlayElement.classList.remove('hidden');
+        }
+
+        this._updateStatus('Disconnected.');
+        console.log('WebRTC connection closed and cleaned up.');
     }
 
     /**

@@ -5,6 +5,7 @@ import { OverlayCanvas } from './OverlayCanvas.js';
 
 let allRobotProfiles = [];
 let selectedProfileName = null;
+
 let rtcPlayer = null;
 let frameProcessor = null;
 let yoloOverlay = null;
@@ -15,11 +16,209 @@ export async function initProfileManager() {
   document.getElementById('save-profile-btn').addEventListener('click', saveProfile);
   document.getElementById('delete-profile-btn').addEventListener('click', deleteProfile);
   document.getElementById('connect-all-btn').addEventListener('click', connectUsingCurrentProfile);
-  document.getElementById('connect-video-btn').addEventListener('click', connectVideoPlayer);
+  //document.getElementById('connect-video-btn').addEventListener('click', startRobotStream);
   document.getElementById('connectButton').addEventListener('click', connectUsingCurrentProfile);
+  const startBtn = document.getElementById('start-stream-btn');
+  const stopBtn = document.getElementById('stop-stream-btn');
+  // ปุ่ม Start
+  startBtn.addEventListener('click', async () => {
+      startBtn.disabled = true;
+      startBtn.innerText = "Starting...";
+      
+      const success = await startRobotStream(); // เรียกฟังก์ชันที่เราเขียนใหม่
+      
+      if (success) {
+          startBtn.innerText = "Streaming (Active)";
+          stopBtn.disabled = false;
+      } else {
+          startBtn.disabled = false;
+          startBtn.innerText = "Start Stream";
+          alert("Connection Failed");
+      }
+  });
+
+  // ปุ่ม Stop
+  stopBtn.addEventListener('click', async () => {
+      stopBtn.disabled = true;
+      stopBtn.innerText = "Stopping...";
+      
+      await stopRobotStream(); // เรียกฟังก์ชัน cleanup ใหม่
+      
+      startBtn.disabled = false;
+      startBtn.innerText = "Start Stream";
+      stopBtn.innerText = "Stop Stream";
+  });
+
+  document.getElementById('ai-toggle').addEventListener('change', (event) => {
+        const isEnabled = event.target.checked;
+        const videoElement = document.getElementById('stream');  
+        
+        // ถ้ามี Player และวิดีโอเล่นอยู่ ให้ Toggle ทันที
+        if (rtcPlayer && videoElement && !videoElement.paused) {
+            manageAIState(isEnabled, videoElement);
+        }
+    });
 
   await loadAndDisplayProfiles();
   console.log('Profile Manager: Initialized profile manager and loaded profiles.');
+}
+
+export async function startRobotStream() {
+    const address = document.getElementById('profile-address').value;
+    const whepPort = document.getElementById('profile-whep-port').value; 
+    
+    if (!address || !whepPort) {
+        alert("Please select a profile.");
+        return false;
+    }
+
+    console.log("🚀 Starting Stream Sequence...");
+
+    // 1. สั่ง Backend ให้เริ่ม
+    const backendSuccess = await window.electronAPI.startFFmpegStream();
+    if (!backendSuccess) {
+        console.error("❌ Failed to start Backend.");
+        return false;
+    }
+    // 2.ใช้ระบบรอแบบ วนเช็คทุก 1 วินาที สูงสุด 15 ครั้ง
+    console.log("⏳ Polling for stream availability...");
+    const isReady = await waitForStreamReady(address, whepPort, 10);
+
+    if (isReady) {
+        console.log("✅ Stream is online! Connecting Player...");
+        connectPlayerAndAI(address, whepPort);
+        return true;
+    } else {
+        console.error("❌ Stream timeout. Backend started but no video signal.");
+        alert("Stream started but timed out (No Video). Check Camera/Network.");
+        // อาจจะสั่ง stop เพื่อเคลียร์ process
+        stopRobotStream();
+        return false;
+    }
+}
+
+async function waitForStreamReady(address, port, maxRetries = 10) {
+    const checkUrl = `http://${address}:${port}/mystream/whep`; // URL เดียวกับที่ Player ใช้
+
+    for (let i = 0; i < maxRetries; i++) {
+        try {            
+            console.log(`Checking stream attempt ${i + 1}/${maxRetries}...`);
+            // 1. ลองยิง Request ไปเช็ค (ใช้ timeout สั้นๆ 1 วินาทีเผื่อ Server ค้าง)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1000);
+            // ใช้ method 'HEAD' เพื่อเช็คแค่ว่า Server อยู่ไหม
+            const response = await fetch(checkUrl, { 
+                method: 'HEAD', 
+                signal: controller.signal 
+            }).catch(() => null);
+            clearTimeout(timeoutId);
+            // 2. ถ้า Server ตอบกลับมา (ไม่ว่าจะ 200, 404 หรือ 405) แปลว่า Port เปิดแล้ว!
+            if (response) {
+                console.log("Server is responding! Ready to connect.");
+                
+                // รอแถมอีกนิดนึง (1 วิ) ให้ FFmpeg ส่งข้อมูลเฟรมแรกเข้าทัน
+                await new Promise(r => setTimeout(r, 1000)); 
+                
+                return true; // 👈 ออกจาก Loop ทันที ไม่ต้องรอครบ 10 วิ
+            }
+            
+        } catch (e) {
+            console.log("Waiting...");
+        }
+        await new Promise(r => setTimeout(r, 1000)); // รอทีละ 1 วินาที
+    }
+    return true; // ถึงจะครบ 10 ครั้งก็ถือว่าใช้ได้
+}
+
+export async function stopRobotStream() {
+    console.log("🛑 Stopping Stream Sequence...");
+    disconnectPlayerAndAI();
+    // 2. สั่ง Backend ให้ปิด FFmpeg
+    await window.electronAPI.stopFFmpegStream();
+    console.log("Stream stopped and cleaned up.");
+}
+
+export function connectPlayerAndAI(address, whepPort) {
+    console.log("🔗 Initializing Player & AI System...");
+    if (!address || !whepPort) {
+        console.error("❌ Missing Address or Port");
+        return;
+    }
+    disconnectPlayerAndAI();
+    const whepUrl = `http://${address}:${whepPort}/mystream/whep`;
+    const videoElement = document.getElementById('stream');
+    const statusElement = document.getElementById('rtc_status');
+    const overlayEl = document.getElementById('disconnect-overlay');
+    // Setup WebRTC Player
+    rtcPlayer = new WebRTCPlayer(whepUrl, videoElement, statusElement, overlayEl);
+    rtcPlayer.connect();
+    // Handler เมื่อวิดีโอเริ่มเล่น
+    const handlePlay = () => {
+        console.log("▶ Video playing logic triggered.");
+        const isAIEnabled = document.getElementById('ai-toggle').checked;
+        if (isAIEnabled) {
+            manageAIState(true, videoElement);
+        }
+    };
+    videoElement.onplaying = handlePlay;
+    // ถ้าวิดีโอมันเล่นอยู่แล้ว (Already Playing) ให้เรียกเลยไม่ต้องรอ Event
+    if (!videoElement.paused && !videoElement.ended && videoElement.readyState > 2) {
+        handlePlay();
+    }
+}
+
+function manageAIState(shouldEnable, videoElement) {
+    if (shouldEnable) {
+        console.log("Starting AI Processor...");
+        // สร้าง Overlay ถ้ายังไม่มี
+        if (!yoloOverlay) {
+            yoloOverlay = new OverlayCanvas('yolo-overlay', videoElement);
+        }
+        yoloOverlay.resize(); // ปรับขนาดให้ตรง
+        // สร้าง Processor ถ้ายังไม่มี
+        if (!frameProcessor) {
+            frameProcessor = new FrameProcessor(videoElement, (detections) => {
+                if (yoloOverlay) yoloOverlay.drawDetections(detections);
+            });
+        }
+        frameProcessor.start(); // เริ่มทำงาน
+    } else {
+        console.log("zzZ Stopping AI Processor...");
+        // หยุดการประมวลผล
+        if (frameProcessor) {
+            frameProcessor.stop();
+            // frameProcessor = null; // (Optional) ไม่ต้อง null ก็ได้ถ้าอยาก start เร็วๆ ครั้งหน้า
+        }
+        // ล้างกรอบสี่เหลี่ยมบนจอ
+        if (yoloOverlay) {
+            yoloOverlay.clear();
+            // yoloOverlay = null;
+        }
+    }
+}
+
+export function disconnectPlayerAndAI() {
+    // หยุด AI
+    if (frameProcessor) {
+        frameProcessor.stop();
+        frameProcessor = null;
+    }
+    if (yoloOverlay) {
+        yoloOverlay.clear();
+        yoloOverlay = null;
+    }
+
+    // หยุด Player
+    if (rtcPlayer) {
+        rtcPlayer.disconnect();
+        rtcPlayer = null;
+    }
+    
+    // ล้าง Event
+    const videoElement = document.getElementById('stream');
+    if (videoElement) {
+        videoElement.onplaying = null;
+    }
 }
 
 async function loadAndDisplayProfiles() {
@@ -146,34 +345,4 @@ export function connectUsingCurrentProfile() {
     console.log(`🔌 Connecting to ROSBridge at ${address}:${rosPort}`);
     window.electronAPI.connectROSBridge(address, rosPort);
     statusEl.textContent = `Connecting to ${selectedProfileName}...`;
-}
-
-function connectVideoPlayer() {
-    const address = document.getElementById('profile-address').value;
-    const whepPort = document.getElementById('profile-whep-port').value;
-    if (!address || !whepPort) return;
-
-    const whepUrl = `http://${address}:${whepPort}/mystream/whep`;
-    const videoElement = document.getElementById('stream');
-    const webrtcStatusElement = document.getElementById('rtc_status');
-    
-    if (rtcPlayer) rtcPlayer.disconnect();
-    rtcPlayer = new WebRTCPlayer(whepUrl, videoElement, webrtcStatusElement);
-    rtcPlayer.connect();
-
-    if (yoloOverlay) yoloOverlay.clear();
-    yoloOverlay = new OverlayCanvas('yolo-overlay', videoElement);
-    
-    if (frameProcessor) frameProcessor.stop();
-    // สร้าง Instance ใหม่ของ FrameProcessor
-    frameProcessor = new FrameProcessor(videoElement, (detections) => {
-        if (yoloOverlay) yoloOverlay.drawDetections(detections);
-        // (Optional) ถ้า FrameProcessor ตัวใหม่มีฟังก์ชัน sendFrame()
-        // เราสามารถสั่ง sendFrame() ต่อจากตรงนี้ได้ ถ้าอยากคุม Flow เองแบบ Manual สุดๆ
-        // แต่ใน Class ที่ผมให้ไป มันจัดการเรื่องนี้ให้ใน onmessage แล้ว ดังนั้นไม่ต้องทำอะไรเพิ่มครับ
-    });
-    frameProcessor.start(); 
-    videoElement.onloadedmetadata = () => {
-        if(yoloOverlay) yoloOverlay.resize();
-    };
 }

@@ -4,8 +4,8 @@ console.log('[PRELOAD] Using raw preload:', __filename);
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getVideoFileURL: (relativePath) => ipcRenderer.invoke('get-video-path', relativePath),
-  startFFmpegStream: () => ipcRenderer.send('start-stream'),
-  stopFFmpegStream: () => ipcRenderer.send('stop-stream'),
+  startFFmpegStream: () => ipcRenderer.invoke('start-stream'),
+  stopFFmpegStream: () => ipcRenderer.invoke('stop-stream'),
   onStreamStatus: (callback) => ipcRenderer.on('stream-status', (_, data) => callback(data)),
 
   loadRobots: () => ipcRenderer.invoke('robots:load'),

@@ -1,0 +1,9 @@
+<launch> 
+   
+    <!-- Start ROSBridge WebSocket -->
+    <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch"/>
+    <!-- Start Stream Manager Node -->
+    <node pkg="ptR1_navigation" type="stream_manager_node.py" name="stream_manager_node"
+          output="screen"/>
+
+</launch>

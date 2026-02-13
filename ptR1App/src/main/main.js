@@ -10,16 +10,12 @@ const yaml = require('js-yaml');
 
 let rosWorker;
 let mainWindow;
+let pythonProcess = null;
 const robotFilePath = path.join(app.getPath('userData'), 'robots.json');
 const settingsFilePath = path.join(app.getPath('userData'), 'settings.json');
 const mapCacheDir = path.join(app.getPath('userData'), 'map_cache');
-
-
-
 const isDev = !app.isPackaged;
 // อ่าน IP Address จาก Environment Variable
-
-
 // Quick Fix ชั่วคราวตอน dev ทำ proxy ไฟล์ผ่าน express หรือ http server
 if (isDev) {
   const express = require('express');
@@ -32,7 +28,41 @@ if (isDev) {
   });
 }
 
+function startPythonBackend() {
+  // ตรวจสอบ Platform เพื่อเลือก path ของ python (เผื่อใช้ Windows/Linux)
+  const isWin = process.platform === 'win32';
+  
+  // Path ไปยัง Python Executable ใน venv
+  // หมายเหตุ: เช็ค path ให้ตรงกับเครื่องจริงของคุณ (bin หรือ Scripts)
+  const pythonExecutable = path.join(__dirname, '../../python-backend/venv/' + (isWin ? 'Scripts/python.exe' : 'bin/python'));
+  
+  // Path ไปยังไฟล์ yolo_app.py
+  const backendPath = path.join(__dirname, '../../python-backend/yolo_app.py');
 
+  console.log('[Main] 🐍 Starting Python Backend...');
+  console.log(`[Main] Python Path: ${pythonExecutable}`);
+  console.log(`[Main] Script Path: ${backendPath}`);
+
+  if (fs.existsSync(pythonExecutable) && fs.existsSync(backendPath)) {
+    // spawn process
+    pythonProcess = spawn(pythonExecutable, [backendPath]);
+
+    // รับค่า Console Log จาก Python มาแสดงใน Terminal ของ Electron
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[Python]: ${data.toString().trim()}`);
+    });
+
+    pythonProcess.stderr.on('data', (data) => {
+      console.error(`[Python Error]: ${data.toString().trim()}`);
+    });
+
+    pythonProcess.on('close', (code) => {
+      console.log(`[Python] Backend exited with code ${code}`);
+    });
+  } else {
+    console.error('[Main] ❌ Python executable or script not found!');
+  }
+}
 function loadRobotsFromFile() {
   try {
     if (fs.existsSync(robotFilePath)) {
@@ -246,8 +276,21 @@ ipcMain.on('save-video', (event, { buffer, date, filename }) => {
   });
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', async () => {
+  if (pythonProcess) {
+    console.log('[Main] Killing Python backend...');
+    pythonProcess.kill(); 
+    pythonProcess = null;
+  }
   if (rosWorker) {
+     // ส่งคำสั่งหยุดสตรีมไปยัง Worker เพื่อให้เรียก Service /stream_manager/stop
+     rosWorker.postMessage({ type: 'stopStream' });
+     
+     // ให้เวลา Worker ทำงานนิดนึงก่อน terminate
+     await new Promise(r => setTimeout(r, 500));
+     rosWorker.terminate();
+  }
+    if (rosWorker) {
     rosWorker.terminate();
   }
 });
@@ -256,7 +299,7 @@ app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.on('connect-rosbridge', (event, ip) => {
+ipcMain.on('connect-rosbridge', (event, ip, port) => {
   const targetPort = port || '9090';
   const url = `ws://${ip}:${targetPort}`;
   rosWorker.postMessage({ type: 'connectROS', url: url });
@@ -264,12 +307,50 @@ ipcMain.on('connect-rosbridge', (event, ip) => {
 });
 
 //เพิ่ม IPC handlers
-ipcMain.on('start-stream', () => {
-  rosWorker?.postMessage({ type: 'startStream' });
+ipcMain.handle('start-stream', async () => {
+  return new Promise((resolve, reject) => {
+    
+    // 1. สร้างฟังก์ชันดักฟังคำตอบจาก Worker
+    const responseHandler = (message) => {
+      // เช็คว่าเป็นข้อความตอบกลับเรื่อง Stream ไหม
+      if (message.type === 'startStreamResponse') {
+        
+        // ลบ Listener ออกเพื่อไม่ให้ Memory Leak
+        rosWorker.off('message', responseHandler);
+        
+        if (message.success) {
+          resolve(true); // บอก Frontend ว่าสำเร็จ
+        } else {
+          resolve(false); // บอก Frontend ว่าล้มเหลว
+        }
+      }
+    };
+    // 2. เริ่มดักฟัง
+    rosWorker.on('message', responseHandler);
+    // 3. ส่งคำสั่งไปหา Worker
+    rosWorker.postMessage({ type: 'startStream' });
+    //ตั้ง Timeout เผื่อ Worker เงียบหายไปเกิน 5 วิ
+    setTimeout(() => {
+        rosWorker.off('message', responseHandler);
+        resolve(false); // หมดเวลา
+    }, 7000);
+  });
 });
-
-ipcMain.on('stop-stream', () => {
-  rosWorker?.postMessage({ type: 'stopStream' });
+ipcMain.handle('stop-stream', async () => {
+  return new Promise((resolve) => {
+    const stopHandler = (message) => {
+      if (message.type === 'stopStreamResponse') {
+        rosWorker.off('message', stopHandler); // เลิกดักฟัง
+        resolve(true); // บอก UI ว่าจบงานแล้ว
+      }
+    };
+    rosWorker.on('message', stopHandler);
+    rosWorker?.postMessage({ type: 'stopStream' });
+    setTimeout(() => {
+        rosWorker.off('message', stopHandler);
+        resolve(true); 
+    }, 3000);
+  });
 });
 
 ipcMain.on('sync-maps', async () => {
@@ -523,7 +604,7 @@ app.whenReady().then(() => {
   } else {
     console.log('[main]:  userData/maps already exists:', mapFolder);
   }
-
+  startPythonBackend();
   createWindow();
 
   try {

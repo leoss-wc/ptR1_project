@@ -11,8 +11,6 @@ let slamPoseSubscriber = null;
 let amclPoseSubscriber = null;
 let isSlamPoseInitialized = false; 
 
-const BUFFER_SIZE_VOLTAGE = 50;  // ค่าเฉลี่ยจาก 10 วินาที
-let voltageBuffer = [];
 let tfClient = null;
 
 
@@ -72,7 +70,6 @@ parentPort.on('message', (message) => {
           subscribeRobotPoseSlam();
         }
         break;
-
       case 'deleteMap':
         callDeleteMapService(message.mapName);
         break;
@@ -117,7 +114,6 @@ parentPort.on('message', (message) => {
   }
 });
 
-
 // ฟังก์ชันเชื่อมต่อ ROSBridge
 function connectROSBridge(url) {
   console.log('Server : Connecting to ROSBridge at ', url);
@@ -126,17 +122,13 @@ function connectROSBridge(url) {
   
   if (ros && ros.isConnected && rosbridgeURL === url) {
     console.log('Server : Already connected to ROSBridge at ', url);
-    //parentPort.postMessage({ type: 'log', data: 'Connected to ROSBridge' });
     return;
   }
 
   if (ros) {
     console.log('Server : Closing previous ROSBridge connection before reconnecting...');
-    //parentPort.postMessage({ type: 'log', data: 'Server : Closing previous ROSBridge connection before reconnecting...' });
     ros.close();
   }
-
-
   rosbridgeURL = url;
   ros = new ROSLIB.Ros({ 
     url: url,
@@ -213,11 +205,11 @@ function sendRelayViaCommand(relayId, command) {
 // ส่งคำสั่ง String Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
 function sendCommand(command) {
   if (!ros || !ros.isConnected) {
-    console.error('Server : ❌ Cannot send command: ROSBridge is not connected.');
+    console.error('Server : Cannot send command: ROSBridge is not connected.');
     return;
   }
   if (!command) {
-    console.error('Server : ❌ Error: Command is undefined or null');
+    console.error('Server : Error: Command is undefined or null');
     return;
   }
   const cmdEditTopic = new ROSLIB.Topic({
@@ -704,53 +696,70 @@ function publishInitialPose(pose) {
 }
 
 function callStartStreamService() {
+  // 1. เช็ค Connection ก่อน
   if (!ros || !ros.isConnected) {
-    console.log('Server : Start Stream Service Failed: ROS is not connected.');
-    // ส่งข้อความกลับไปว่าล้มเหลวเนื่องจากไม่ได้เชื่อมต่อ
+    console.log('Server : Start Stream Failed: ROS not connected.');
+    // ส่งกลับไปบอก Main Process ว่าพัง (Type ต้องตรงกับที่ Main รอรับ)
     parentPort.postMessage({
-      type: 'stream-status',
-      data: {
-        success: false,
-        message: 'ROS is not connected.'
-      }
+      type: 'startStreamResponse', // ⭐ Type นี้ต้องตรงกับที่ Main Process รอ
+      success: false,
+      message: 'ROS is not connected.'
     });
-    return; // ออกจากฟังก์ชัน
+    return;
   }
+
+  // 2. สร้าง Service Client
   const service = new ROSLIB.Service({
     ros: ros,
     name: '/stream_manager/start',
     serviceType: 'std_srvs/Trigger'
   });
-  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+
+  const request = new ROSLIB.ServiceRequest({});
+
+  // 3. เรียก Service
+  service.callService(request, (result) => {
     console.log('Server : Start Stream Service Result:', result);
-    parentPort.postMessage({ type: 'stream-status', data: result });
+    
+    // 4. ส่งคำตอบกลับไปหา Main Process
+    parentPort.postMessage({
+      type: 'startStreamResponse', // ⭐ ส่งกลับด้วย Type นี้
+      success: result.success,
+      message: result.message
+    });
+
+  }, (error) => {
+    console.error('Server : Start Stream Service Error:', error);
+    
+    // กรณี Error จากการเรียก Service (Timeout หรือ Service หาย)
+    parentPort.postMessage({
+      type: 'startStreamResponse',
+      success: false,
+      message: error.toString()
+    });
   });
 }
-
 function callStopStreamService() {
   if (!ros || !ros.isConnected) {
-    console.log('Server : Start Stream Service Failed: ROS is not connected.');
-    // ส่งข้อความกลับไปว่าล้มเหลวเนื่องจากไม่ได้เชื่อมต่อ
-    parentPort.postMessage({
-      type: 'stream-status',
-      data: {
-        success: false,
-        message: 'ROS is not connected.'
-      }
-    });
+    parentPort.postMessage({ type: 'stopStreamResponse', success: true });
     return;
   }
+  
   const service = new ROSLIB.Service({
     ros: ros,
     name: '/stream_manager/stop',
     serviceType: 'std_srvs/Trigger'
   });
+
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
-    console.log('Server : Stop Stream Service Result:', result);
-    parentPort.postMessage({ type: 'stream-status', data: result });
+    console.log('Server : Stop Stream Result:', result);
+    //ส่งกลับไปบอก Main ว่าหยุดเรียบร้อย
+    parentPort.postMessage({ 
+        type: 'stopStreamResponse', 
+        success: result.success 
+    });
   });
 }
-
 function callDeleteMapService(mapName) {
   if (!ros || !ros.isConnected) {
     // ส่งผลลัพธ์กลับไปที่ UI ผ่าน main process

@@ -132,10 +132,7 @@ function setupGlobalCallbacks() {
         rosStatusEl.textContent = status.message;
         rosStatusEl.className = status.connected ? 'status-connected' : (status.connecting ? 'status-connecting' : 'status-disconnected');
     });
-
-    // Stream Status
-    document.getElementById('start-stream-btn').addEventListener('click', () => window.electronAPI.startFFmpegStream());
-    document.getElementById('stop-stream-btn').addEventListener('click', () => window.electronAPI.stopFFmpegStream());
+    
     window.electronAPI.onStreamStatus((res) => console.log("Stream:", res));
 
     // Manual Mode Toggle

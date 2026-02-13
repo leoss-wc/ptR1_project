@@ -298,6 +298,16 @@ input:checked + .slider:before { transform: translateX(26px); }
   font-size: 14px;
 }
 
+.video-container {
+    position: relative; /* สำคัญ: เพื่อให้ overlay อ้างอิงตำแหน่งได้ */
+    width: 640px;       /* หรือ 100% ตามดีไซน์ */
+    height: 480px;      /* หรือ auto */
+    background-color: black; /* พื้นหลังสีดำ */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
 /* --- Status Indicators --- */
 .status-disconnected { color: #ff6b6b; }
 .status-connected { color: #6bff9d; }
