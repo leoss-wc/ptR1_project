@@ -769,7 +769,7 @@ function callDeleteMapService(mapName) {
   const service = new ROSLIB.Service({
     ros: ros,
     name: '/map_manager/delete_map',
-    serviceType: 'ptR1_navigation/DeleteMap' // <--- ใช้ Service Type ที่ถูกต้อง
+    serviceType: 'ptR1_navigation/DeleteMap' 
   });
   const request = new ROSLIB.ServiceRequest({ name: mapName });
   service.callService(request, (result) => {

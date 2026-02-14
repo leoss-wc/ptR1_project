@@ -31,7 +31,7 @@ let dimmerMaskImage = null;//ตัวแปรสำหรับเก็บภ
 export { renderObjects, renderScan };
 
 export function initStaticMap() {
-  // ✨ 2. Get element และ context ของทุก Layer
+  // 2. Get element และ context ของทุก Layer
   backgroundCanvas = document.getElementById('map-background-layer');
   objectsCanvas = document.getElementById('map-objects-layer');
   scanCanvas = document.getElementById('map-scan-layer');
@@ -77,7 +77,7 @@ function renderObjects() {
   ctx.save();
   ctx.translate(mapView.viewState.offsetX, mapView.viewState.offsetY);
   ctx.scale(mapView.viewState.scale, mapView.viewState.scale);
-
+  //วาด Dimmer Mask ก่อน เพื่อให้พื้นหลังมืดลง
   if (dimmerMaskImage && (mode === 'draw' || mode === 'goal' || mode === 'pose')) {
         ctx.drawImage(dimmerMaskImage, 0, 0, mapImage.width, mapImage.height);
     }
@@ -93,7 +93,6 @@ function renderObjects() {
   // วาด UI ที่เป็น Screen-space
   drawInteractionUI(ctx);
 }
-
 // ฟังก์ชันสำหรับวาด Layer ที่มี Laser Scan
 function renderScan() {
     if (!latestScan || !scanCanvas) return;
@@ -109,7 +108,6 @@ function renderScan() {
 
     ctx.restore();
 }
-
 export function renderAllLayers() {
     requestAnimationFrame(() => {
         renderBackground();
@@ -127,7 +125,6 @@ function resizeAllCanvases() {
         }
     });
 }
-
 
 //ฟังก์ชันสำหรับ Reset View โดยใช้หลัก "Fit and Center"
 function resetStaticMapView() {
@@ -226,75 +223,160 @@ document.getElementById('select-map-btn').addEventListener('click', async () => 
 });
 
 function bindUI() {
+  // Zoom Controls
   document.getElementById('zoom-in').addEventListener('click', () => {
-    if (mapImage) {
-      mapView.viewState.scale *= 1.2;
-      renderAllLayers();
-    }
+    if (mapImage) { mapView.viewState.scale *= 1.2; renderAllLayers(); }
   });
   document.getElementById('zoom-out').addEventListener('click', () => {
-    if (mapImage) {
-      mapView.viewState.scale /= 1.2;
-      renderAllLayers();
-    }
+    if (mapImage) { mapView.viewState.scale /= 1.2; renderAllLayers(); }
   });
   document.getElementById('reset-static-view-btn').addEventListener('click', resetStaticMapView);
 
+  // Map Controls
   document.getElementById('clear-path-btn').addEventListener('click', () => {
     patrolState.patrolPath.length = 0;
     cancelMode();
     renderObjects();
   });
+  
   document.getElementById('sync-maps-btn').addEventListener('click', () => {
     window.electronAPI.syncMaps();
   });
+
+  //ปุ่ม Delete Map 
+  document.getElementById('delete-map-btn').addEventListener('click', () => {
+    if (!current_map_select || !current_map_select.name) {
+      alert("Please select a map from the gallery first.");
+      return;
+    }
+    const mapName = current_map_select.name;
+    if (confirm(`Are you sure you want to PERMANENTLY delete map "${mapName}"?`)) {
+      window.electronAPI.deleteMap(mapName);
+    }
+  });
+
+  // Listener รับผลการลบแผนที่
+  window.electronAPI.onMapDeleteResult((result) => {
+    if (result.success) {
+      alert(`${result.message}`);
+      // เคลียร์ Selection
+      current_map_select = { name: null, base64: null, meta: null };
+      mapImage = null; // เคลียร์รูปภาพ
+      // เคลียร์หน้าจอ
+      const ctx = backgroundCtx;
+      ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+      renderObjects();
+      // โหลด Gallery ใหม่
+      loadLocalMapsToGallery();
+    } else {
+      alert(`Error: ${result.message}`);
+    }
+  });
+
+  // Mode Toggles
   document.getElementById('set-goal-btn').addEventListener('click', () => {
-    if (mode === 'goal') {
-      cancelMode();
-      return;
-    }
-    patrolPath.length = 0;
-    cancelMode(); 
-    mode = 'goal';
-    interactionCanvas.style.cursor = 'crosshair';
-    document.getElementById('set-goal-btn').classList.add('active');
-    renderAllLayers();
+    toggleMode('goal');
   });
-  const drawModeBtn = document.getElementById('toggle-draw-mode');
-  
   document.getElementById('set-pose-btn').addEventListener('click', () => {
-    if (mode === 'pose') {
-      cancelMode();
-      return;
-    }
-    cancelMode();
-    mode = 'pose';
-    interactionCanvas.style.cursor = 'crosshair';
-    document.getElementById('set-pose-btn').classList.add('active');
+    toggleMode('pose');
+  });
+  document.getElementById('toggle-draw-mode').addEventListener('click', () => {
+    toggleMode('draw');
   });
 
-
-  drawModeBtn.addEventListener('click', () => {
-    if (mode === 'draw') {
-      cancelMode();
+  // Map Selection Logic
+  document.getElementById('select-map-btn').addEventListener('click', async () => {
+    if (!current_map_select.name || !mapImage) {
+      alert("Please select a map from the gallery first.");
       return;
     }
-    cancelMode();
-    mode = 'draw';
-    interactionCanvas.style.cursor = 'crosshair';
-    drawModeBtn.textContent = 'Draw :ON';
-    drawModeBtn.classList.add('active');
-    patrolPath.length = 0;
-    renderAllLayers();
+    console.log(`Activating map: ${current_map_select.name}`);
+    await activateMap(current_map_select.name, current_map_select.meta);
   });
+
   window.electronAPI.onSyncComplete((mapList) => {
-    const gallery = document.getElementById('map-gallery');
-    gallery.innerHTML = '';
-    mapList.forEach(({ name, base64 }) => addMapToGallery(name, base64));
     loadLocalMapsToGallery();
   });
 }
 
+function toggleMode(newMode) {
+  if (mode === newMode) {
+    cancelMode();
+  } else {
+    cancelMode();
+    mode = newMode;
+    interactionCanvas.style.cursor = 'crosshair';
+    
+    // Update Button States
+    if (newMode === 'goal') document.getElementById('set-goal-btn').classList.add('active');
+    if (newMode === 'pose') document.getElementById('set-pose-btn').classList.add('active');
+    if (newMode === 'draw') {
+        const btn = document.getElementById('toggle-draw-mode');
+        btn.textContent = 'Draw :ON';
+        btn.classList.add('active');
+        patrolPath.length = 0;
+    }
+    renderAllLayers();
+  }
+}
+
+async function activateMap(mapName, meta) {
+  let inflatedImageData;
+  const cachedData = await window.electronAPI.loadMapCache(mapName);
+
+  if (cachedData) {
+      // Load Cache
+      const finalImage = new Image();
+      finalImage.src = cachedData.croppedImageBase64;
+      await new Promise(resolve => finalImage.onload = resolve);
+      const pixelData = base64ToUint8Array(cachedData.inflatedImageData.data);
+      inflatedImageData = new ImageData(pixelData, cachedData.inflatedImageData.width, cachedData.inflatedImageData.height);
+
+      activeMap.name = mapName;
+      activeMap.base64 = finalImage.src;
+      activeMap.meta = cachedData.newMeta;
+  } else {
+      // Process New
+      const { croppedImage, newMeta } = await autoCropMapImage(mapImage, meta);
+      inflatedImageData = preprocessMapData(croppedImage);
+      
+      activeMap.name = mapName;
+      activeMap.base64 = croppedImage.src;
+      activeMap.meta = newMeta;
+
+      const dataToCache = {
+          croppedImageBase64: activeMap.base64,
+          newMeta: activeMap.meta,
+          inflatedImageData: {
+              width: inflatedImageData.width,
+              height: inflatedImageData.height,
+              data: bufferToBase64(inflatedImageData.data.buffer)
+          }
+      };
+      await window.electronAPI.saveMapCache(mapName, dataToCache);
+  }
+
+  document.getElementById('active-map-name').textContent = activeMap.name;
+  localStorage.setItem('activeMapName', activeMap.name);
+  window.electronAPI.selectMap(activeMap.name);
+  
+  alert(`Active map has been set to "${activeMap.name}".`);
+
+  // Prepare Hit Canvas & Dimmer
+  mapHitCanvas = document.createElement('canvas');
+  mapHitCanvas.width = inflatedImageData.width;
+  mapHitCanvas.height = inflatedImageData.height;
+  mapHitCtx = mapHitCanvas.getContext('2d', { willReadFrequently: true });
+  mapHitCtx.putImageData(inflatedImageData, 0, 0);
+  createDimmerMask(inflatedImageData);
+
+  const finalMapImage = new Image();
+  finalMapImage.onload = () => {
+      mapImage = finalMapImage;
+      resetStaticMapView(); 
+  };
+  finalMapImage.src = activeMap.base64;
+}
 // ในไฟล์ mapStatic.js
 function isClickInsideBounds(worldPoint) {
   // เพิ่มการตรวจสอบว่า worldPoint ไม่ใช่ null หรือ undefined
@@ -319,7 +401,9 @@ function isClickInsideBounds(worldPoint) {
 }
 
 function preprocessMapData(sourceImage) {
-  console.log("🗺️ StaticMap: Pre-processing map to inflate obstacles and preserve unknown space...");
+  console.log("🗺️ StaticMap: Pre-processing with Uint32 Optimization...");
+  
+  // 1. เตรียม Canvas ชั่วคราว
   const tempCanvas = document.createElement('canvas');
   const tempCtx = tempCanvas.getContext('2d');
   const width = sourceImage.width;
@@ -328,58 +412,77 @@ function preprocessMapData(sourceImage) {
   tempCanvas.height = height;
   tempCtx.drawImage(sourceImage, 0, 0);
 
-  const originalData = tempCtx.getImageData(0, 0, width, height).data;
+  // 2. ดึงข้อมูลมาเป็น 32-bit Integers
+  const imageData = tempCtx.getImageData(0, 0, width, height);
+  const originalData32 = new Uint32Array(imageData.data.buffer);
+  
+  // สร้าง Buffer ใหม่สำหรับผลลัพธ์
   const inflatedImageData = tempCtx.createImageData(width, height);
-  const inflatedDataArray = inflatedImageData.data;
+  const inflatedData32 = new Uint32Array(inflatedImageData.data.buffer);
 
-  const obstacleThreshold = 10;
-  const marginSize = 1;
+  // ค่าสีในระบบ Little Endian (ABGR)
+  // ROS Map: Occupied = 0 (Black), Free = 255 (White), Unknown = 128/205 (Gray)
+  // ดังนั้น Black ใน Uint32 คือ 0xFF000000 (Full Alpha, B=0, G=0, R=0)
+  
+  // กำหนด Threshold: ถ้าค่าสีน้อยกว่านี้ถือเป็นสิ่งกีดขวาง
+  // เราเช็คแค่ Byte แรก (สีแดง) ก็พอ: pixel & 0xFF
+  const obstacleThreshold = 50; 
+  const margin = 1; // ขยายขอบ 1 พิกเซล (รวมเป็น 3x3)
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
-      const index = (y * width + x) * 4;
+      const i = y * width + x;
       let isNearObstacle = false;
+      
+      // --- FAST CHECK ---
+      // ถ้าตัวมันเองเป็นสิ่งกีดขวางอยู่แล้ว ก็ไม่ต้องเช็คเพื่อนบ้าน
+      const centerPixel = originalData32[i];
+      if ((centerPixel & 0xFF) < obstacleThreshold) { 
+          inflatedData32[i] = 0xFF000000; // สีดำทึบ (ABGR)
+          continue;
+      }
 
-      // ตรวจสอบพื้นที่รอบๆ เพื่อขยายขอบเขต (Inflation)
-      for (let j = -marginSize; j <= marginSize; j++) {
-        for (let i = -marginSize; i <= marginSize; i++) {
-          const checkX = x + i;
-          const checkY = y + j;
-          if (checkX >= 0 && checkX < width && checkY >= 0 && checkY < height) {
-            const neighborIndex = (checkY * width + checkX) * 4;
-            if (originalData[neighborIndex] < obstacleThreshold) {
+      // --- INFLATION LOOP (Optimized) ---
+      // เช็คเพื่อนบ้านเฉพาะตอนจำเป็น
+      checkNeighbor:
+      for (let dy = -margin; dy <= margin; dy++) {
+        for (let dx = -margin; dx <= margin; dx++) {
+          if (dx === 0 && dy === 0) continue;
+
+          const nx = x + dx;
+          const ny = y + dy;
+
+          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+            const ni = ny * width + nx;
+            const neighborPixel = originalData32[ni];
+            
+            // เช็คแค่ Channel สีแดง (Byte สุดท้าย) ว่าดำไหม
+            if ((neighborPixel & 0xFF) < obstacleThreshold) {
               isNearObstacle = true;
-              break;
+              break checkNeighbor; // เจอแค่อันเดียวก็พอ หยุดลูปทันที (ประหยัดเวลา)
             }
           }
         }
-        if (isNearObstacle) break;
       }
 
       if (isNearObstacle) {
-        // ถ้าอยู่ใกล้สิ่งกีดขวาง ให้ตั้งค่าเป็นสีดำ
-        inflatedDataArray.set([0, 0, 0, 255], index);
+        inflatedData32[i] = 0xFF000000; // ถมดำ (สิ่งกีดขวางที่ขยายแล้ว)
       } else {
-        // ✨ ถ้าไม่อยู่ใกล้สิ่งกีดขวาง ให้ใช้สีเดิมจากแผนที่ต้นฉบับ
-        // ซึ่งจะช่วยรักษาสีเทา (Unknown Space) เอาไว้
-        const originalColor = originalData[index];
-        inflatedDataArray.set([originalColor, originalColor, originalColor, 255], index);
+        inflatedData32[i] = originalData32[i]; // สีเดิม (พื้นที่ว่าง/Unknown)
       }
     }
   }
-  console.log("🗺️ StaticMap: Map pre-processing complete.");
+
   return inflatedImageData;
 }
-
-
 
 function setupCanvasEvents() {
   const canvas = interactionCanvas;
   canvas.addEventListener('mousedown', (e) => {
   if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
-    
     const worldPoint = getWorldCoordsFromEvent(e);
     if (!isClickInsideBounds(worldPoint)) return;
+
     if (mode === 'draw') {
       if (isHoveringFirstPoint && patrolPath.length > 1) { 
         patrolPath.push({ ...patrolPath[0] });
@@ -398,7 +501,6 @@ function setupCanvasEvents() {
       poseStartPosition = worldPoint; // ใช้ worldPoint ที่คำนวณไว้แล้ว
       renderObjects();
     }
-    // --- สิ้นสุดส่วนที่แก้ไข ---
 
   } else {
     mapView.handleMouseDown(e);
@@ -406,51 +508,29 @@ function setupCanvasEvents() {
 });
 
   canvas.addEventListener('mouseup', (e) => {
-    if (mode === 'pose' && isSettingPose) {
+    if ((mode === 'pose' && isSettingPose) || (mode === 'goal' && isSettingGoal)) {
       const endPoint = getWorldCoordsFromEvent(e);
       const dx = endPoint.x - poseStartPosition.x;
       const dy = endPoint.y - poseStartPosition.y;
-      const yaw = Math.atan2(dy, dx);
+      const yaw = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
       const quaternion = yawToQuaternion(yaw);
       
-      const poseData = {
-        position: poseStartPosition,
-        orientation: quaternion,
-      };
-      window.electronAPI.setInitialPose(poseData);
+      const poseData = { position: poseStartPosition, orientation: quaternion };
 
-      console.log("Switching to AMCL pose subscriber for localization mode.");
-      window.electronAPI.switchPoseSubscriber('amcl');
-      
+      if (mode === 'pose') {
+          window.electronAPI.setInitialPose(poseData);
+          console.log("Initial Pose Set via UI");
+          window.electronAPI.switchPoseSubscriber('amcl');
+      } else {
+          stopPatrol();
+          setGoalPoint(poseData);
+          window.electronAPI.startPatrol([poseData], false); 
+          console.log("New Goal Set via UI");
+      }
       isSettingPose = false;
+      isSettingGoal = false;
       poseStartPosition = null;
       cancelMode();
-    }
-    if (mode === 'goal' && isSettingGoal) {
-        const endPoint = getWorldCoordsFromEvent(e);
-        const dx = endPoint.x - poseStartPosition.x;
-        const dy = endPoint.y - poseStartPosition.y;
-
-        // ถ้าไม่มีการลาก (คลิกเฉยๆ) ให้ใช้ทิศทางเริ่มต้น
-        const yaw = (dx === 0 && dy === 0) ? 0 : Math.atan2(dy, dx);
-        const quaternion = yawToQuaternion(yaw);
-
-        const goalPose = {
-            position: poseStartPosition,
-            orientation: quaternion,
-        };
-
-        stopPatrol();
-        
-        // อัปเดต State และส่งไป ROS
-        setGoalPoint(goalPose);
-        // เรียกใช้ระบบ Patrol แต่ส่งไปแค่ Goal เดียว และไม่ Loop
-        window.electronAPI.startPatrol([goalPose], false); 
-        console.log("New goal point set:", goalPose);
-        patrolState.updateStatus("Patrolling to the new goal...");
-        isSettingGoal = false;
-        poseStartPosition = null;
-        cancelMode();
     }
     isDrawing = false;
     mapView.handleMouseUp(e);
@@ -902,7 +982,6 @@ function drawGoal(ctx) {
         ctx.restore();
     }
 }
-
 // ในไฟล์ modules/mapStatic.js
 
 function drawArrow(ctx, startWorldPos, endScreenPos, color) {

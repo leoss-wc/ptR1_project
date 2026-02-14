@@ -1,4 +1,4 @@
-// src/renderer/modules/mapView.js (เวอร์ชันใหม่)
+// src/renderer/modules/mapView.js
 
 export const viewState = {
   scale: 1.0,

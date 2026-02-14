@@ -71,6 +71,10 @@ def launch_ffmpeg_stream():
     is_starting = True # ล็อคการทำงาน
 
     try:
+        if ffmpeg_process is not None:
+            # เรียกฟังก์ชัน stop_process ที่เราเขียนไว้แล้ว
+            ffmpeg_process = stop_process(ffmpeg_process, "Old FFmpeg Instance")
+
         rtsp_url = rospy.get_param('~rtsp_url', 'rtsp://localhost:8554/mystream')
         
         try:
@@ -81,11 +85,9 @@ def launch_ffmpeg_stream():
             pass 
 
         if not start_mediamtx():
-            is_starting = False
             return False, "Failed to start MediaMTX"
 
         if not check_socket_open(mtx_host, mtx_port):
-            is_starting = False
             rospy.logerr(f"MediaMTX unreachable at {mtx_host}:{mtx_port}")
             return False, "MediaMTX unreachable"
         
@@ -105,15 +107,12 @@ def launch_ffmpeg_stream():
             '-preset', 'ultrafast',
             '-tune', 'zerolatency',
             '-pix_fmt', 'yuv420p',    # [NEW] สำคัญมากสำหรับ WebRTC/Browser
+            '-threads', '1',
             '-b:v', bitrate,
             '-f', 'rtsp',
             '-rtsp_transport', 'tcp',
             rtsp_url
         ]
-        
-        # Kill ตัวเก่าให้ชัวร์
-        subprocess.run(["pkill", "-x", "ffmpeg"], stderr=subprocess.DEVNULL)
-        time.sleep(1.0) # รอให้กล้องว่างจริงๆ
 
         rospy.loginfo(f"Executing FFmpeg: {' '.join(ffmpeg_command)}")
         
@@ -136,6 +135,8 @@ def launch_ffmpeg_stream():
         is_starting = False
         rospy.logerr(f"Exception starting FFmpeg: {e}")
         return False, str(e)
+    finally:
+        is_starting = False
 
 def stop_process(proc, name):
     if proc is None:
@@ -165,12 +166,7 @@ def monitor_loop(event):
         
         # เช็ค FFmpeg
         if ffmpeg_process is None or ffmpeg_process.poll() is not None:
-            rospy.logwarn("Stream Monitor: FFmpeg is not running. Attempting auto-restart...")
-        
-            # ก่อนเริ่มใหม่ ให้มั่นใจว่าตัวเก่า (ถ้ามีซาก) ถูกล้างออกไปแล้ว
-            ffmpeg_process = stop_process(ffmpeg_process, "Old FFmpeg Instance")
-            
-            # เรียกใช้งาน launch_ffmpeg_stream โดยตรง (ฟังก์ชันนี้มี Mutex is_starting กันไว้อีกชั้น)
+            rospy.logwarn("Stream Monitor: FFmpeg is not running. Attempting auto-restart...")        
             success, msg = launch_ffmpeg_stream()
             if not success:
                 rospy.logerr(f"Stream Monitor: Auto-restart failed -> {msg}")
@@ -197,8 +193,6 @@ def handle_start_stream(req):
     
     if is_stream_enabled and ffmpeg_process is not None and ffmpeg_process.poll() is None:
         return TriggerResponse(success=False, message="Stream is already running.")
-    
-    # [FIX] อย่าเพิ่ง set True ตรงนี้ ให้ไป set ตอน start ผ่านแล้ว
     success, message = launch_ffmpeg_stream()
 
     if success:

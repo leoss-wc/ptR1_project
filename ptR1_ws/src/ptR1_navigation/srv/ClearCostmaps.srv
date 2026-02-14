@@ -1,3 +1,5 @@
+# Request (ส่วนส่งคำสั่ง - ไม่ต้องส่งค่าอะไรมา)
 ---
+# Response (ส่วนตอบกลับ - ตามโค้ด Python ของคุณ)
 bool success
 string message

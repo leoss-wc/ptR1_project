@@ -10,19 +10,20 @@ let latestRobotPose = null;
 let currentMapInfo = null;
 let isLiveMapReady = false;
 
+// เตรียมค่าสีไว้ล่วงหน้า (ABGR Format สำหรับ Little Endian Systems)
+// 0xFF = 255
+const COLOR_UNKNOWN = 0xFF808080; // Gray (128, 128, 128, 255)
+const COLOR_FREE = 0xFFFFFFFF;    // White (255, 255, 255, 255)
+const COLOR_OCCUPIED = 0xFF000000; // Black (0, 0, 0, 255)
+
 
 export function processLiveMapData(mapData) {
     if (!mapData || !mapData.info || !mapData.data) return;
 
     currentMapInfo = mapData.info;
 
-    // ใช้ .some() เพื่อหาว่ามี pixel ไหนใน array ที่ไม่ใช่ -1 (Unknown) หรือไม่
     const hasMeaningfulData = mapData.data.some(value => value !== -1);
-    
-    // ถ้าเจอข้อมูลที่ใช้งานได้จริง ถึงจะตั้งค่า Flag
-    if (hasMeaningfulData) {
-        isLiveMapReady = true;
-    }
+    if (hasMeaningfulData) isLiveMapReady = true;
 
     const width = mapData.info.width;
     const height = mapData.info.height;
@@ -33,19 +34,18 @@ export function processLiveMapData(mapData) {
     }
 
     const imageData = offscreenCtx.createImageData(width, height);
-    const data = imageData.data;
+    const buf32 = new Uint32Array(imageData.data.buffer);
+
 
     for (let i = 0; i < mapData.data.length; i++) {
-        const occupancyValue = mapData.data[i];
-        const pixelIndex = i * 4;
-        if (occupancyValue === -1) {
-            data[pixelIndex] = 128; data[pixelIndex + 1] = 128; data[pixelIndex + 2] = 128;
-        } else if (occupancyValue === 0) {
-            data[pixelIndex] = 255; data[pixelIndex + 1] = 255; data[pixelIndex + 2] = 255;
+        const val = mapData.data[i];
+        if (val === -1) {
+            buf32[i] = COLOR_UNKNOWN;
+        } else if (val === 0) {
+            buf32[i] = COLOR_FREE;
         } else {
-            data[pixelIndex] = 0; data[pixelIndex + 1] = 0; data[pixelIndex + 2] = 0;
+            buf32[i] = COLOR_OCCUPIED;
         }
-        data[pixelIndex + 3] = 255;
     }
     offscreenCtx.putImageData(imageData, 0, 0);
 }
@@ -64,36 +64,32 @@ function drawRobotOnLiveMap(ctx) {
         return;
     };
 
-  const { resolution, origin, height } = currentMapInfo;
-  const pose = latestRobotPose;
-  //console.log("Drawing robot at position:", latestRobotPose.position);
+    const { resolution, origin, height } = currentMapInfo;
+    const pose = latestRobotPose;
   
-  const px = (pose.position.x - origin.position.x) / resolution;
-  const py = height - ((pose.position.y - origin.position.y) / resolution);
-  //console.log(`Calculated px: ${px}, py: ${py}`);
+    // คำนวณพิกัด Pixel (กลับแกน Y ตามมาตรฐาน Map Server)
+    const px = (pose.position.x - origin.position.x) / resolution;
+    const py = height - ((pose.position.y - origin.position.y) / resolution);
 
-  //console.log("POSE:", JSON.stringify(latestRobotPose.position, null, 2));
-  //console.log("MAP INFO:", JSON.stringify(currentMapInfo, null, 2));
+    // วาดตัวหุ่นยนต์ (วงกลมสีฟ้า)
+    ctx.beginPath();
+    ctx.arc(px, py, 5, 0, 2 * Math.PI, false);
+    ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
+    ctx.fill();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.stroke();
 
-  ctx.beginPath();
-  ctx.arc(px, py, 5, 0, 2 * Math.PI, false);
-  ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.stroke();
-
-  const yaw = quaternionToYaw(pose.orientation);
-  const arrowLength = 10;
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px + arrowLength * Math.cos(-yaw), py + arrowLength * Math.sin(-yaw));
-  ctx.strokeStyle = '#FFFFFF';
-  ctx.lineWidth = 2;
-  ctx.stroke();
+    // วาดลูกศรบอกทิศทาง
+    const yaw = quaternionToYaw(pose.orientation);
+    const arrowLength = 10;
+    ctx.beginPath();
+    ctx.moveTo(px, py);
+    ctx.lineTo(px + arrowLength * Math.cos(-yaw), py + arrowLength * Math.sin(-yaw));
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.stroke();
 }
-
-
 export function updateLiveRobotPose(pose) {
   latestRobotPose = pose;
   //console.log(`Update robot pose: x=${pose.position.x}, y=${pose.position.y}`);
@@ -108,44 +104,44 @@ export function initLiveMap() {
 
 // ฟังก์ชันสำหรับติดตั้ง Event Listeners
 function setupLiveCanvasEvents() {
-  canvas.addEventListener('mousedown', (e) => {
-    // Live map ทำแค่ Pan อย่างเดียวเสมอ
-    mapView.handleMouseDown(e);
-  });
-
-  canvas.addEventListener('mousemove', (e) => {
-    mapView.handleMouseMove(e);
-  });
-
-  canvas.addEventListener('mouseup', (e) => {
-    mapView.handleMouseUp(e);
-  });
-
-  canvas.addEventListener('mouseleave', (e) => {
-    mapView.handleMouseUp(e);
-  });
+  canvas.addEventListener('mousedown', (e) => mapView.handleMouseDown(e));
+  canvas.addEventListener('mousemove', (e) => mapView.handleMouseMove(e));
+  canvas.addEventListener('mouseup', (e) => mapView.handleMouseUp(e));
+  canvas.addEventListener('mouseleave', (e) => mapView.handleMouseUp(e));
 }
 
 export function drawLiveMap() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
-    ctx.imageSmoothingEnabled = false;
+    
+    // ปิด Smoothing เพื่อให้แผนที่คมชัดแบบ Pixel Art
+    ctx.imageSmoothingEnabled = false; 
+
     if (!isLiveMapReady) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'gray';
-        ctx.font = '12px sans-serif';
+        ctx.fillStyle = '#666';
+        ctx.font = '14px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('Waiting for SLAM or map data...', canvas.width / 2, canvas.height / 2);
+        ctx.fillText('Waiting for SLAM data...', canvas.width / 2, canvas.height / 2);
         return; 
     }
+    
+    // เริ่มวาดแผนที่
     applyTransform(ctx);
+    
+    // หมุนแผนที่ 90 องศาถ้าจำเป็น (ขึ้นอยู่กับการตั้งค่า TF) 
+    // ถ้าแผนที่กลับหัว ให้ลองแก้บรรทัดนี้ หรือเอาออก
     ctx.translate(0, canvas.height);
-    ctx.rotate(-Math.PI / 2)
+    ctx.rotate(-Math.PI / 2);
+    
     ctx.drawImage(offscreenCanvas, 0, 0);
 
+    // วาดหุ่นยนต์ทับ
     drawRobotOnLiveMap(ctx);
+    
     restoreTransform(ctx);
 }
+
 
 export function resetLiveMapView() {
   if (!canvas || offscreenCanvas.width === 0) return;
