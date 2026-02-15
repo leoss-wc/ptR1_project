@@ -1,0 +1,4 @@
+<launch>
+        <include file="$(find ptR1_navigation)/launch/amclV2.launch" />
+        <include file="$(find ptR1_navigation)/launch/movemove_base_dwa.launch" />
+</launch>

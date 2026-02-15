@@ -143,9 +143,11 @@ function setupGlobalCallbacks() {
     });
 
     // SLAM / Map Updates
-    window.electronAPI.onSlamMap((mapData) => {
+    window.electronAPI.onLiveMap((mapData) => {
         processLiveMapData(mapData);
-        if (!isFirstMapReceived) { resetLiveMapView(); isFirstMapReceived = true; }
+        if (!isFirstMapReceived) { 
+          resetLiveMapView(); isFirstMapReceived = true; 
+        }
     });
 
     window.electronAPI.onRobotPosSlam((pose) => pose.position && updateLiveRobotPose(pose));
@@ -251,7 +253,6 @@ function switchView(viewName) {
       //ถ้าไม่ใช่หน้า Home ให้หยุดวาดเพื่อประหยัดเครื่อง
       stopRenderLoop();
   }
-
   // กรณีหน้า Map
   if (viewName === 'map') {
     initStaticMap();

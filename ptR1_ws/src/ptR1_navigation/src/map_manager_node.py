@@ -120,7 +120,7 @@ class MapManager:
             return StartSLAMResponse(False, str(e))
 
     def handle_reset_slam(self, req):
-        rospy.loginfo("🔄 Resetting SLAM.")
+        rospy.loginfo("Resetting SLAM.")
         slam_reset_service_name = '/slam_toolbox/reset'
         try:
             # รอ Service นานหน่อยเผื่อ SLAM เพิ่งเริ่ม (5 วินาที)

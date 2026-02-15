@@ -229,15 +229,29 @@
                 </div>
               </fieldset>
             </div>
-                  <div id="live-control-box" class="control-box overlay-controls hidden">
-                  <input id="map-name-input" placeholder="Enter map name..." />
-                  <button id="save-map-btn" class="btn btn-blue">Save Map</button>
-                  <button id="start-slam-btn" class="btn btn-blue">Start SLAM</button>
-                  <button id="stop-slam-btn" class="btn btn-red">Stop SLAM</button>
-                  <button id="reset-slam-btn" class="btn btn-orange">Reset SLAM</button>
-                  <span id="slam-result-label" style="margin-left: 10px;"></span>
-                  <button id="reset-live-view-btn">Reset View</button> 
+                 <div id="live-control-box" class="control-box overlay-controls hidden" style="width: 280px; max-width: 95vw; display: flex; flex-direction: column; gap: 5px;">
+                  <div style="display: flex; gap: 5px; width: 100%;">
+                    <input id="map-name-input" placeholder="Map Name..." style="flex: 2; min-width: 0; padding: 4px; font-size: 12px;" />
+                    <button id="save-map-btn" class="btn btn-blue" style="flex: 1; padding: 4px; font-size: 11px;">Save</button>
+                  </div>
+
+                  <div style="display: flex; gap: 3px; width: 100%;">
+                    <button id="start-slam-btn" class="btn btn-blue" style="flex: 1; padding: 4px; font-size: 11px;">▶ Start</button>
+                    <button id="stop-slam-btn" class="btn btn-red" style="flex: 1; padding: 4px; font-size: 11px;">Stop</button>
+                    <button id="reset-slam-btn" class="btn btn-orange" style="flex: 1; padding: 4px; font-size: 11px;">Reset slam</button>
+                  </div>
+
+                  <div style="display: flex; gap: 5px; width: 100%; align-items: center; background: rgba(0,0,0,0.2); padding: 2px; border-radius: 4px;">
+                    
+                    <span id="slam-result-label" style="flex: 2; font-size: 10px; color: #aaa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 2px;">
+                      Ready
+                    </span>
+                    
+                    <button id="reset-live-view-btn" class="btn btn-dark btn-small" style="flex: 0.8; font-size: 10px; padding: 2px;">Reset View</button>
+                  </div>
+
                 </div>
+             
               </div>
             </div>
 

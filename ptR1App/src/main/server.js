@@ -73,6 +73,9 @@ parentPort.on('message', (message) => {
       case 'deleteMap':
         callDeleteMapService(message.mapName);
         break;
+      case 'stopNavigation':
+        callStopNavigationService();
+        break;
       case 'resetSLAM':
         callResetSLAMService();
         break;
@@ -261,23 +264,7 @@ function subscribeMapData() {
     });
   });
 }
-function subscribeSlamMapData() {
-  const slamMapTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/rb/slam/map', 
-    messageType: 'nav_msgs/OccupancyGrid',
-  });
 
-  console.log(`[Server] Subscribing to SLAM map topic: ${slamMapTopic.name}`);
-
-  slamMapTopic.subscribe((msg) => {
-    // ส่งข้อมูลแผนที่จาก SLAM ผ่าน Message Type ใหม่
-    parentPort.postMessage({
-      type: 'slam-map-update', // ✅ ใช้ Type ใหม่!
-      data: msg
-    });
-  });
-}
 
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
@@ -592,6 +579,28 @@ function callSaveMapService(mapName) {
     });
   });
 }
+
+function callStopSLAMService() {
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/nav/stop',
+    serviceType: 'ptR1_navigation/StopAMCL'
+  });
+
+  const req = new ROSLIB.ServiceRequest({});
+  service.callService(req, (res) => {
+    parentPort.postMessage({
+      type: 'slam-stop-result',
+      data: { success: res.success, message: res.message }
+    });
+  }, (err) => {
+    parentPort.postMessage({
+      type: 'slam-stop-result',
+      data: { success: false, message: err.toString() }
+    });
+  });
+}
+
 function callStartSLAMService() {
   if (!ros || !ros.isConnected) {
     parentPort.postMessage({
@@ -601,6 +610,30 @@ function callStartSLAMService() {
     return;
   }
 
+  console.log("Server: Attempting to STOP Navigation before Starting SLAM...");
+
+  // 1. สร้าง Service Client สำหรับสั่งหยุด Navigation
+  const stopNavService = new ROSLIB.Service({
+    ros: ros,
+    name: '/nav/stop', 
+    serviceType: 'ptR1_navigation/StopAMCL' 
+  });
+
+  const request = new ROSLIB.ServiceRequest({});
+
+  // 2. เรียก Service หยุดก่อน
+  stopNavService.callService(request, (result) => {
+    console.log('Server: Navigation stopped successfully. Now starting SLAM...');
+    // ถ้าหยุดสำเร็จ -> ให้เริ่ม SLAM ต่อเลย
+    executeStartSLAM(); 
+  }, (err) => {
+    console.warn('Server: Could not stop navigation (Service might not exist). Trying to start SLAM anyway...', err);
+    // ถ้าหยุดไม่สำเร็จ (เช่น Service ไม่มี) -> ก็ให้ลองเริ่ม SLAM ดูเผื่อ ROS จัดการเอง
+    executeStartSLAM(); 
+  });
+}
+// ฟังก์ชันตัวจริงสำหรับเริ่ม SLAM 
+function executeStartSLAM() {
   const service = new ROSLIB.Service({
     ros: ros,
     name: '/map_manager/start_slam',
@@ -617,26 +650,6 @@ function callStartSLAMService() {
   }, (err) => {
     parentPort.postMessage({
       type: 'slam-result',
-      data: { success: false, message: err.toString() }
-    });
-  });
-}
-function callStopSLAMService() {
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/stop_processes',
-    serviceType: 'ptR1_navigation/StopSLAM'
-  });
-
-  const req = new ROSLIB.ServiceRequest({});
-  service.callService(req, (res) => {
-    parentPort.postMessage({
-      type: 'slam-stop-result',
-      data: { success: res.success, message: res.message }
-    });
-  }, (err) => {
-    parentPort.postMessage({
-      type: 'slam-stop-result',
       data: { success: false, message: err.toString() }
     });
   });
@@ -848,6 +861,22 @@ function callStopPatrolService() {
   });
 }
 
+function callStopNavigationService() {
+  if (!ros || !ros.isConnected) return;
+
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/nav/stop',
+    serviceType: 'ptR1_navigation/StopAMCL'
+  });
+
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    console.log('Server: Stop Navigation Result:', result);
+  }, (err) => {
+    console.error('Server: Stop Navigation Failed:', err);
+  });
+}
+
 function subscribePatrolStatus() {
   if (!ros || !ros.isConnected) return;
   const patrolStatusTopic = new ROSLIB.Topic({
@@ -866,6 +895,7 @@ function subscribePatrolStatus() {
     });
   });
 }
+
 
 function callHomeService(serviceName, mapName, actionLabel) {
   if (!ros || !ros.isConnected) {

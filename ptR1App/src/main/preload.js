@@ -49,7 +49,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMapDataByName: (name) => ipcRenderer.invoke('get-map-data-by-name', name),
   saveMapCache: (mapName, imageData) => ipcRenderer.invoke('mapcache:save', { mapName, imageData }),
   loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
-  onSlamMap: (callback) => ipcRenderer.on('slam-map-data', (_event, value) => callback(value)),
+  
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),
   deleteMap: (mapName) => ipcRenderer.send('delete-map', mapName),
@@ -99,7 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   stopSLAM: () => ipcRenderer.send('stop-slam'),
   onSLAMStartResult: (cb) => ipcRenderer.on('slam-result', (_, data) => cb(data)),
   onSLAMStopResult: (cb) => ipcRenderer.on('slam-stop-result', (_, data) => cb(data)),
-  onLiveMap: (cb) => ipcRenderer.on('live-map', (_, data) => cb(data)),
+  onLiveMap: (callback) => ipcRenderer.on('live-map', (_event, value) => callback(value)),
 
   //Home map canvas api
   getMapMeta: (mapName) => ipcRenderer.invoke('get-map-meta', mapName),

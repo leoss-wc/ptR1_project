@@ -153,9 +153,13 @@ class NavigationManager:
         return StartAMCLResponse(True, "Navigation System Started.")
 
     def handle_stop_nav(self, req):
+        rospy.loginfo("🛑 Stopping Navigation Stack...")
+
+        # 1. บันทึกตำแหน่งล่าสุดก่อนปิด (ถ้าต้องการ)
         if req.save_pose:
             self.save_pose_to_file()
             
+        # 2. ปิด Process หลัก (ที่รัน launch file)
         if self.nav_process:
             self.nav_process.terminate()
             try:
@@ -163,7 +167,18 @@ class NavigationManager:
             except subprocess.TimeoutExpired:
                 self.nav_process.kill()
             self.nav_process = None
-        return StopAMCLResponse(True, "Navigation Stopped.")
+            rospy.loginfo("Navigation launch process terminated.")
+
+        # 3. [เพิ่ม] สั่ง Kill Nodes ที่อาจจะค้างอยู่แบบเจาะจง (Force Kill)
+        # เพื่อเคลียร์ Topic /map และ /tf ให้ว่างสำหรับ SLAM
+        try:
+            # ใช้ os.system เพื่อเรียกคำสั่ง rosnode kill
+            os.system("rosnode kill /amcl /move_base /map_server")
+            rospy.loginfo("Force killed: amcl, move_base, map_server")
+        except Exception as e:
+            rospy.logwarn(f"⚠️ Failed to force kill nodes: {e}")
+
+        return StopAMCLResponse(True, "Navigation and Map Server Stopped.")
 
     # --- 3. Patrol Logic ---
     def handle_start_patrol(self, req):

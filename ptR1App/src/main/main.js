@@ -687,6 +687,9 @@ app.whenReady().then(() => {
         case 'slam-stop-result':
           mainWindow?.webContents.send('slam-stop-result', message.data);
           break;
+        case 'slam-reset-result':
+          mainWindow?.webContents.send('slam-reset-result', message.data);
+          break;
         case 'live-map':
           mainWindow?.webContents.send('live-map', message.data);
           break;
@@ -698,9 +701,6 @@ app.whenReady().then(() => {
           break;
         case 'stream-status': 
           mainWindow?.webContents.send('stream-status', message.data);
-          break;
-        case 'slam-map-update':
-          mainWindow?.webContents.send('slam-map-data', message.data);
           break;
         case 'laser-scan-update':
           mainWindow?.webContents.send('laser-scan-data', message.data);
