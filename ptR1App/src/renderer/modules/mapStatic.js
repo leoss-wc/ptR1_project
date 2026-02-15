@@ -56,6 +56,7 @@ export function initStaticMap() {
   bindUI();
   setupCanvasEvents();
   loadLocalMapsToGallery();
+  loadLastActiveMap();
 }
 
 // ฟังก์ชันสำหรับปรับขนาด Canvas ทั้งหมดให้ตรงกับขนาดของ Container
@@ -146,85 +147,18 @@ function resetStaticMapView() {
   renderAllLayers();
 }
 
-document.getElementById('select-map-btn').addEventListener('click', async () => {
-  // 🔧 แก้ไข: ฟังก์ชันนี้จะทำหน้าที่ "ยืนยัน" และอัปเดต activeMap
-  if (!current_map_select.name || !mapImage) {
+document.getElementById('start-nav-btn').addEventListener('click', () => {
+  // ตรวจสอบก่อนว่าเลือกแผนที่และโหลดรูปภาพมาแล้วหรือยัง
+  if (!activeMap.name || !mapImage) {
     alert("❗ Please select a map from the gallery first.");
     return;
   }
-  
-  console.log(`Activating map: ${current_map_select.name}`);
-  
-  // --- เริ่มกระบวนการประมวลผลและ Caching ---
-  let inflatedImageData;
-  const mapName = current_map_select.name;
-
-  const cachedData = await window.electronAPI.loadMapCache(mapName);
-  if (cachedData) {
-      console.log("🗺️ StaticMap: Cache hit! Using cached data for activation.");
-      // 1. โหลดข้อมูลจาก Cache
-      const finalImage = new Image();
-      finalImage.src = cachedData.croppedImageBase64;
-      await new Promise(resolve => finalImage.onload = resolve);
-      
-      const pixelData = base64ToUint8Array(cachedData.inflatedImageData.data);
-      inflatedImageData = new ImageData(pixelData, cachedData.inflatedImageData.width, cachedData.inflatedImageData.height);
-
-      // 2. อัปเดต ActiveMap ด้วยข้อมูลจาก Cache
-      activeMap.name = mapName;
-      activeMap.base64 = finalImage.src;
-      activeMap.meta = cachedData.newMeta;
-      
-  } else {
-      console.log("🗺️ StaticMap: Cache miss! Performing full processing for activation...");
-      // 1. Crop รูปและปรับ Meta Data
-      const { croppedImage, newMeta } = await autoCropMapImage(mapImage, current_map_select.meta);
-      
-      // 2. ประมวลผล Obstacle Inflation
-      inflatedImageData = preprocessMapData(croppedImage);
-      
-      // 3. อัปเดต ActiveMap ด้วยข้อมูลที่ประมวลผลใหม่
-      activeMap.name = mapName;
-      activeMap.base64 = croppedImage.src;
-      activeMap.meta = newMeta;
-
-      // 4. บันทึกข้อมูลทั้งหมดลง Cache
-      const dataToCache = {
-          croppedImageBase64: activeMap.base64,
-          newMeta: activeMap.meta,
-          inflatedImageData: {
-              width: inflatedImageData.width,
-              height: inflatedImageData.height,
-              data: bufferToBase64(inflatedImageData.data.buffer)
-          }
-      };
-      await window.electronAPI.saveMapCache(mapName, dataToCache);
-  }
-
-  // อัปเดต UI และส่งคำสั่งไป ROS
-  document.getElementById('active-map-name').textContent = activeMap.name;
-  localStorage.setItem('activeMapName', activeMap.name);
+  console.log(`Activated map: ${activeMap.name} to AMCL and Map Server.`);
   window.electronAPI.selectMap(activeMap.name);
-  
-  alert(`Active map has been set to "${activeMap.name}".`);
-
-  // อัปเดตเครื่องมือวาดภาพด้วยข้อมูลล่าสุด
-  mapHitCanvas = document.createElement('canvas');
-  mapHitCanvas.width = inflatedImageData.width;
-  mapHitCanvas.height = inflatedImageData.height;
-  mapHitCtx = mapHitCanvas.getContext('2d', { willReadFrequently: true });
-  mapHitCtx.putImageData(inflatedImageData, 0, 0);
-  createDimmerMask(inflatedImageData);
-
-  const finalMapImage = new Image();
-  finalMapImage.onload = () => {
-      // 1. อัปเดตตัวแปร mapImage ที่ใช้ในการวาด
-      mapImage = finalMapImage;
-      // 2. สั่ง Reset View และวาด Canvas ใหม่ทั้งหมด
-      resetStaticMapView(); 
-  };
-  // 3. ใช้ข้อมูลรูปภาพที่ผ่านการ Crop แล้วจาก activeMap
-  finalMapImage.src = activeMap.base64;
+  console.log(`Attempting to auto-init home for ${activeMap.name}...`);
+  setTimeout(() => {
+      window.electronAPI.initHome(activeMap.name);
+  }, 1500); // รอ 1 วินาทีให้ Map Server/AMCL โหลดเสร็จก่อน
 });
 
 function bindUI() {
@@ -283,9 +217,6 @@ function bindUI() {
       alert(`❌ ${res.action} Failed: ${res.message}`);
     }
   });
-
-
-
   // Listener รับผลการลบแผนที่
   window.electronAPI.onMapDeleteResult((result) => {
     if (result.success) {
@@ -396,15 +327,7 @@ async function activateMap(mapName, meta) {
   }
 
   document.getElementById('active-map-name').textContent = activeMap.name;
-  localStorage.setItem('activeMapName', activeMap.name);
-  window.electronAPI.selectMap(activeMap.name);
-  
-  alert(`Active map has been set to "${activeMap.name}".`);
-
-  console.log(`Attempting to auto-init home for ${activeMap.name}...`);
-  setTimeout(() => {
-      window.electronAPI.initHome(activeMap.name);
-  }, 1500); // รอ 1 วินาทีให้ Map Server/AMCL โหลดเสร็จก่อน
+  localStorage.setItem('lastActiveMapName', mapName);
 
   // Prepare Hit Canvas & Dimmer
   mapHitCanvas = document.createElement('canvas');
@@ -421,7 +344,7 @@ async function activateMap(mapName, meta) {
   };
   finalMapImage.src = activeMap.base64;
 }
-// ในไฟล์ mapStatic.js
+
 function isClickInsideBounds(worldPoint) {
   // เพิ่มการตรวจสอบว่า worldPoint ไม่ใช่ null หรือ undefined
   if (!activeMap.meta || !mapImage || !worldPoint) return false;
@@ -1154,4 +1077,39 @@ function isPathBlocked(p1, p2) {
   }
 
   return false; // ✅ ทางสะดวก
+}
+
+async function loadLastActiveMap() {
+  const lastMapName = localStorage.getItem('lastActiveMapName');
+  if (!lastMapName) return;
+
+  console.log(`Loading last used map: ${lastMapName}`);
+  
+  // เรียก API ที่ main.js เพื่อขอดึงข้อมูลแผนที่โดยตรง (ไม่ต้องผ่าน Gallery)
+  const result = await window.electronAPI.getMapDataByName(lastMapName);
+  
+  if (result.success) {
+      // ตั้งค่าตัวแปร selection รอไว้
+      current_map_select = { 
+          name: result.name, 
+          base64: result.base64, 
+          meta: result.meta 
+      };
+
+      // แสดงชื่อแผนที่บนหน้าจอ
+      document.getElementById('active-map-name').textContent = result.name;
+
+      // โหลดรูปมาแสดงเป็น Preview (ยังไม่ Activate จนกว่าจะกดปุ่ม Start)
+      mapImage = new Image();
+      mapImage.onload = () => {
+          activateMap(current_map_select.name, current_map_select.meta)
+          resetStaticMapView();
+          renderAllLayers(); 
+      };
+      mapImage.src = result.base64;
+      
+      console.log("Last map loaded for preview.");
+  } else {
+      console.warn("⚠️ Could not load last map:", result.message);
+  }
 }

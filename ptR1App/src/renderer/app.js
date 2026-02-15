@@ -4,7 +4,7 @@ import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
 import {renderObjects, renderScan, initStaticMap, renderAllLayers, cancelMode} from './modules/mapStatic.js';
-import { renderDashboardMap, initHomeMap} from './modules/mapHome.js';
+import { renderDashboardMap, initHomeMap,startRenderLoop,stopRenderLoop} from './modules/mapHome.js';
 
 import { setupVideoPlayer } from './modules/videoPlayer.js';
 
@@ -30,6 +30,7 @@ let lastFrameTime = 0;
 const targetFPS = 1; //live map  Frame Rate 
 const fpsInterval = 1000 / targetFPS;
 let liveMapRenderId = null;
+let isHomeMapInitialized = false;
 
 document.addEventListener('DOMContentLoaded', async() => {
   console.log("app: DOMContentLoaded fired!");
@@ -209,7 +210,9 @@ function startLiveMapRender() {
 }
 
 function switchView(viewName) {
+  // สั่งรีเซ็ตโหมดวาด/เล็งเป้า ทันทีที่เปลี่ยนหน้า
   cancelMode();
+
   // ซ่อนทุก View และเอา active ออกจาก sidebar
   document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
   document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
@@ -217,18 +220,29 @@ function switchView(viewName) {
   // แสดง View และ Sidebar item ที่ต้องการ
   const activeView = document.getElementById(`view-${viewName}`);
   const activeSidebarItem = document.querySelector(`.sidebar-item[data-view="${viewName}"]`);
-  
+
   if (activeView) activeView.classList.remove('hidden');
   if (activeSidebarItem) activeSidebarItem.classList.add('active');
   
-  // Logic การ Init ของแต่ละหน้า
+  // --- Logic การ Init ของแต่ละหน้า ---
   if (viewName === 'home') {
-    const homeCanvas = document.getElementById('homeMapCanvas');
-    // ตรวจสอบว่ามีฟังก์ชัน initHomeMap หรือไม่ก่อนเรียก
-    if (homeCanvas && typeof initHomeMap === 'function') {
-        initHomeMap(homeCanvas);
-    }
-  } else if (viewName === 'map') {
+      const homeCanvas = document.getElementById('homeMapCanvas');
+      if (homeCanvas) {
+          // เช็คว่าเคย Init หรือยัง?
+          if (!isHomeMapInitialized) {
+              initHomeMap(homeCanvas); // Init แค่ครั้งแรกครั้งเดียว
+              isHomeMapInitialized = true; 
+          }
+          // สั่งเริ่มวาดเสมอเมื่อเข้าหน้านี้
+          startRenderLoop(); 
+      }
+  } else {
+      //ถ้าไม่ใช่หน้า Home ให้หยุดวาดเพื่อประหยัดเครื่อง
+      stopRenderLoop();
+  }
+
+  // กรณีหน้า Map
+  if (viewName === 'map') {
     initStaticMap();
     if (typeof initLiveMap === 'function') initLiveMap();
   }

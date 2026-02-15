@@ -79,6 +79,9 @@ find_package(catkin REQUIRED COMPONENTS
     ResumePatrol.srv
     StopPatrol.srv
     ClearCostmaps.srv
+    StopAMCL.srv
+    StartAMCL.srv
+
  )
 
 ## Generate actions in the 'action' folder
@@ -183,9 +186,8 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
  catkin_install_python(PROGRAMS
-   src/get_map_file_server.py
    src/map_manager_node.py
-   src/patrol_navigator_node.py
+   src/navigation_node.py
    src/pose_republisher.py
    src/stream_manager_node.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}

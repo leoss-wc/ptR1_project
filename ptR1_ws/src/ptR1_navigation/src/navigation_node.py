@@ -210,6 +210,19 @@ class NavigationManager:
              rospy.loginfo("Patrol stopped.")
         return StopPatrolResponse(True, "Patrol stopped.")
 
+    def get_quaternion_from_yaw(yaw):
+        """แปลงมุม Yaw (radians) เป็น Quaternion (x, y, z, w)"""
+        return {
+            'x': 0.0,
+            'y': 0.0,
+            'z': math.sin(yaw / 2.0),
+            'w': math.cos(yaw / 2.0)
+        }
+    
+    def get_yaw_from_quaternion(q):
+        """แปลง Quaternion เป็นมุม Yaw"""
+        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
+
     def send_next_goal(self):
         if not self.is_patrolling or self.is_paused or not self.goal_list:
             return
@@ -293,18 +306,6 @@ class NavigationManager:
         else:
             rospy.logerr(f"Goal #{self.current_goal_index + 1} failed. Status: {status}")
             self.is_patrolling = False
-    def get_quaternion_from_yaw(yaw):
-        """แปลงมุม Yaw (radians) เป็น Quaternion (x, y, z, w)"""
-        return {
-            'x': 0.0,
-            'y': 0.0,
-            'z': math.sin(yaw / 2.0),
-            'w': math.cos(yaw / 2.0)
-        }
-    
-    def get_yaw_from_quaternion(q):
-        """แปลง Quaternion เป็นมุม Yaw"""
-        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
 
 # --- 4. Home Management (Per Map) ---
     def _load_homes_data(self):

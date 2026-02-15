@@ -12,26 +12,63 @@ let canvas, ctx, mapImg;
 let zoom = 1.0;
 let offset = { x: 0, y: 0 };
 let hasBeenReset = false;
+let animationFrameId = null;
+const TARGET_FPS = 25;            // เป้าหมาย: 20 เฟรมต่อวินาที (ปรับเลขนี้ได้ตามใจ)
+const FRAME_INTERVAL = 1000 / TARGET_FPS; // คำนวณเป็นมิลลิวินาทีต่อเฟรม
+
+let lastTime = 0; // ตัวแปรเก็บเวลาล่าสุดที่วาด
 
 export function initHomeMap(canvasElement) {
-  // 1. ตั้งค่า Canvas และ Context
   canvas = canvasElement;
   ctx = canvas.getContext('2d');
 
-  // 2. ตรวจสอบว่ามี Active Map ใน State หรือไม่
   if (activeMap.base64) {
-    // 3. ถ้ามี ให้โหลดรูปภาพมาเตรียมไว้ใน mapImg ทันที
     setMapImage(activeMap.base64);
-  } else {
-    console.log("HomeMap: No active map to display on init.");
+  }
+  else {
+    console.warn("HomeMap: No map image data available at initialization.");
   }
 
-  //: ResizeObserver จะเป็นตัวจัดการการ Reset View เริ่มต้น
   const resizeObserver = new ResizeObserver(() => {
     resizeCanvas();
   });
   resizeObserver.observe(canvas);
   initCanvasControls();
+
+  //เริ่มวาดต่อเนื่องทันทีที่ Init
+  startRenderLoop();
+}
+//เริ่ม Loop
+export function startRenderLoop() {
+  if (animationFrameId) return;
+  
+  const loop = (timestamp) => {
+    // คำนวณเวลาที่ผ่านไปตั้งแต่เฟรมที่แล้ว
+    const elapsed = timestamp - lastTime;
+
+    // ถ้าเวลาผ่านไปมากกว่าที่กำหนด (เช่น เกิน 50ms สำหรับ 20FPS) ถึงจะยอมให้วาด
+    if (elapsed > FRAME_INTERVAL) {
+      renderDashboardMap(); //วาดจริงตรงนี้
+      
+      // อัปเดตเวลาล่าสุด (ลบส่วนเกินออกเพื่อให้จังหวะคงที่)
+      lastTime = timestamp - (elapsed % FRAME_INTERVAL);
+    }
+
+    // วนลูปต่อไป (browser จะเรียกฟังก์ชันนี้เรื่อยๆ แต่เราจะวาดแค่ตอนถึงเวลา)
+    animationFrameId = requestAnimationFrame(loop);
+  };
+
+  animationFrameId = requestAnimationFrame(loop);
+  console.log(`HomeMap: Render loop started at ~${TARGET_FPS} FPS.`);
+}
+
+// หยุด Loop (เพื่อประหยัด CPU เมื่อเปลี่ยนหน้า)
+export function stopRenderLoop() {
+  if (animationFrameId) {
+    cancelAnimationFrame(animationFrameId);
+    animationFrameId = null;
+    console.log("HomeMap: Render loop stopped.");
+  }
 }
 
 function drawRobot() {

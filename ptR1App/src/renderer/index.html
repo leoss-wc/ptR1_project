@@ -32,7 +32,6 @@
   <div class="main-content">
 
     <div id="view-home" class="view">
-      <h2 style="margin-top: 0;">Dashboard</h2>
       <div class="home-container">
         <div class="panel">
           <h4 style="text-align: center; margin: 5px 0;">Camera</h4>
@@ -46,10 +45,6 @@
               <button class="btn btn-dark btn-small" id="stop-stream-btn">Stop Stream</button>
               <button class="btn btn-dark btn-small" id="start-record">Start Recording</button>
               <button class="btn btn-dark btn-small" id="stop-record" disabled>Stop Recording</button>
-              <label style="font-size: smaller;">Spot light 1</label>
-              <button class="buttonR" id="relayButton1">RELAY: OFF</button>
-              <label style="font-size: smaller;">Spot light 2</label>
-              <button class="buttonR" id="relayButton2">RELAY: OFF</button>
             </div>
           </div>
         </div>
@@ -80,6 +75,10 @@
                 <span class="slider"></span>
               </label>
               <span id="mode-label" class="mode-text">MANUAL OFF</span>
+              <label style="font-size: smaller;">Spot light 1</label>
+              <button class="buttonR" id="relayButton1">RELAY: OFF</button>
+              <label style="font-size: smaller;">Spot light 2</label>
+              <button class="buttonR" id="relayButton2">RELAY: OFF</button>
             </div>
           </div>
         </div>
@@ -137,7 +136,6 @@
       </div>
 
     <div id="view-video" class="view hidden">
-      <h2>📹 Recording</h2>
       <div class="video-layout">
         <div class="video-container">
         <video id="video-player" autoplay playsinline muted></video>
@@ -155,13 +153,12 @@
 
     <div id="view-map" class="view hidden">
       <div class="container">
-        <h4 class="title">🗺️ Map Viewer</h4>
         <div class="grid">
           <div class="map-left">
             <div class="map-box">
               <div class="map-mode-toggle">
-                <button id="btn-static-map" class="toggle-btn active">🗺️ Static Map</button>
-                <button id="btn-live-map" class="toggle-btn">📡 Live Mapping</button>
+                <button id="btn-static-map" class="btn btn-blue active">🗺️ Static Map</button>
+                <button id="btn-live-map" class="btn btn-blue">📡 Live Mapping</button>
                 <span id="patrol-status-label">Idle</span>
               </div>
               <div class="map-wrapper">
@@ -170,48 +167,85 @@
                 <canvas id="map-scan-layer" class="map-canvas"></canvas>
                 <canvas id="liveMapCanvas" class="map-canvas hidden"></canvas>
                 <div class="canvas-controls">
-                  <button id="zoom-in">➕</button>
-                  <button id="zoom-out">➖</button>
-                  <button id="reset-static-view-btn">🔄</button> 
+                  <button id="zoom-in">+</button>
+                  <button id="zoom-out">-</button>
+                  <button id="reset-static-view-btn">R</button> 
+                </div>
+              <div id="static-control-box" class="control-box overlay-controls" >
+              <fieldset style="border: 1px solid #444; padding: 8px; margin-bottom: 10px; border-radius: 5px;">
+                <legend style="font-size: 11px; color: #888; padding: 0 5px;">NAVIGATION</legend>
+                
+                <div style="display: flex; gap: 5px; margin-bottom: 5px;">
+                  <button id="select-map-btn" class="btn btn-blue" style="flex: 1;">▶ SELECT MAP</button>
+                  <button id="start-nav-btn" class="btn btn-blue" style="flex: 1;">▶ START NAVIGATION</button>
+                </div>
+                <div style="display: flex; gap: 5px; margin-bottom: 5px;justify-content: space-between; align-items: center">
+                  <span style="font-size: 14px; color: #aaa;">Active Map:</span>
+                  <span id="active-map-name" style="color: cyan; font-weight: bold;">None</span>
+                </div>
+              </fieldset>
+              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 4px; border-radius: 5px;">
+                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Home & Localization</legend>
+                
+                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="init-home-btn" class="btn btn-orange" style="flex: 1;" title="Teleport AMCL to Home">Init (Teleport)</button>
+                  <button id="set-pose-btn" class="btn btn-dark" style="flex: 1;">Set Pose</button>
+                </div>
+                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="set-home-btn" class="btn btn-dark" style="flex: 1;">Set Home</button>
+                  <button id="go-home-btn" class="btn btn-dark" style="flex: 1;">Go Home</button>
+                </div>
+              </fieldset>
+
+              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 4px; border-radius: 5px;">
+                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Path & Goal</legend>
+                
+                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="set-goal-btn" class="btn btn-orange" style="flex: 1.5;">🎯 Set Goal</button>
+                  <button id="toggle-draw-mode" class="btn btn-dark" style="flex: 1.5;">✏️ Draw Path</button>
+                  <button id="clear-path-btn" class="btn btn-dark" style="flex: 1;">Clear</button>
+
+                </div>
+                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="save-path-btn" class="btn btn-dark btn-small" style="flex: 1;">💾 Save Path</button>
+                    <div class="patrol-options" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #333; border-radius: 4px; padding: 2px;">
+                    <input type="checkbox" id="loop-patrol-checkbox" style="margin-right: 5px;">
+                    <label for="loop-patrol-checkbox" style="font-size: 12px; cursor: pointer;">Loop Patrol</label>
+                </div>
+              
+                </div>
+              </fieldset>
+
+              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 5px; border-radius: 5px;">
+                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Patrol Control</legend>
+                
+                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="start-patrol-btn" class="btn btn-blue" style="flex: 1;">▶ Start</button>
+                  <button id="pause-patrol-btn" class="btn btn-blue" style="flex: 1;">⏸ Pause</button>
+                </div>
+                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
+                  <button id="resume-patrol-btn" class="btn btn-blue" style="flex: 1;">⏯ Resume</button>
+                  <button id="stop-patrol-btn" class="btn btn-red" style="flex: 1;">⏹ Stop</button>
+                </div>
+              </fieldset>
+            </div>
+                  <div id="live-control-box" class="control-box overlay-controls hidden">
+                  <input id="map-name-input" placeholder="Enter map name..." />
+                  <button id="save-map-btn" class="btn btn-blue">Save Map</button>
+                  <button id="start-slam-btn" class="btn btn-blue">Start SLAM</button>
+                  <button id="stop-slam-btn" class="btn btn-red">Stop SLAM</button>
+                  <button id="reset-slam-btn" class="btn btn-orange">Reset SLAM</button>
+                  <span id="slam-result-label" style="margin-left: 10px;"></span>
+                  <button id="reset-live-view-btn">Reset View</button> 
                 </div>
               </div>
             </div>
-            <div id="static-control-box" class="control-box">
-              <p style="font-size: medium;">Active Map: <span id="active-map-name">None</span></p>
-              <button id="select-map-btn">Select This Map</button>
-              <button id="init-home-btn" style="flex: 1;" title="Teleport to Home">Init Home</button>
-              <button id="start-patrol-btn" class="btn btn-blue" >Start Patrol</button>
-              <button id="pause-patrol-btn" class="btn btn-blue" >Pause Patrol</button>
-              <button id="stop-patrol-btn" class="btn btn-red" >Stop Patrol</button>
-              <button id="resume-patrol-btn" class="btn btn-blue" >Resume Patrol</button>
-              <button id="set-goal-btn" class="btn btn-orange">Set Goal</button>
-              <button id="toggle-draw-mode">Draw: OFF</button>
-              <div class="patrol-options">
-                <input type="checkbox" id="loop-patrol-checkbox">
-                <label for="loop-patrol-checkbox">Loop</label>
-              </div>
-              <button id="clear-path-btn">Clear</button>
-              <button id="set-pose-btn">Set Initial Pose</button>
-              <button id="save-path-btn">Save Path</button>
-              <div style="display: flex; gap: 5px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
-                <button id="set-home-btn" style="flex: 1;">Set Home</button>
-                <button id="go-home-btn"  style="flex: 1;">Go Home</button>
-              </div>
-            </div>
-            <div id="live-control-box" class="control-box hidden">
-              <input id="map-name-input" placeholder="Enter map name..." />
-              <button id="save-map-btn" class="btn btn-blue">Save Map</button>
-              <button id="start-slam-btn" class="btn btn-blue">Start SLAM</button>
-              <button id="stop-slam-btn" class="btn btn-red">Stop SLAM</button>
-              <button id="reset-slam-btn" class="btn btn-orange">Reset SLAM</button>
-              <span id="slam-result-label" style="margin-left: 10px;"></span>
-              <button id="reset-live-view-btn">🔄 Reset View</button> 
-            </div>
-          </div>
+
+    </div>
           <div class="map-right">
-            <button id="sync-maps-btn" class="btn btn-blue btn-large">Sync Maps</button>
-            <button id="delete-map-btn" class="btn btn-red btn-large">Delete Selected</button>
             <div id="map-gallery" class="map-grid"></div>
+            <button id="sync-maps-btn" class="btn btn-blue btn-small" style="padding: 10px;margin: 5px;">Sync Maps</button>
+            <button id="delete-map-btn" class="btn btn-red btn-small"style="padding: 10px;">Delete Selected</button>
           </div>
         </div>
       </div>
