@@ -723,6 +723,9 @@ app.whenReady().then(() => {
         case 'robot-status-update':
             mainWindow?.webContents.send('robot-status', message.data);
             break;
+        case 'patrol-status':
+            mainWindow?.webContents.send('patrol-status-change', message.data);
+            break;
 
         default:
           console.warn('[main]: Unknown message from worker:', message);

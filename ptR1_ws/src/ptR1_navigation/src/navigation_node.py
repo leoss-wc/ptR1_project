@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from std_msgs.msg import String
 import rospy
 import os
 import subprocess
@@ -40,10 +41,10 @@ class NavigationManager:
         self.is_rotating_to_goal = False # ตัวแปรบอกสถานะว่ากำลังหมุนอยู่หรือเปล่า
         
         # --- ROS Comms ---
+        self.status_pub = rospy.Publisher('/nav/status', String, queue_size=10)
         self.move_base_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
         self.initial_pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=1)
         rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.amcl_pose_callback)
-
         # --- Services ---
         # 1. Navigation (AMCL + MoveBase)
         rospy.Service('/nav/start', StartAMCL, self.handle_start_nav) 
@@ -62,6 +63,8 @@ class NavigationManager:
         rospy.on_shutdown(self.cleanup)
         rospy.loginfo("Navigation Services Ready.")
 
+    def update_status(self, status_text):
+        self.status_pub.publish(status_text)
     # --- 1. Pose Management ---
     def amcl_pose_callback(self, msg):
         self.latest_pose = msg
@@ -160,7 +163,6 @@ class NavigationManager:
             except subprocess.TimeoutExpired:
                 self.nav_process.kill()
             self.nav_process = None
-            
         return StopAMCLResponse(True, "Navigation Stopped.")
 
     # --- 3. Patrol Logic ---
@@ -175,7 +177,7 @@ class NavigationManager:
         self.current_goal_index = 0
         self.is_patrolling = True
         self.is_paused = False
-        
+        self.update_status("active")
         rospy.loginfo(f"Starting patrol with {len(self.goal_list)} goals. Loop: {self.should_loop}")
         self.send_next_goal()
         return StartPatrolResponse(True, "Patrol started.")
@@ -186,6 +188,7 @@ class NavigationManager:
             
         self.is_paused = True
         self.move_base_client.cancel_goal()
+        self.update_status("paused")
         rospy.loginfo("Patrol paused.")
         return PausePatrolResponse(True, "Patrol paused.")
 
@@ -206,6 +209,7 @@ class NavigationManager:
         self.goal_list = []
         self.current_goal_index = 0
         self.move_base_client.cancel_all_goals()
+        self.update_status("idle")
         if req is not None:
              rospy.loginfo("Patrol stopped.")
         return StopPatrolResponse(True, "Patrol stopped.")
@@ -263,7 +267,7 @@ class NavigationManager:
             rotation_goal.target_pose.pose.position.z = 0.0
             
             # หันหน้าใหม่
-            q = get_quaternion_from_yaw(desired_yaw)
+            q = self.get_quaternion_from_yaw(desired_yaw)
             rotation_goal.target_pose.pose.orientation.x = q['x']
             rotation_goal.target_pose.pose.orientation.y = q['y']
             rotation_goal.target_pose.pose.orientation.z = q['z']
@@ -285,6 +289,7 @@ class NavigationManager:
                 return
             
             # ส่งคำสั่งเดินจริง
+            self.update_status("active")
             self.move_base_client.send_goal(goal, done_cb=self.goal_done_callback)
 
     def goal_done_callback(self, status, result):
@@ -305,6 +310,7 @@ class NavigationManager:
                 self.send_next_goal()
         else:
             rospy.logerr(f"Goal #{self.current_goal_index + 1} failed. Status: {status}")
+            self.update_status("idle")
             self.is_patrolling = False
 
 # --- 4. Home Management (Per Map) ---

@@ -162,6 +162,16 @@ function setupGlobalCallbacks() {
         renderDashboardMap();
         if (!document.getElementById('map-scan-layer').classList.contains('hidden')) renderScan();
     });
+    window.electronAPI.onPatrolStatusChange((status) => {
+        console.log(`ROS Patrol Status: ${status}`);
+        if (status === 'active' || status === 'patrolling') {
+            setPatrolling(true);
+            updateStatus("Patrolling"); // อัปเดตข้อความบนจอ
+        } else {
+            setPatrolling(false);
+            updateStatus("Idle");
+        }
+    });
     console.log('app: Global callbacks set up.');
 }
 
@@ -229,12 +239,13 @@ function switchView(viewName) {
       const homeCanvas = document.getElementById('homeMapCanvas');
       if (homeCanvas) {
           // เช็คว่าเคย Init หรือยัง?
-          if (!isHomeMapInitialized) {
-              initHomeMap(homeCanvas); // Init แค่ครั้งแรกครั้งเดียว
-              isHomeMapInitialized = true; 
-          }
-          // สั่งเริ่มวาดเสมอเมื่อเข้าหน้านี้
-          startRenderLoop(); 
+          requestAnimationFrame(() => {
+             if (!isHomeMapInitialized) {
+                 initHomeMap(homeCanvas);
+                 isHomeMapInitialized = true;
+             }
+             startRenderLoop(); 
+          });
       }
   } else {
       //ถ้าไม่ใช่หน้า Home ให้หยุดวาดเพื่อประหยัดเครื่อง

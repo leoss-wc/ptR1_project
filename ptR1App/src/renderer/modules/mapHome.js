@@ -15,7 +15,7 @@ let hasBeenReset = false;
 let animationFrameId = null;
 const TARGET_FPS = 25;            // เป้าหมาย: 20 เฟรมต่อวินาที (ปรับเลขนี้ได้ตามใจ)
 const FRAME_INTERVAL = 1000 / TARGET_FPS; // คำนวณเป็นมิลลิวินาทีต่อเฟรม
-
+let isMapLoading = false;
 let lastTime = 0; // ตัวแปรเก็บเวลาล่าสุดที่วาด
 
 export function initHomeMap(canvasElement) {
@@ -43,21 +43,28 @@ export function startRenderLoop() {
   if (animationFrameId) return;
   
   const loop = (timestamp) => {
+    if (canvas.width === 0 || canvas.height === 0) {
+        resizeCanvas();
+    }
+    if (!mapImg && activeMap.base64 && !isMapLoading) {
+        console.log("HomeMap: Found new map data! Loading...");
+        isMapLoading = true;
+        setMapImage(activeMap.base64).then(() => {
+            isMapLoading = false;
+        });
+    }
     // คำนวณเวลาที่ผ่านไปตั้งแต่เฟรมที่แล้ว
     const elapsed = timestamp - lastTime;
 
     // ถ้าเวลาผ่านไปมากกว่าที่กำหนด (เช่น เกิน 50ms สำหรับ 20FPS) ถึงจะยอมให้วาด
     if (elapsed > FRAME_INTERVAL) {
-      renderDashboardMap(); //วาดจริงตรงนี้
-      
+      renderDashboardMap();
       // อัปเดตเวลาล่าสุด (ลบส่วนเกินออกเพื่อให้จังหวะคงที่)
       lastTime = timestamp - (elapsed % FRAME_INTERVAL);
     }
-
     // วนลูปต่อไป (browser จะเรียกฟังก์ชันนี้เรื่อยๆ แต่เราจะวาดแค่ตอนถึงเวลา)
     animationFrameId = requestAnimationFrame(loop);
   };
-
   animationFrameId = requestAnimationFrame(loop);
   console.log(`HomeMap: Render loop started at ~${TARGET_FPS} FPS.`);
 }
@@ -188,7 +195,6 @@ export function renderDashboardMap() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
   
-  // 🔧 แก้ไข: เพิ่มเงื่อนไขตรวจสอบ Meta Data ที่นี่!
   // ต้องมีทั้ง mapImg และ activeMap.meta ก่อนถึงจะวาดอะไรลงไป
   if (mapImg && activeMap.meta) {
     ctx.drawImage(mapImg, offset.x, offset.y, mapImg.width * zoom, mapImg.height * zoom);
@@ -211,21 +217,6 @@ export function renderDashboardMap() {
   }
 }
 
-/*
-export function setupMapCanvas(canvasElement) {
-  canvas = canvasElement;
-  ctx = canvas.getContext('2d');
-
-  const resizeObserver = new ResizeObserver(() => {
-    resizeCanvas();
-  });
-  resizeObserver.observe(canvas);
-
-  initCanvasControls();
-  //renderLoop();
-}
-*/
-
 export function setMapImage(base64Str) {
   return new Promise((resolve) => {
     mapImg = new Image();
@@ -246,8 +237,7 @@ export function resetViewV2() {
     return;
   }
 
-  // 🔧 แก้ไข: เปลี่ยนมาใช้ Logic แบบ "Fit and Center"
-  
+  // Logic แบบ "Fit and Center"
   // 1. คำนวณอัตราส่วนการซูมที่พอดีกับความกว้างและความสูง
   const zoomX = canvas.width / mapImg.width;
   const zoomY = canvas.height / mapImg.height;
@@ -259,7 +249,7 @@ export function resetViewV2() {
   offset.x = (canvas.width - mapImg.width * zoom) / 2;
   offset.y = (canvas.height - mapImg.height * zoom) / 2;
   
-  console.log(`🚀 HomeMap: View reset with "Fit and Center". New zoom=${zoom.toFixed(2)}`);
+  console.log(`HomeMap: View reset with "Fit and Center". New zoom=${zoom.toFixed(2)}`);
 
   renderDashboardMap();
 }
@@ -330,16 +320,24 @@ function initCanvasControls() {
 
 function resizeCanvas() {
   if (!canvas) return;
-  canvas.width = canvas.clientWidth;
-  canvas.height = canvas.clientHeight;
-  if (canvas.width > 0 && canvas.height > 0 && mapImg && !hasBeenReset) {
-    resetViewV2();
-    hasBeenReset = true;
-  } else {
-    renderDashboardMap();
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+
+  // ถ้าขนาดยังเป็น 0 (เช่น ยังซ่อนอยู่) ให้จบการทำงานไปก่อน อย่าเพิ่งทำอะไร
+  if (width === 0 || height === 0) return;
+
+  if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width;
+      canvas.height = height;
+      if (mapImg && !hasBeenReset) {
+        resetViewV2();
+        hasBeenReset = true;
+      } else {
+        renderDashboardMap();
+      }
+      console.log(`HomeMap: Resized to ${width}x${height}`);
   }
 }
-
 function drawPatrolPath() {
   if (patrolPath.length < 2 || !activeMap?.meta || !mapImg) return;
 
@@ -356,11 +354,7 @@ function drawPatrolPath() {
   ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ เพื่อแยกความแตกต่าง
   ctx.beginPath();
 
-
-
   //console.log(`--- Drawing on Canvas (Size: ${canvas.width}x${canvas.height}) ---`);
-
-
   patrolPath.forEach((point, index) => {
     // แปลง World Coordinate เป็น Screen Coordinate
     const px = (point.x - origin[0]) / resolution;

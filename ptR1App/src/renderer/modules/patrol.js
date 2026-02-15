@@ -58,20 +58,16 @@ export function startPatrol() {
 }
 
 export function pausePatrol() {
-    patrolState.updateStatus("⏸️ Pausing patrol...");
     window.electronAPI.pausePatrol();
 }
 
 export function resumePatrol() {
-    patrolState.updateStatus("▶️ Resuming patrol...");
     window.electronAPI.resumePatrol();
 }
 
 export function stopPatrol() {
-    patrolState.updateStatus("⏹️ Stopping patrol...");
-    patrolState.setPatrolling(false);
     window.electronAPI.stopPatrol();
-    clearDrawnPath(); // อาจจะเคลียร์เส้นที่วาดไว้ด้วยเมื่อสั่งหยุด
+    //clearDrawnPath();
 }
 
 export function saveDrawnPath() {

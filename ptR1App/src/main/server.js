@@ -153,6 +153,7 @@ function connectROSBridge(url) {
     subscribeMoveBaseResult();
     subscribeLaserScanData();
     subscribeRobotStatus();
+    subscribePatrolStatus();
     subscribeTF();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
@@ -471,7 +472,6 @@ function subscribeRobotStatus() {
     });
   });
 }
-
 // service call สำหรับ list_maps
 function callListMapsService() {
   if (!ros || !ros.isConnected) {
@@ -796,7 +796,7 @@ function callResetSLAMService() {
   const service = new ROSLIB.Service({
     ros: ros,
     name: '/map_manager/reset_slam',
-    serviceType: 'ptR1_navigation/ResetSLAM' // <--- ใช้ Service Type ที่ถูกต้อง
+    serviceType: 'ptR1_navigation/ResetSLAM'
   });
   const request = new ROSLIB.ServiceRequest({});
   service.callService(request, (result) => {
@@ -826,7 +826,7 @@ function callStartPatrolService(goals, loop) {
 
 function callPausePatrolService() {
   if (!ros || !ros.isConnected) return;
-  const service = new ROSLIB.Service({ ros, name: '/map_manager/pause_patrol', serviceType: 'ptR1_navigation/PausePatrol' });
+  const service = new ROSLIB.Service({ ros, name: '/nav/pause_patrol', serviceType: 'ptR1_navigation/PausePatrol' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'patrol-pause-result', data: result });
   });
@@ -834,7 +834,7 @@ function callPausePatrolService() {
 
 function callResumePatrolService() {
   if (!ros || !ros.isConnected) return;
-  const service = new ROSLIB.Service({ ros, name: '/map_manager/resume_patrol', serviceType: 'ptR1_navigation/ResumePatrol' });
+  const service = new ROSLIB.Service({ ros, name: '/nav/resume_patrol', serviceType: 'ptR1_navigation/ResumePatrol' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'patrol-resume-result', data: result });
   });
@@ -842,9 +842,28 @@ function callResumePatrolService() {
 
 function callStopPatrolService() {
   if (!ros || !ros.isConnected) return;
-  const service = new ROSLIB.Service({ ros, name: '/map_manager/stop_patrol', serviceType: 'ptR1_navigation/StopPatrol' });
+  const service = new ROSLIB.Service({ ros, name: '/nav/stop_patrol', serviceType: 'ptR1_navigation/StopPatrol' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'patrol-stop-result', data: result });
+  });
+}
+
+function subscribePatrolStatus() {
+  if (!ros || !ros.isConnected) return;
+  const patrolStatusTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/nav/status', 
+    messageType: 'std_msgs/String'
+  });
+
+  console.log('[Server] Subscribing to Patrol Status: /nav/status');
+
+  patrolStatusTopic.subscribe((message) => {
+    // message.data จะเป็น string "IDLE", "PATROLLING", "PAUSED", "FINISHED"
+    parentPort.postMessage({
+      type: 'patrol-status', 
+      status: message.data.toLowerCase()
+    });
   });
 }
 

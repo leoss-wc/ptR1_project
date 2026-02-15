@@ -79,7 +79,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onGoalResult: (callback) => ipcRenderer.on('goal-result', (_, data) => callback(data)),
   startPatrol: (goals, loop) => ipcRenderer.send('start-patrol', { goals, loop }),
   onPatrolStartResult: (callback) => ipcRenderer.on('patrol-start-result', (_, result) => callback(result)),
-  
+
   pausePatrol: () => ipcRenderer.send('pause-patrol'),
   onPatrolPauseResult: (callback) => ipcRenderer.on('patrol-pause-result', (_, result) => callback(result)),
 
@@ -88,6 +88,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   stopPatrol: () => ipcRenderer.send('stop-patrol'),
   onPatrolStopResult: (callback) => ipcRenderer.on('patrol-stop-result', (_, result) => callback(result)),
+  onPatrolStatusChange: (callback) => ipcRenderer.on('patrol-status-change', (_, status) => callback(status)),
 
 
 
