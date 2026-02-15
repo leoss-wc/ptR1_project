@@ -172,62 +172,70 @@
                   <button id="reset-static-view-btn">R</button> 
                 </div>
               <div id="static-control-box" class="control-box overlay-controls" >
-              <fieldset style="border: 1px solid #444; padding: 8px; margin-bottom: 10px; border-radius: 5px;">
-                <legend style="font-size: 11px; color: #888; padding: 0 5px;">NAVIGATION</legend>
-                
-                <div style="display: flex; gap: 5px; margin-bottom: 5px;">
-                  <button id="select-map-btn" class="btn btn-blue" style="flex: 1;">▶ SELECT MAP</button>
-                  <button id="start-nav-btn" class="btn btn-blue" style="flex: 1;">▶ START NAVIGATION</button>
-                </div>
-                <div style="display: flex; gap: 5px; margin-bottom: 5px;justify-content: space-between; align-items: center">
-                  <span style="font-size: 14px; color: #aaa;">Active Map:</span>
-                  <span id="active-map-name" style="color: cyan; font-weight: bold;">None</span>
-                </div>
-              </fieldset>
-              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 4px; border-radius: 5px;">
-                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Home & Localization</legend>
-                
-                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="init-home-btn" class="btn btn-orange" style="flex: 1;" title="Teleport AMCL to Home">Init (Teleport)</button>
-                  <button id="set-pose-btn" class="btn btn-dark" style="flex: 1;">Set Pose</button>
-                </div>
-                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="set-home-btn" class="btn btn-dark" style="flex: 1;">Set Home</button>
-                  <button id="go-home-btn" class="btn btn-dark" style="flex: 1;">Go Home</button>
-                </div>
-              </fieldset>
+              <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; margin-bottom: 4px; background: rgba(0,0,0,0.3); padding: 2px 5px; border-radius: 4px;">
+  <span style="font-size: 11px; color: #aaa;">Active Map:</span>
+  <span id="active-map-name" style="color: cyan; font-weight: bold; font-size: 11px;">None</span>
+</div>
 
-              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 4px; border-radius: 5px;">
-                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Path & Goal</legend>
-                
-                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="set-goal-btn" class="btn btn-orange" style="flex: 1.5;">🎯 Set Goal</button>
-                  <button id="toggle-draw-mode" class="btn btn-dark" style="flex: 1.5;">✏️ Draw Path</button>
-                  <button id="clear-path-btn" class="btn btn-dark" style="flex: 1;">Clear</button>
+<div class="fieldset-container" style="display: flex; gap: 3px; width: 100%; overflow-x: auto; align-items: stretch;">
 
-                </div>
-                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="save-path-btn" class="btn btn-dark btn-small" style="flex: 1;">💾 Save Path</button>
-                    <div class="patrol-options" style="flex: 1; display: flex; align-items: center; justify-content: center; background: #333; border-radius: 4px; padding: 2px;">
-                    <input type="checkbox" id="loop-patrol-checkbox" style="margin-right: 5px;">
-                    <label for="loop-patrol-checkbox" style="font-size: 12px; cursor: pointer;">Loop Patrol</label>
-                </div>
-              
-                </div>
-              </fieldset>
+  <fieldset style="flex: 1; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 110px;">
+    <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Navigation sys</legend>
+    <div style="display: grid; grid-template-columns: 1fr; gap: 2px;">
+      <button id="select-map-btn" class="btn btn-blue mini-btn">📂 Select</button>
+      <button id="start-nav-btn" class="btn btn-blue mini-btn">▶ Start</button>
+    </div>
+  </fieldset>
 
-              <fieldset style="border: 1px solid #444; padding: 4px; margin-bottom: 5px; border-radius: 5px;">
-                <legend style="font-size: 11px; color: #888; padding: 0 5px;">Patrol Control</legend>
-                
-                <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="start-patrol-btn" class="btn btn-blue" style="flex: 1;">▶ Start</button>
-                  <button id="pause-patrol-btn" class="btn btn-blue" style="flex: 1;">⏸ Pause</button>
-                </div>
-                    <div style="display: flex; gap: 3px; margin-bottom: 5px;">
-                  <button id="resume-patrol-btn" class="btn btn-blue" style="flex: 1;">⏯ Resume</button>
-                  <button id="stop-patrol-btn" class="btn btn-red" style="flex: 1;">⏹ Stop</button>
-                </div>
-              </fieldset>
+  <fieldset style="flex: 1.2; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 130px;">
+    <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Home</legend>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px;">
+      <button id="init-home-btn" class="btn btn-orange mini-btn" title="Teleport to Home">Init</button>
+      <button id="set-pose-btn" class="btn btn-dark mini-btn">Pose</button>
+      <button id="set-home-btn" class="btn btn-dark mini-btn">Set H</button>
+      <button id="go-home-btn" class="btn btn-dark mini-btn">Go H</button>
+    </div>
+  </fieldset>
+
+  <fieldset style="flex: 1.5; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 150px;">
+    <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Path</legend>
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; margin-bottom: 2px;">
+       <button id="set-goal-btn" class="btn btn-orange mini-btn" style="grid-column: span 3;">🎯 Set Goal</button>
+    </div>
+    <div style="display: flex; gap: 2px;">
+       <button id="toggle-draw-mode" class="btn btn-dark mini-btn" style="flex:1;">✏️ Draw</button>
+       <button id="save-path-btn" class="btn btn-dark mini-btn" style="flex:1;">💾 Save</button>
+       <button id="clear-path-btn" class="btn btn-dark mini-btn" style="width: 25px;">❌</button>
+    </div>
+    <div style="margin-top: 2px; display: flex; align-items: center; justify-content: center; background: #333; border-radius: 2px;">
+        <input type="checkbox" id="loop-patrol-checkbox" style="transform: scale(0.8);">
+        <label for="loop-patrol-checkbox" style="font-size: 9px; margin-left: 2px;">Loop</label>
+    </div>
+  </fieldset>
+
+  <fieldset style="flex: 1; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 100px;">
+    <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Patrol command</legend>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px; height: 100%;">
+      <button id="start-patrol-btn" class="btn btn-blue mini-btn">▶</button>
+      <button id="pause-patrol-btn" class="btn btn-blue mini-btn">⏸</button>
+      <button id="resume-patrol-btn" class="btn btn-blue mini-btn">⏯</button>
+      <button id="stop-patrol-btn" class="btn btn-red mini-btn">⏹</button>
+    </div>
+  </fieldset>
+
+  <fieldset style="flex: 1; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 100px;">
+    <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Edit map</legend>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px; height: 100%;">
+      <button id="toggle-wall-btn" class="btn btn-dark mini-btn" title="Draw Wall">Wall</button>
+      <button id="undo-edit-btn" class="btn btn-dark mini-btn" title="Undo Last">Undo</button>
+      <button id="toggle-eraser-btn" class="btn btn-dark mini-btn" title="Eraser">Eraser</button>
+      <button id="save-edit-btn" class="btn btn-blue mini-btn" title="Save Changes">Save</button>
+    </div>
+  </fieldset>
+
+</div>
+            
+            
             </div>
                  <div id="live-control-box" class="control-box overlay-controls hidden" style="width: 280px; max-width: 95vw; display: flex; flex-direction: column; gap: 5px;">
                   <div style="display: flex; gap: 5px; width: 100%;">
