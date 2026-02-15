@@ -1,0 +1,4 @@
+bool save_pose     # True = ให้บันทึกตำแหน่งปัจจุบันก่อนปิด
+---
+bool success
+string message

@@ -1,5 +1,5 @@
 // modules/mapHome.js
-// 👉 ใช้สำหรับแสดงแผนที่, หุ่นยนต์, goal ฯลฯ
+//ใช้สำหรับแสดงแผนที่, หุ่นยนต์, goal ฯลฯ
 
 import { activeMap } from './mapState.js';
 import { robotPose,robotTrail } from './robotState.js';
@@ -12,8 +12,6 @@ let canvas, ctx, mapImg;
 let zoom = 1.0;
 let offset = { x: 0, y: 0 };
 let hasBeenReset = false;
-
-
 
 export function initHomeMap(canvasElement) {
   // 1. ตั้งค่า Canvas และ Context
@@ -35,7 +33,6 @@ export function initHomeMap(canvasElement) {
   resizeObserver.observe(canvas);
   initCanvasControls();
 }
-
 
 function drawRobot() {
   if (!robotPose?.position || !activeMap?.meta || !mapImg){
@@ -170,15 +167,12 @@ export function renderDashboardMap() {
     drawGoal();
     drawLaserScan();
   } else {
-    // ✨ เพิ่ม: แสดงข้อความบอกสถานะถ้าแผนที่ยังไม่พร้อม
     ctx.fillStyle = 'gray';
     ctx.font = '16px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Waiting for map data...', canvas.width / 2, canvas.height / 2);
   }
 }
-
-
 
 /*
 export function setupMapCanvas(canvasElement) {

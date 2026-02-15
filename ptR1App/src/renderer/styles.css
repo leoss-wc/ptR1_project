@@ -335,3 +335,64 @@ input:checked + .slider:before { transform: translateX(26px); }
 .sidebar-item:hover i {
     color: #33b5e5; /* สีฟ้า (หรือสีตามธีมของคุณ) */
 }
+
+#view-video .video-layout {
+  display: flex;
+  flex-direction: row;
+  height: calc(100vh - 80px); /* ความสูงเต็มจอ ลบหัวข้อ */
+  gap: 10px;
+  overflow: hidden;
+  width: 100%; /* บังคับกว้างเต็ม */
+}
+
+/* ส่วนแสดงผลวิดีโอ (ซ้าย) - ให้ขยายเต็มที่ */
+#view-video .video-container {
+  flex: 1; /* ขยายกินพื้นที่ที่เหลือทั้งหมด */
+  min-width: 0; /* ⭐ สำคัญมาก: เพื่อให้ Flex item หดตัวได้จริง */
+  background: #000;
+  border-radius: 8px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  position: relative;
+}
+
+#view-video #video-player {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* ให้วิดีโออยู่ในกรอบเสมอ */
+}
+
+/* ส่วน Gallery (ขวา) - บังคับความกว้างตายตัว */
+#view-video .video-right {
+  /* 👇 สูตรล็อคความกว้าง: flex-grow=0, flex-shrink=0, basis=220px */
+  flex: 0 0 220px !important; 
+  width: 220px !important;
+  max-width: 220px !important;
+  min-width: 220px !important;
+  
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  padding: 10px;
+  border-radius: 8px;
+  overflow-y: auto;
+  height: 100%;
+  box-sizing: border-box; /* รวม padding ในความกว้าง */
+}
+
+/* Grid สำหรับรูปภาพ */
+#view-video .video-grid {
+  display: grid;
+  /* ให้รูปขยายเต็มความกว้างแถว (1 รูปต่อแถวใหญ่ๆ หรือ 2 รูปเล็กๆ) */
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  padding-bottom: 20px;
+}
+
+/* ปรับขนาดตัวหนังสือใน Gallery ให้ไม่ล้น */
+#view-video h4 {
+    font-size: 14px;
+    margin: 10px 0 5px 0;
+}

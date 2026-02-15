@@ -4,6 +4,7 @@ console.log('[PRELOAD] Using raw preload:', __filename);
 
 contextBridge.exposeInMainWorld('electronAPI', {
   getVideoFileURL: (relativePath) => ipcRenderer.invoke('get-video-path', relativePath),
+  onVideoSaveStatus: (callback) => ipcRenderer.on('video-save-status', (_, result) => callback(result)),
   startFFmpegStream: () => ipcRenderer.invoke('start-stream'),
   stopFFmpegStream: () => ipcRenderer.invoke('stop-stream'),
   onStreamStatus: (callback) => ipcRenderer.on('stream-status', (_, data) => callback(data)),
@@ -63,6 +64,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onPlannedPath: (callback) => ipcRenderer.on('planned-path', (event, ...args) => callback(...args)),
   setInitialPose: (pose) => ipcRenderer.send('set-initial-pose', pose),
+  setHome: (mapName) => ipcRenderer.invoke('nav:set-home', mapName),
+  goHome: (mapName) => ipcRenderer.invoke('nav:go-home', mapName),
+  initHome: (mapName) => ipcRenderer.invoke('nav:init-home', mapName),
+
+  onHomeResult: (callback) => ipcRenderer.on('nav:home-result', (_, result) => callback(result)),
 
   // Patrol related api
   sendPatrolPath: (pathArray) => ipcRenderer.send('send-patrol-path', pathArray),

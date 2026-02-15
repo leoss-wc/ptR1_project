@@ -3,6 +3,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const fs = require('fs');
+const fsPromises = require('fs').promises;
 const { exec } = require('child_process');
 const { spawn } = require('child_process');
 const yaml = require('js-yaml');
@@ -83,6 +84,33 @@ function saveRobotsToFile(robots) {
     return false;
   }
 }
+
+const getAllVideoFilesAsync = async (dirPath) => {
+  let files = [];
+  try {
+    const items = await fsPromises.readdir(dirPath, { withFileTypes: true });
+    
+    for (const item of items) {
+      const fullPath = path.join(dirPath, item.name);
+      if (item.isDirectory()) {
+        const subFiles = await getAllVideoFilesAsync(fullPath);
+        files = files.concat(subFiles);
+      } else if (/\.(mp4|webm|mov)$/i.test(item.name)) {
+        const stats = await fsPromises.stat(fullPath);
+        files.push({
+          path: fullPath,
+          relativePath: path.relative(path.join(app.getPath('videos'), 'ptR1'), fullPath),
+          name: item.name,
+          mtime: stats.mtimeMs
+        });
+      }
+    }
+  } catch (err) {
+    console.error("Error reading video directory:", err);
+  }
+  return files;
+};
+
 
 ipcMain.on('set-initial-pose', (_, pose) => {
   if (rosWorker) {
@@ -192,33 +220,15 @@ ipcMain.handle('dialog:select-folder', async () => {
   return dirPath;
 });
 
-const getAllVideoFiles = (dirPath, arrayOfFiles = []) => {
-  const files = fs.readdirSync(dirPath);
-  files.forEach((file) => {
-    const fullPath = path.join(dirPath, file);
-    const stat = fs.statSync(fullPath);
-    if (stat.isDirectory()) {
-      getAllVideoFiles(fullPath, arrayOfFiles);
-    } else if (/\.(mp4|webm|mov)$/i.test(file)) {
-      arrayOfFiles.push({
-        path: fullPath,
-        relativePath: path.relative(path.join(app.getPath('videos'), 'ptR1'), fullPath),
-        name: file,
-        mtime: stat.mtimeMs
-      });
-    }
-  });
-  return arrayOfFiles;
-};
 
 ipcMain.handle('load:videos', async (event, customPath = null) => {
   const baseDir = customPath || path.join(app.getPath('videos'), 'ptR1');
-  console.log('Loading videos from:', baseDir);
-  if (!fs.existsSync(baseDir)) return [];
+  console.log('Loading videos asynchronously from:', baseDir);
+  
+  if (!fs.existsSync(baseDir)) return []; // เช็คแบบ Sync แค่ครั้งเดียวพอรับได้
 
-  const allVideos = getAllVideoFiles(baseDir);
-  allVideos.sort((a, b) => b.mtime - a.mtime); // เรียงจากใหม่ → เก่า
-
+  const allVideos = await getAllVideoFilesAsync(baseDir);
+  allVideos.sort((a, b) => b.mtime - a.mtime); // เรียง ใหม่ -> เก่า
   return allVideos;
 });
 
@@ -260,18 +270,23 @@ ipcMain.on('save-video', (event, { buffer, date, filename }) => {
   fs.writeFile(webmPath, buffer, (err) => {
     if (err) {
       console.error(`❌ Write .webm failed: ${err}`);
+      // แนะนำ: ส่ง error กลับไปบอกหน้าเว็บ
+      event.sender.send('video-save-status', { success: false, message: err.message });
       return;
     }
   
-    // ✅ หลังเขียนเสร็จแน่นอน ค่อยแปลง
+    // ตรวจสอบว่ามี FFmpeg ไหม (แบบง่าย)
     const cmd = `ffmpeg -y -i "${webmPath}" -c:v libx264 -c:a aac "${mp4Path}"`;
     exec(cmd, (error, stdout, stderr) => {
       if (error) {
-        console.error(`❌ FFmpeg error: ${error.message}`);
-        console.error(stderr); // 🟡 ดูรายละเอียดเพิ่ม
+        console.error(`FFmpeg error: ${error.message}`);
+        console.warn("Make sure FFmpeg is installed and added to System PATH.");
+        // แจ้งเตือนหน้าเว็บว่าแปลงไฟล์ล้มเหลว (แต่ไฟล์ webm ยังอยู่)
+        event.sender.send('video-save-status', { success: false, warning: 'Saved WEBM but failed to convert to MP4. Check FFmpeg.' });
         return;
       }
       console.log(`Saved MP4: ${mp4Path}`);
+      event.sender.send('video-save-status', { success: true, path: mp4Path });
     });
   });
 });
@@ -444,6 +459,17 @@ ipcMain.on('stop-patrol', () => {
   if (rosWorker) rosWorker.postMessage({ type: 'stopPatrol' });
 });
 
+ipcMain.on('nav:set-home', (_, mapName) => {
+  if (rosWorker) rosWorker.postMessage({ type: 'setHome', mapName });
+});
+
+ipcMain.on('nav:go-home', (_, mapName) => {
+  if (rosWorker) rosWorker.postMessage({ type: 'goHome', mapName });
+});
+
+ipcMain.on('nav:init-home', (_, mapName) => {
+  if (rosWorker) rosWorker.postMessage({ type: 'initHome', mapName });
+});
 
 ipcMain.on('stop-slam', () => {
   if (rosWorker) rosWorker.postMessage({ type: 'stopSLAM' });
@@ -551,17 +577,21 @@ ipcMain.handle('get-userdata-path', (_, subfolder = '') => {
 
 ipcMain.handle('dialog:select-folder-map', async (event, defaultPath = null) => {
   const result = await dialog.showOpenDialog({
-  properties: ['openDirectory'],
-    defaultPath: defaultPath || app.getPath('home')  // ถ้าไม่ส่ง defaultPath, ใช้ home
+    properties: ['openDirectory'] 
   });
-  return result.canceled ? null : result.filePaths[0];
+
+  if (result.canceled) return null;
+  const selectedDir = result.filePaths[0]; 
+  console.log(`User selected folder: ${selectedDir}`);
+  return selectedDir;
 });
 
 ipcMain.handle('get-env-is-dev', () => !app.isPackaged);
 
 ipcMain.handle('get-video-path', (_, relativePath) => {
   const fullPath = path.join(app.getPath('videos'), 'ptR1', relativePath);
-  return `file://${fullPath.replace(/\\/g, '/')}`;
+  // ใช้ protocol ที่เราสร้างเอง
+  return `video://${fullPath.replace(/\\/g, '/')}`; 
 });
 
 function createWindow(ip) {
@@ -586,7 +616,7 @@ function createWindow(ip) {
         style-src 'self' 'unsafe-inline';
         img-src 'self' data: blob:;
         connect-src 'self' ws: http:;
-        media-src 'self' blob: http:;
+        media-src 'self' blob: http: video:;
       `
     
     },
@@ -594,8 +624,16 @@ function createWindow(ip) {
   mainWindow.webContents.openDevTools();
   mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 }
-
+const { protocol } = require('electron');
 app.whenReady().then(() => {
+  protocol.registerFileProtocol('video', (request, callback) => {
+    const url = request.url.replace('video://', '');
+    try {
+      return callback(decodeURI(url));
+    } catch (error) {
+      console.error(error);
+    }
+  });
 
   const mapFolder = path.join(app.getPath('userData'), 'maps');
   if (!fs.existsSync(mapFolder)) {
@@ -679,9 +717,12 @@ app.whenReady().then(() => {
         case 'patrol-stop-result':
             mainWindow?.webContents.send('patrol-stop-result', message.data);
             break;
+        case 'home-result':
+            mainWindow?.webContents.send('nav:home-result', message.data);
+            break;
         case 'robot-status-update':
-          mainWindow?.webContents.send('robot-status', message.data);
-          break;
+            mainWindow?.webContents.send('robot-status', message.data);
+            break;
 
         default:
           console.warn('[main]: Unknown message from worker:', message);

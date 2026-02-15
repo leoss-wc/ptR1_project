@@ -179,6 +179,7 @@
             <div id="static-control-box" class="control-box">
               <p style="font-size: medium;">Active Map: <span id="active-map-name">None</span></p>
               <button id="select-map-btn">Select This Map</button>
+              <button id="init-home-btn" style="flex: 1;" title="Teleport to Home">Init Home</button>
               <button id="start-patrol-btn" class="btn btn-blue" >Start Patrol</button>
               <button id="pause-patrol-btn" class="btn btn-blue" >Pause Patrol</button>
               <button id="stop-patrol-btn" class="btn btn-red" >Stop Patrol</button>
@@ -192,6 +193,10 @@
               <button id="clear-path-btn">Clear</button>
               <button id="set-pose-btn">Set Initial Pose</button>
               <button id="save-path-btn">Save Path</button>
+              <div style="display: flex; gap: 5px; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 10px;">
+                <button id="set-home-btn" style="flex: 1;">Set Home</button>
+                <button id="go-home-btn"  style="flex: 1;">Go Home</button>
+              </div>
             </div>
             <div id="live-control-box" class="control-box hidden">
               <input id="map-name-input" placeholder="Enter map name..." />
@@ -247,6 +252,7 @@
       </div>
       <p id="settings-status" style="margin-top: 15px;"></p>
     </div>
+    
 
   </div> <script type="module" src="app.js"></script>
 </body>

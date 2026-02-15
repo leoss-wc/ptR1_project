@@ -3,7 +3,7 @@ console.log('app.js started');
 import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
-import {renderObjects, renderScan, initStaticMap, renderAllLayers} from './modules/mapStatic.js';
+import {renderObjects, renderScan, initStaticMap, renderAllLayers, cancelMode} from './modules/mapStatic.js';
 import { renderDashboardMap, initHomeMap} from './modules/mapHome.js';
 
 import { setupVideoPlayer } from './modules/videoPlayer.js';
@@ -209,6 +209,7 @@ function startLiveMapRender() {
 }
 
 function switchView(viewName) {
+  cancelMode();
   // ซ่อนทุก View และเอา active ออกจาก sidebar
   document.querySelectorAll('.view').forEach(view => view.classList.add('hidden'));
   document.querySelectorAll('.sidebar-item').forEach(item => item.classList.remove('active'));
@@ -216,14 +217,19 @@ function switchView(viewName) {
   // แสดง View และ Sidebar item ที่ต้องการ
   const activeView = document.getElementById(`view-${viewName}`);
   const activeSidebarItem = document.querySelector(`.sidebar-item[data-view="${viewName}"]`);
+  
   if (activeView) activeView.classList.remove('hidden');
   if (activeSidebarItem) activeSidebarItem.classList.add('active');
   
+  // Logic การ Init ของแต่ละหน้า
   if (viewName === 'home') {
     const homeCanvas = document.getElementById('homeMapCanvas');
-    if (homeCanvas) initHomeMap(homeCanvas);
+    // ตรวจสอบว่ามีฟังก์ชัน initHomeMap หรือไม่ก่อนเรียก
+    if (homeCanvas && typeof initHomeMap === 'function') {
+        initHomeMap(homeCanvas);
+    }
   } else if (viewName === 'map') {
     initStaticMap();
-    initLiveMap();
+    if (typeof initLiveMap === 'function') initLiveMap();
   }
 }

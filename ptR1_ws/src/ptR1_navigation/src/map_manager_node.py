@@ -8,14 +8,13 @@ import signal
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from geometry_msgs.msg import PoseStamped
 from std_srvs.srv import Empty
-
+import json
+from geometry_msgs.msg import PoseWithCovarianceStamped #สำหรับรับ/ส่ง pose
 # Import services
 from ptR1_navigation.srv import (ListMaps, ListMapsResponse, LoadMap, LoadMapResponse,
                                  GetMapFile, GetMapFileResponse, SaveMap, SaveMapResponse,
                                  StartSLAM, StartSLAMResponse, StopSLAM, StopSLAMResponse,
-                                 DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,
-                                 StartPatrol, StartPatrolResponse, PausePatrol, PausePatrolResponse,
-                                 ResumePatrol, ResumePatrolResponse, StopPatrol, StopPatrolResponse,
+                                 DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,                                            
                                  ClearCostmaps, ClearCostmapsResponse)
 
 #MAP_FOLDER = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/maps')
@@ -34,20 +33,10 @@ class MapManager:
         # --- State Variables ---
         self.running_processes = []
         self.navigation_process = None
-        
-        # Patrol State
-        self.goal_list = []
-        self.current_goal_index = 0
-        self.is_patrolling = False
-        self.is_paused = False
-        self.should_loop = False
 
         # --- Action Client ---
         self.move_base_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        #rospy.loginfo("Waiting for move_base action server...")
-        #self.move_base_client.wait_for_server(rospy.Duration(10.0))
-        #rospy.loginfo("move_base action server connected.")
-
+        # Publisher สำหรับตั้งค่า Initial Pose ให้ AMCL
         # --- Services ---
         # Map/SLAM Management
         rospy.Service('/map_manager/list_maps', ListMaps, self.handle_list_maps)
@@ -58,98 +47,10 @@ class MapManager:
         rospy.Service('/map_manager/stop_processes', StopSLAM, self.handle_stop_processes)
         rospy.Service('/map_manager/reset_slam', ResetSLAM, self.handle_reset_slam)
         rospy.Service('/map_manager/get_map_file', GetMapFile, self.handle_get_map_file)
-        # Patrol Management
-        rospy.Service('/map_manager/start_patrol', StartPatrol, self.handle_start_patrol)
-        rospy.Service('/map_manager/pause_patrol', PausePatrol, self.handle_pause_patrol)
-        rospy.Service('/map_manager/resume_patrol', ResumePatrol, self.handle_resume_patrol)
-        rospy.Service('/map_manager/stop_patrol', StopPatrol, self.handle_stop_patrol)
-
         rospy.Service('/map_manager/clear_costmaps', ClearCostmaps, self.handle_clear_costmaps)
-
+        
         rospy.on_shutdown(self.shutdown_hook)
         rospy.loginfo("All Map Manager services are ready.")
-
-# ------ Patrol Logic ------
-    def send_next_goal(self):
-        if not self.is_patrolling or self.is_paused or not self.goal_list:
-            return
-
-        if self.current_goal_index < len(self.goal_list):
-            goal_pose = self.goal_list[self.current_goal_index]
-            goal = MoveBaseGoal(target_pose=goal_pose)
-            
-            # เช็คว่า move_base พร้อมไหมก่อนส่ง
-            if not self.move_base_client.wait_for_server(rospy.Duration(1.0)):
-                rospy.logwarn("move_base server not available, pausing patrol.")
-                self.is_paused = True
-                return
-        else:
-            rospy.loginfo("Patrol sequence finished.")
-            self.is_patrolling = False
-
-    def goal_done_callback(self, status, result):
-        if not self.is_patrolling: return # Ignore callbacks if not patrolling
-        if status == actionlib.GoalStatus.SUCCEEDED:
-            rospy.loginfo(f"Goal #{self.current_goal_index + 1} reached successfully.")
-            self.current_goal_index += 1
-
-            if self.current_goal_index >= len(self.goal_list) and self.should_loop:
-                rospy.loginfo("Looping patrol, starting from first goal.")
-                self.current_goal_index = 0
-            
-            self.send_next_goal()
-        else:
-            rospy.logerr(f"Failed to reach goal #{self.current_goal_index + 1}. Stopping patrol. Status: {status}")
-            # Option: ข้ามไป goal ถัดไป หรือ หยุดเลย (ที่เลือกไว้คือหยุด)
-            self.is_patrolling = False
-
-# ------ Service Handlers for Patrol ------
-    def handle_start_patrol(self, req):
-        if not req.goals:
-            return StartPatrolResponse(False, "Goal list cannot be empty.")
-        
-        self.handle_stop_patrol(None) # Stop previous patrol first
-        
-        self.goal_list = req.goals
-        self.should_loop = req.loop
-        self.current_goal_index = 0
-        self.is_patrolling = True
-        self.is_paused = False
-        
-        rospy.loginfo(f"Starting patrol with {len(self.goal_list)} goals. Loop: {self.should_loop}")
-        self.send_next_goal()
-        return StartPatrolResponse(True, "Patrol started.")
-
-    def handle_pause_patrol(self, req):
-        """Cancels the current goal and pauses the patrol sequence."""
-        if not self.is_patrolling:
-            return PausePatrolResponse(False, "Not currently patrolling.")
-            
-        self.is_paused = True
-        self.move_base_client.cancel_goal()
-        rospy.loginfo("Patrol paused.")
-        return PausePatrolResponse(True, "Patrol paused.")
-
-    def handle_resume_patrol(self, req):
-        if not self.is_patrolling:
-            return ResumePatrolResponse(False, "Not currently patrolling.")
-        if not self.is_paused:
-            return ResumePatrolResponse(False, "Patrol is not paused.")
-
-        self.is_paused = False
-        rospy.loginfo("Resuming patrol.")
-        self.send_next_goal() # Send the goal that was paused
-        return ResumePatrolResponse(True, "Patrol resumed.")
-
-    def handle_stop_patrol(self, req):
-        self.is_patrolling = False
-        self.is_paused = False
-        self.goal_list = []
-        self.current_goal_index = 0
-        self.move_base_client.cancel_all_goals()
-        if req is not None:
-             rospy.loginfo("Patrol stopped by request.")
-        return StopPatrolResponse(True, "Patrol stopped.")
 
 # ------ Map/SLAM Handlers------
     def handle_list_maps(self, req):
@@ -164,7 +65,7 @@ class MapManager:
 
     def handle_load_map(self, req):
         map_to_load = req.name
-        rospy.loginfo(f"🗺️ Loading map '{map_to_load}' and starting navigation nodes...")
+        rospy.loginfo(f"Loading map '{map_to_load}' and starting navigation nodes...")
 
         # 1. เช็คไฟล์ก่อนเลย ถ้าไม่มีจะได้ไม่ต้องไปสั่งหยุด process ให้เสียเวลา
         map_yaml_path = os.path.join(MAP_FOLDER, f"{map_to_load}.yaml")
@@ -175,9 +76,8 @@ class MapManager:
         self.handle_stop_processes(None)
 
         try:
-            command = ['roslaunch', 'ptR1_navigation', 'navigation_2.launch', f'map_name:={map_to_load}']
+            command = ['roslaunch', 'ptR1_navigation', 'active_map_server.launch', f'map_name:={map_to_load}']
             rospy.loginfo(f"Executing: {' '.join(command)}")
-            
             self.navigation_process = subprocess.Popen(command)
             self.running_processes.append(self.navigation_process)
 
@@ -235,7 +135,7 @@ class MapManager:
         
     def handle_clear_costmaps(self, req):
         rospy.loginfo("Received request to clear costmaps.")
-        service_name = '/move_base/clear_costmaps'
+        service_name = '/map_manager/clear_costmaps'
         try:
             rospy.wait_for_service(service_name, timeout=2.0)
             clear_costmaps_service = rospy.ServiceProxy(service_name, Empty)
@@ -267,7 +167,7 @@ class MapManager:
         
     def handle_delete_map(self, req):
         map_name = req.name
-        rospy.loginfo(f"🗑️ Received request to delete map: {map_name}")
+        rospy.loginfo(f"Received request to delete map: {map_name}")
         files_to_check = [os.path.join(MAP_FOLDER, f"{map_name}{ext}") for ext in ['.yaml', '.pgm', '.png']]
         deleted_count = 0
         try:
@@ -310,12 +210,12 @@ class MapManager:
             )
         except Exception as e:
             return GetMapFileResponse(False, str(e), "", "")
-                
+
+
     def shutdown_hook(self):
         rospy.loginfo("Shutdown request received...")
-        self.handle_stop_patrol(None)
-        self.handle_stop_processes(None)
-        rospy.loginfo("Goodbye!")            
+        self.handle_stop_processes(None) 
+        rospy.loginfo("Map Manager shutdown complete.")        
         
 
 if __name__ == '__main__':

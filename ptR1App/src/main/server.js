@@ -88,6 +88,15 @@ parentPort.on('message', (message) => {
       case 'stopPatrol':
         callStopPatrolService();
         break;
+      case 'setHome':
+        callHomeService('/nav/set_home', message.mapName, 'Set Home');
+        break;
+      case 'goHome':
+        callHomeService('/nav/go_home', message.mapName, 'Go Home');
+        break;
+      case 'initHome':
+        callHomeService('/nav/init_home', message.mapName, 'Init Home');
+        break;
       case 'getParam': 
         getRosParam(message.name); 
         break;
@@ -804,7 +813,7 @@ function callStartPatrolService(goals, loop) {
   }
   const service = new ROSLIB.Service({
     ros,
-    name: '/map_manager/start_patrol',
+    name: '/nav/start_patrol',
     serviceType: 'ptR1_navigation/StartPatrol'
   });
   const request = new ROSLIB.ServiceRequest({ goals, loop });
@@ -836,6 +845,38 @@ function callStopPatrolService() {
   const service = new ROSLIB.Service({ ros, name: '/map_manager/stop_patrol', serviceType: 'ptR1_navigation/StopPatrol' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'patrol-stop-result', data: result });
+  });
+}
+
+function callHomeService(serviceName, mapName, actionLabel) {
+  if (!ros || !ros.isConnected) {
+    parentPort.postMessage({ 
+      type: 'home-result', 
+      data: { success: false, message: 'ROS not connected', action: actionLabel } 
+    });
+    return;
+  }
+
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: serviceName,
+    serviceType: 'ptR1_navigation/SaveMap' // ใช้ Type นี้เพราะ structure มันตรงกัน
+  });
+
+  const request = new ROSLIB.ServiceRequest({ name: mapName });
+
+  service.callService(request, (result) => {
+    console.log(`Server: ${actionLabel} Success`);
+    parentPort.postMessage({ 
+      type: 'home-result', 
+      data: { success: result.success, message: result.message, action: actionLabel } 
+    });
+  }, (err) => {
+    console.error(`Server: ${actionLabel} Failed`, err);
+    parentPort.postMessage({ 
+      type: 'home-result', 
+      data: { success: false, message: err.toString(), action: actionLabel } 
+    });
   });
 }
 

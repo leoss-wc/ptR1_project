@@ -28,6 +28,11 @@ let mapHitCanvas, mapHitCtx; //ตัวแปรสำหรับ Canvas ท�
 
 let dimmerMaskImage = null;//ตัวแปรสำหรับเก็บภาพมาสก์ Dimmer ที่สร้างขึ้น
 
+let collisionMapData = null; // เก็บข้อมูล Pixel แผนที่เพื่อเช็คชน
+let collisionWidth = 0;
+let collisionHeight = 0;
+
+
 export { renderObjects, renderScan };
 
 export function initStaticMap() {
@@ -148,7 +153,7 @@ document.getElementById('select-map-btn').addEventListener('click', async () => 
     return;
   }
   
-  console.log(`✅ Activating map: ${current_map_select.name}`);
+  console.log(`Activating map: ${current_map_select.name}`);
   
   // --- เริ่มกระบวนการประมวลผลและ Caching ---
   let inflatedImageData;
@@ -254,6 +259,32 @@ function bindUI() {
       window.electronAPI.deleteMap(mapName);
     }
   });
+  document.getElementById('set-home-btn').addEventListener('click', () => {
+    if (!activeMap.name) return alert("Please load a map first.");
+    if (confirm(`Set CURRENT robot position as HOME for map "${activeMap.name}"?`)) {
+      window.electronAPI.setHome(activeMap.name);
+    }
+  });
+  document.getElementById('go-home-btn').addEventListener('click', () => {
+    if (!activeMap.name) return alert("Please load a map first.");
+    window.electronAPI.goHome(activeMap.name);
+  });
+  document.getElementById('init-home-btn').addEventListener('click', () => {
+    if (!activeMap.name) return alert("Please load a map first.");
+    window.electronAPI.initHome(activeMap.name);
+  });
+
+  window.electronAPI.onHomeResult((res) => {
+    if (res.success) {
+      // ถ้าเป็นการ Go Home ไม่ต้อง Alert ก็ได้ เดี๋ยวรำคาญ
+      if (res.action !== 'Go Home') alert(`✅ ${res.action}: Success`);
+      console.log(`[Home] ${res.action}: ${res.message}`);
+    } else {
+      alert(`❌ ${res.action} Failed: ${res.message}`);
+    }
+  });
+
+
 
   // Listener รับผลการลบแผนที่
   window.electronAPI.onMapDeleteResult((result) => {
@@ -335,10 +366,17 @@ async function activateMap(mapName, meta) {
       activeMap.name = mapName;
       activeMap.base64 = finalImage.src;
       activeMap.meta = cachedData.newMeta;
+      collisionMapData = new Uint32Array(inflatedImageData.data.buffer);
+      collisionWidth = inflatedImageData.width;
+      collisionHeight = inflatedImageData.height;
   } else {
       // Process New
       const { croppedImage, newMeta } = await autoCropMapImage(mapImage, meta);
       inflatedImageData = preprocessMapData(croppedImage);
+
+      collisionMapData = new Uint32Array(inflatedImageData.data.buffer);
+      collisionWidth = inflatedImageData.width;
+      collisionHeight = inflatedImageData.height;
       
       activeMap.name = mapName;
       activeMap.base64 = croppedImage.src;
@@ -351,8 +389,9 @@ async function activateMap(mapName, meta) {
               width: inflatedImageData.width,
               height: inflatedImageData.height,
               data: bufferToBase64(inflatedImageData.data.buffer)
-          }
+          }  
       };
+
       await window.electronAPI.saveMapCache(mapName, dataToCache);
   }
 
@@ -361,6 +400,11 @@ async function activateMap(mapName, meta) {
   window.electronAPI.selectMap(activeMap.name);
   
   alert(`Active map has been set to "${activeMap.name}".`);
+
+  console.log(`Attempting to auto-init home for ${activeMap.name}...`);
+  setTimeout(() => {
+      window.electronAPI.initHome(activeMap.name);
+  }, 1500); // รอ 1 วินาทีให้ Map Server/AMCL โหลดเสร็จก่อน
 
   // Prepare Hit Canvas & Dimmer
   mapHitCanvas = document.createElement('canvas');
@@ -484,14 +528,33 @@ function setupCanvasEvents() {
     if (!isClickInsideBounds(worldPoint)) return;
 
     if (mode === 'draw') {
-      if (isHoveringFirstPoint && patrolPath.length > 1) { 
-        patrolPath.push({ ...patrolPath[0] });
-        renderObjects();
-        cancelMode(); 
-      } else { 
-        patrolPath.push(worldPoint); // ใช้ worldPoint ที่คำนวณไว้แล้ว
-        renderObjects();
+      if (patrolPath.length > 0) {
+        const lastPoint = patrolPath[patrolPath.length - 1];
+        
+        // ถ้าพยายามปิด Loop (คลิกจุดแรก)
+        if (isHoveringFirstPoint && patrolPath.length > 1) {
+             if (isPathBlocked(lastPoint, patrolPath[0])) {
+              patrolPath.length = 0;
+              alert("Cannot close loop: Path crosses an obstacle!");
+              renderObjects();
+              return;
+             }
+             patrolPath.push({ ...patrolPath[0] });
+             renderObjects();
+             cancelMode();
+             return;
+        } 
+        
+        // ถ้าลากจุดใหม่
+        if (isPathBlocked(lastPoint, worldPoint)) {
+             // สั่นหน้าจอหรือแจ้งเตือนเล็กน้อย (Optional)
+             console.log("Blocked!"); 
+             return; //ห้ามวางจุดนี้
+        }
       }
+      // ถ้าผ่านฉลุย ให้วางจุดได้
+      patrolPath.push(worldPoint);
+      renderObjects();
     } else if (mode === 'goal') {
         isSettingGoal = true;
         poseStartPosition = worldPoint; // เก็บจุดเริ่มต้น
@@ -607,19 +670,28 @@ function setupCanvasEvents() {
   });
 }
 
-function cancelMode() {
+export function cancelMode() {
   mode = 'none';
   isDrawing = false;
   isHoveringFirstPoint = false;
   isSettingPose = false;
   isSettingGoal = false;
   poseStartPosition = null;
+  
   if (interactionCanvas) interactionCanvas.style.cursor = 'grab';
 
-  document.getElementById('set-goal-btn').classList.remove('active');
+  // รีเซ็ตปุ่ม UI ต่างๆ
+  const goalBtn = document.getElementById('set-goal-btn');
+  if(goalBtn) goalBtn.classList.remove('active');
+  
+  const poseBtn = document.getElementById('set-pose-btn');
+  if(poseBtn) poseBtn.classList.remove('active');
+
   const drawModeBtn = document.getElementById('toggle-draw-mode');
-  drawModeBtn.textContent = 'Draw :OFF';
-  drawModeBtn.classList.remove('active');
+  if(drawModeBtn) {
+      drawModeBtn.textContent = 'Draw :OFF';
+      drawModeBtn.classList.remove('active');
+  }
 
   renderObjects();
 }
@@ -840,8 +912,6 @@ function drawRobot(ctx) {
   ctx.restore();
 }
 
-// ในไฟล์ modules/mapStatic.js
-
 function drawPatrolPath(ctx) {
     // ถ้าไม่มีเส้นทาง, ข้อมูล meta, หรือรูปแผนที่ ให้หยุดทำงาน
     if (patrolState.patrolPath.length < 1 || !activeMap?.meta || !mapImage) return;
@@ -901,41 +971,51 @@ function drawInteractionUI(ctx) {
 }
 
 function drawDashedLineToMouse(ctx) {
-    // ตรวจสอบว่ามีข้อมูลที่จำเป็นครบถ้วนหรือไม่
-    if (!activeMap.meta || !mapImage || patrolPath.length === 0) {
-        return;
-    }
+    if (!activeMap.meta || !mapImage || patrolPath.length === 0) return;
 
-    // --- 1. หาพิกัดของ "จุดเริ่มต้น" (จุดสุดท้ายของ Path) ---
     const lastPoint = patrolPath[patrolPath.length - 1];
+    
+    // แปลงเมาส์เป็น World Coord เพื่อเช็ค Collision
+    const rect = interactionCanvas.getBoundingClientRect();
+    const mousePx = (currentMousePos.x - mapView.viewState.offsetX) / mapView.viewState.scale;
+    const mousePy = (currentMousePos.y - mapView.viewState.offsetY) / mapView.viewState.scale;
+    
+    const mouseWorld = {
+        x: activeMap.meta.origin[0] + (mousePx * activeMap.meta.resolution),
+        y: activeMap.meta.origin[1] + ((mapImage.height - mousePy) * activeMap.meta.resolution)
+    };
+
+    //เช็คว่าเส้นทางติดกำแพงไหม
+    const isBlocked = isPathBlocked(lastPoint, mouseWorld);
+
+    // การคำนวณ Screen Coordinates เดิม
     const { resolution, origin } = activeMap.meta;
     const mapImgHeight = mapImage.height;
+    const lastPxMap = (lastPoint.x - origin[0]) / resolution;
+    const lastPyMap = mapImgHeight - (lastPoint.y - origin[1]) / resolution;
+    const lastScreenX = lastPxMap * mapView.viewState.scale + mapView.viewState.offsetX;
+    const lastScreenY = lastPyMap * mapView.viewState.scale + mapView.viewState.offsetY;
 
-    // แปลงจาก World Coordinates -> Map Pixel Coordinates
-    const lastPx = (lastPoint.x - origin[0]) / resolution;
-    const lastPy = mapImgHeight - (lastPoint.y - origin[1]) / resolution;
+    ctx.save();
     
-    // แปลงจาก Map Pixel Coordinates -> Screen Coordinates (นำ Pan/Zoom มาคำนวณ)
-    const lastScreenX = lastPx * mapView.viewState.scale + mapView.viewState.offsetX;
-    const lastScreenY = lastPy * mapView.viewState.scale + mapView.viewState.offsetY;
+    if (isBlocked) {
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'; // สีแดงเข้ม
+        ctx.lineWidth = 3;
+        // เปลี่ยน cursor เป็นห้ามผ่านทันที
+        interactionCanvas.style.cursor = 'not-allowed'; 
+    } else {
+        ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)'; // สีฟ้าปกติ
+        ctx.lineWidth = 2;
+        // เปลี่ยน cursor เป็นเป้าเล็งปกติ
+        interactionCanvas.style.cursor = 'crosshair';
+    }
 
-    // --- 2. หาพิกัดของ "จุดสิ้นสุด" (ตำแหน่งเมาส์ปัจจุบัน) ---
-    // currentMousePos เป็น Screen Coordinates อยู่แล้ว ไม่ต้องแปลง
-    const mouseScreenX = currentMousePos.x;
-    const mouseScreenY = currentMousePos.y;
-
-    // --- 3. วาดเส้นประ ---
-    ctx.save(); // บันทึกสถานะของ context ปัจจุบัน
-    ctx.strokeStyle = 'rgba(0, 255, 255, 0.7)'; // สีฟ้าโปร่งแสง
-    ctx.lineWidth = 2;
-    ctx.setLineDash([5, 5]); // ตั้งค่าให้เป็นเส้นประ (วาด 5px, เว้น 5px)
-    
+    ctx.setLineDash([5, 5]);
     ctx.beginPath();
-    ctx.moveTo(lastScreenX, lastScreenY); // ย้ายไปจุดเริ่มต้น
-    ctx.lineTo(mouseScreenX, mouseScreenY); // ลากเส้นไปยังตำแหน่งเมาส์
-    ctx.stroke(); // สั่งวาดเส้น
-    
-    ctx.restore(); // คืนค่า context กลับไปเป็นเหมือนเดิม (เส้นทึบ, สีดำ)
+    ctx.moveTo(lastScreenX, lastScreenY);
+    ctx.lineTo(currentMousePos.x, currentMousePos.y);
+    ctx.stroke();
+    ctx.restore();
 }
 
 function drawGoal(ctx) {
@@ -982,7 +1062,6 @@ function drawGoal(ctx) {
         ctx.restore();
     }
 }
-// ในไฟล์ modules/mapStatic.js
 
 function drawArrow(ctx, startWorldPos, endScreenPos, color) {
     // ตรวจสอบข้อมูลที่จำเป็น
@@ -1030,4 +1109,49 @@ function drawArrow(ctx, startWorldPos, endScreenPos, color) {
     ctx.fill();
 
     ctx.restore(); // คืนค่า context
+}
+
+function isPathBlocked(p1, p2) {
+  if (!collisionMapData || !activeMap.meta) return false;
+
+  const { resolution, origin } = activeMap.meta;
+  
+  // แปลง World Coordinate -> Map Pixel Coordinate
+  // (ใช้ Math.floor เพื่อให้ได้ index ที่แน่นอน)
+  const x0 = Math.floor((p1.x - origin[0]) / resolution);
+  const y0 = Math.floor(collisionHeight - ((p1.y - origin[1]) / resolution));
+  const x1 = Math.floor((p2.x - origin[0]) / resolution);
+  const y1 = Math.floor(collisionHeight - ((p2.y - origin[1]) / resolution));
+
+  // Bresenham's Line Algorithm (เดินทีละพิกเซลบนเส้นตรง)
+  let dx = Math.abs(x1 - x0);
+  let dy = Math.abs(y1 - y0);
+  let sx = (x0 < x1) ? 1 : -1;
+  let sy = (y0 < y1) ? 1 : -1;
+  let err = dx - dy;
+
+  let x = x0;
+  let y = y0;
+
+  while (true) {
+    // เช็คว่าพิกัดอยู่ในขอบเขตแผนที่ไหม
+    if (x >= 0 && x < collisionWidth && y >= 0 && y < collisionHeight) {
+      const index = y * collisionWidth + x;
+      const pixel = collisionMapData[index];
+      
+      // เช็คค่าสี: ถ้าค่าสีแดง (R) น้อยกว่า 50 ถือเป็นสิ่งกีดขวาง
+      // (อิงตาม Logic การสร้าง inflatedImageData)
+      if ((pixel & 0xFF) <= 250) { 
+        return true; //เจอกำแพง หรือ พื้นที่ Unknown
+      }
+    }
+
+    if (x === x1 && y === y1) break;
+    
+    let e2 = 2 * err;
+    if (e2 > -dy) { err -= dy; x += sx; }
+    if (e2 < dx) { err += dx; y += sy; }
+  }
+
+  return false; // ✅ ทางสะดวก
 }
