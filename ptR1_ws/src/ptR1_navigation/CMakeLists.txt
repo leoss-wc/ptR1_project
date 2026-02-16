@@ -81,6 +81,7 @@ find_package(catkin REQUIRED COMPONENTS
     ClearCostmaps.srv
     StopAMCL.srv
     StartAMCL.srv
+    SaveEditedMap.srv
 
  )
 
@@ -96,7 +97,9 @@ find_package(catkin REQUIRED COMPONENTS
   DEPENDENCIES
   std_msgs 
   geometry_msgs
-  #   nav_msgs#   # tf2_geometry_msgs #geometry_msgs
+  #nav_msgs 
+  #tf2_geometry_msgs 
+  #geometry_msgs
  )
 
 ################################################

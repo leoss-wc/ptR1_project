@@ -49,6 +49,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getMapDataByName: (name) => ipcRenderer.invoke('get-map-data-by-name', name),
   saveMapCache: (mapName, imageData) => ipcRenderer.invoke('mapcache:save', { mapName, imageData }),
   loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
+  deleteMapCache: (mapName) => ipcRenderer.invoke('mapcache:delete', mapName),
+  saveEditedMap: (newName, sourceName, base64) => 
+        ipcRenderer.invoke('save-edited-map', { newName, sourceName, base64 }),
   
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),

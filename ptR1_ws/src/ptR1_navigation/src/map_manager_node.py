@@ -10,12 +10,16 @@ from geometry_msgs.msg import PoseStamped
 from std_srvs.srv import Empty
 import json
 from geometry_msgs.msg import PoseWithCovarianceStamped #สำหรับรับ/ส่ง pose
+import math
+import cv2
+import numpy as np
+import shutil # ไว้ copy file
 # Import services
 from ptR1_navigation.srv import (ListMaps, ListMapsResponse, LoadMap, LoadMapResponse,
                                  GetMapFile, GetMapFileResponse, SaveMap, SaveMapResponse,
                                  StartSLAM, StartSLAMResponse, StopSLAM, StopSLAMResponse,
                                  DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,                                            
-                                 ClearCostmaps, ClearCostmapsResponse)
+                                 ClearCostmaps, ClearCostmapsResponse,SaveEditedMap, SaveEditedMapResponse)
 
 #MAP_FOLDER = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/maps')
 MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
@@ -48,10 +52,64 @@ class MapManager:
         rospy.Service('/map_manager/reset_slam', ResetSLAM, self.handle_reset_slam)
         rospy.Service('/map_manager/get_map_file', GetMapFile, self.handle_get_map_file)
         rospy.Service('/map_manager/clear_costmaps', ClearCostmaps, self.handle_clear_costmaps)
+        rospy.Service('/map_manager/save_edited_map', SaveEditedMap, self.handle_save_edited_map)
         
         rospy.on_shutdown(self.shutdown_hook)
         rospy.loginfo("All Map Manager services are ready.")
+    def handle_save_edited_map(self, req):
+        new_name = req.map_name
+        source_name = req.source_map_name
+        
+        if not new_name:
+            return SaveEditedMapResponse(False, "New map name is empty")
 
+        rospy.loginfo(f"Saving edited map as '{new_name}' (Source: {source_name})...")
+
+        try:
+            base_path = MAP_FOLDER
+            
+            # ไฟล์ใหม่ 3 ไฟล์
+            pgm_path = os.path.join(base_path, f"{new_name}.pgm")
+            png_path = os.path.join(base_path, f"{new_name}.png")
+            yaml_path = os.path.join(base_path, f"{new_name}.yaml")
+            
+            # ไฟล์ต้นฉบับ (ไว้ก๊อป yaml)
+            source_yaml_path = os.path.join(base_path, f"{source_name}.yaml")
+
+            # 2. แปลง Base64 -> Image
+            img_data = base64.b64decode(req.base64_image.split(',')[1])
+            np_arr = np.frombuffer(img_data, np.uint8)
+            image = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
+
+            # 3. บันทึกรูปภาพ (Save PGM for ROS & PNG for App)
+            cv2.imwrite(pgm_path, image) # PGM
+            cv2.imwrite(png_path, image) # PNG ✅
+            
+            # 4. สร้างไฟล์ YAML (โดยการก๊อปจากต้นฉบับแล้วแก้ชื่อรูป)
+            if os.path.exists(source_yaml_path):
+                with open(source_yaml_path, 'r') as f:
+                    yaml_content = f.readlines()
+                
+                with open(yaml_path, 'w') as f:
+                    for line in yaml_content:
+                        # แก้บรรทัด image: ให้ชี้ไปไฟล์ใหม่
+                        if line.strip().startswith('image:'):
+                            f.write(f"image: {new_name}.pgm\n")
+                        else:
+                            f.write(line)
+            else:
+                # กรณีหาไฟล์ต้นฉบับไม่เจอ (สร้างใหม่แบบ Default)
+                rospy.logwarn("Source YAML not found. Creating default YAML.")
+                with open(yaml_path, 'w') as f:
+                    f.write(f"image: {new_name}.pgm\n")
+                    f.write("resolution: 0.05\norigin: [-10.0, -10.0, 0.0]\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n")
+####
+            rospy.loginfo(f"Map saved: {new_name}.pgm, .png, .yaml")
+            return SaveEditedMapResponse(True, f"Saved as {new_name}")
+
+        except Exception as e:
+            rospy.logerr(f"❌ Failed to save map: {e}")
+            return SaveEditedMapResponse(False, str(e))       
 # ------ Map/SLAM Handlers------
     def handle_list_maps(self, req):
         rospy.loginfo("Listing maps...")

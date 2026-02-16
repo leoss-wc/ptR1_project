@@ -35,6 +35,9 @@ parentPort.on('message', (message) => {
       case 'saveMap':
         callSaveMapService(message.mapName);
         break;
+      case 'saveEditedMap':
+        callSaveEditedMapService(message.data.name, message.data.sourceName, message.data.base64);
+        break;
       case 'sendSingleGoal':
         sendSingleGoalToMoveBase(message.data); 
         break;
@@ -539,6 +542,49 @@ function requestMapFileAsBase64(mapName) {
     } else {
       console.warn(`❌ Map fetch failed: ${res.message}`);
     }
+  });
+}
+
+function callSaveEditedMapService(mapName, sourceMapName, base64Data) {
+  // เช็ค connection
+  if (!ros || !ros.isConnected) {
+     parentPort.postMessage({
+        type: 'map-save-edited',
+        data: { success: false, message: 'ROS disconnected', name: mapName }
+     });
+     return;
+  }
+
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/map_manager/save_edited_map',
+    serviceType: 'ptR1_navigation/SaveEditedMap'
+  });
+
+  const request = new ROSLIB.ServiceRequest({
+    map_name: mapName,          // ชื่อไฟล์ใหม่
+    source_map_name: sourceMapName, //ชื่อไฟล์ต้นฉบับ (เพื่อไปก๊อป .yaml)
+    base64_image: base64Data    // ข้อมูลรูปภาพ
+  });
+
+  service.callService(request, (result) => {
+    parentPort.postMessage({
+      type: 'map-save-edited',
+      data: {
+        success: result.success,
+        message: result.message,
+        name: mapName
+      }
+    });
+  }, (err) => {
+    parentPort.postMessage({
+      type: 'map-save-edited',
+      data: {
+        success: false,
+        message: 'Service Error: ' + err.toString(),
+        name: mapName
+      }
+    });
   });
 }
 

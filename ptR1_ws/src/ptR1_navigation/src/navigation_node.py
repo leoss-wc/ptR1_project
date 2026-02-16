@@ -9,6 +9,9 @@ from geometry_msgs.msg import PoseWithCovarianceStamped
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from std_srvs.srv import Trigger, TriggerResponse 
 import math
+import base64
+import cv2
+import numpy as np
 
 # Import Service ที่จำเป็น
 from ptR1_navigation.srv import (StartAMCL, StartAMCLResponse, StopAMCL, StopAMCLResponse,
@@ -62,7 +65,7 @@ class NavigationManager:
         
         rospy.on_shutdown(self.cleanup)
         rospy.loginfo("Navigation Services Ready.")
-
+    
     def update_status(self, status_text):
         self.status_pub.publish(status_text)
     # --- 1. Pose Management ---

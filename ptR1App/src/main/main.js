@@ -133,9 +133,6 @@ ipcMain.handle('mapcache:save', async (_, { mapName, imageData }) => {
       fs.mkdirSync(mapCacheDir);
     }
     const filePath = path.join(mapCacheDir, `${mapName}.json`);
-    
-    // 🔧 แก้ไข: เปลี่ยนจาก dataToSave เป็น imageData
-    // ตัวแปร imageData คือข้อมูลที่ถูกส่งมาจาก mapStatic.js และพร้อมสำหรับบันทึกแล้ว
     await fs.promises.writeFile(filePath, JSON.stringify(imageData));
     
     console.log(`[Cache] Saved processed data for map: ${mapName}`);
@@ -158,6 +155,23 @@ ipcMain.handle('mapcache:load', async (_, mapName) => {
   } catch (error) {
     console.error(`[Cache] Failed to load cache for map: ${mapName}`, error);
     return null;
+  }
+});
+
+ipcMain.handle('mapcache:delete', async (_, mapName) => {
+  try {
+    const filePath = path.join(mapCacheDir, `${mapName}.json`);
+    // ตรวจสอบก่อนว่ามีไฟล์ไหม (เพื่อความชัวร์)
+    await fs.promises.unlink(filePath);
+    console.log(`[Cache] Deleted cache for map: ${mapName}`);
+    return true;
+  } catch (error) {
+    // ถ้า Error code คือ 'ENOENT' แปลว่าไฟล์ไม่มีอยู่แล้ว (ถือว่าลบสำเร็จ)
+    if (error.code === 'ENOENT') {
+        return true; 
+    }
+    console.error(`[Cache] Failed to delete cache for map: ${mapName}`, error);
+    return false;
   }
 });
 
@@ -571,6 +585,43 @@ ipcMain.handle('get-local-maps', async () => {
   return files.sort((a, b) => a.name.localeCompare(b.name)).reverse();
 });
 
+ipcMain.handle('save-edited-map', async (event, { newName, sourceName, base64 }) => {
+    return new Promise((resolve, reject) => {
+        if (!rosWorker) {
+            resolve({ success: false, message: "Server/Worker not found" });
+            return;
+        }
+        // 1. สร้าง Listener สำหรับดักฟัง Worker
+        // ต้องสร้างเป็นตัวแปร function เพื่อให้เราสั่ง .off (ลบ listener) ได้เมื่อจบงาน
+        const workerListener = (message) => {
+            // เช็คว่าเป็นข้อความตอบกลับเรื่องนี้หรือเปล่า
+            if (message.type === 'map-save-edited') {
+                // ✅ ได้คำตอบแล้ว -> ลบ Listener ทิ้งทันที (Clean up)
+                rosWorker.off('message', workerListener);
+                
+                // ส่ง data กลับไปที่ Frontend
+                resolve(message.data);
+            }
+        };
+        // 2. เริ่มดักฟัง (Listener) ที่ตัว Worker
+        rosWorker.on('message', workerListener);
+        // 3. ส่งคำสั่งไปที่ Worker
+        rosWorker.postMessage({ 
+            type: 'saveEditedMap',
+            data: {
+                name: newName, 
+                sourceName: sourceName, // ส่ง sourceName ไปด้วย
+                base64: base64 
+            }
+        });
+        // 4. Timeout (เผื่อ Server ค้าง)
+        setTimeout(() => {
+            // หมดเวลา -> ลบ Listener ทิ้งเพื่อไม่ให้รก Memory
+            rosWorker.off('message', workerListener);
+            resolve({ success: false, message: "Timeout: ROS did not respond." });
+        }, 10000);
+    });
+});
 ipcMain.handle('get-userdata-path', (_, subfolder = '') => {
   return path.join(app.getPath('userData'), subfolder);
 });

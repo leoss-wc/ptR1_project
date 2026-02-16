@@ -32,6 +32,8 @@ let collisionMapData = null; // เก็บข้อมูล Pixel แผน�
 let collisionWidth = 0;
 let collisionHeight = 0;
 
+let mapEdits = [];
+
 
 export { renderObjects, renderScan };
 
@@ -92,6 +94,7 @@ function renderObjects() {
   drawPatrolPath(ctx);
   drawRobot(ctx);
   drawGoal(ctx);
+  drawUserWalls(ctx)
   // การวาด Goal จะถูกจัดการผ่าน patrolState และ renderDashboardMap
   
   ctx.restore();
@@ -255,10 +258,48 @@ function bindUI() {
     console.log(`Activating map: ${current_map_select.name}`);
     await activateMap(current_map_select.name, current_map_select.meta);
   });
+  document.getElementById('toggle-eraser-btn').addEventListener('click', () => toggleMode('eraser'));
+  document.getElementById('undo-edit-btn').addEventListener('click', () => undoLastEdit());
+  document.getElementById('toggle-wall-btn').addEventListener('click', () => {
+    toggleMode('wall');
+  });
+
+  document.getElementById('save-edit-btn').addEventListener('click', async () => {
+    const defaultName = activeMap.name + "_v2";
+    let newName = prompt("Enter name for the new map:", defaultName);
+
+    if (!newName) return;
+    newName = newName.trim();
+
+    // เช็คชื่อซ้ำ
+    const existingNames = await getExistingMapNames();
+    if (existingNames.includes(newName)) {
+        const confirmOverwrite = confirm(`⚠️ Map named "${newName}" already exists!\nDo you want to OVERWRITE it?`);
+        if (!confirmOverwrite) return;
+        
+        //ถ้าตกลงเขียนทับ -> ต้องลบ Cache เก่าทิ้งก่อน
+        console.log(`Clearing cache for overwritten map: ${newName}`);
+        await window.electronAPI.deleteMapCache(newName);
+    }
+
+    // เซฟตามปกติ
+    await saveEditedMapAsNew(newName);
+    
+    // สั่ง Sync เพื่อให้ Gallery อัปเดตรูปใหม่ (เผื่อรูป Thumbnail เปลี่ยน)
+    setTimeout(() => {
+        window.electronAPI.syncMaps();
+    }, 1000); // รอสักนิดให้ไฟล์เขียนลง Disk เสร็จ
+  });
+
 
   window.electronAPI.onSyncComplete((mapList) => {
     loadLocalMapsToGallery();
   });
+  }
+
+async function getExistingMapNames() {
+    const maps = await window.electronAPI.getLocalMaps();
+    return maps.map(m => m.name); // คืนค่าเป็น Array ของชื่อ ['map1', 'office1', ...]
 }
 
 function toggleMode(newMode) {
@@ -268,6 +309,14 @@ function toggleMode(newMode) {
     cancelMode();
     mode = newMode;
     interactionCanvas.style.cursor = 'crosshair';
+    if (mode === 'wall') {
+        interactionCanvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg ...><circle ... fill=\'black\' .../></svg>") 10 10, auto'; 
+    } else if (mode === 'eraser') {
+        // Cursor สีขาวขอบดำ สำหรับยางลบ
+        interactionCanvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\'><circle cx=\'10\' cy=\'10\' r=\'8\' fill=\'white\' stroke=\'black\' stroke-width=\'2\'/></svg>") 10 10, auto';
+    } else {
+        interactionCanvas.style.cursor = 'crosshair';
+    }
     
     // Update Button States
     if (newMode === 'goal') document.getElementById('set-goal-btn').classList.add('active');
@@ -446,6 +495,19 @@ function preprocessMapData(sourceImage) {
 function setupCanvasEvents() {
   const canvas = interactionCanvas;
   canvas.addEventListener('mousedown', (e) => {
+  if (mode === 'wall' || mode === 'eraser') {
+        isDrawing = true;
+        
+        // เริ่มเส้นใหม่ ระบุประเภทตามโหมดปัจจุบัน
+        mapEdits.push({ 
+            type: mode, 
+            points: [] 
+        });
+        
+        addEditPoint(e); // เก็บจุดแรก
+        renderObjects(); 
+        
+    }
   if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
     const worldPoint = getWorldCoordsFromEvent(e);
     if (!isClickInsideBounds(worldPoint)) return;
@@ -537,6 +599,11 @@ function setupCanvasEvents() {
   currentMousePos.x = e.clientX - rect.left;
   currentMousePos.y = e.clientY - rect.top;
 
+  if ((mode === 'wall' || mode === 'eraser') && isDrawing) {
+         addEditPoint(e);
+         renderObjects();
+     }
+
   if (mode === 'draw') {
     if (isDrawing) {
       addPathPoint(e);
@@ -591,6 +658,128 @@ function setupCanvasEvents() {
       cancelMode();
     }
   });
+}
+
+function addEditPoint(e) {
+    const worldPoint = getWorldCoordsFromEvent(e);
+    if (worldPoint && isClickInsideBounds(worldPoint)) {
+        // ใส่จุดลงใน edit ล่าสุด
+        if (mapEdits.length > 0) {
+            mapEdits[mapEdits.length - 1].points.push(worldPoint);
+        }
+    }
+}
+
+export function undoLastEdit() {
+    if (mapEdits.length > 0) {
+        mapEdits.pop(); // ลบการกระทำล่าสุด
+        renderObjects(); // วาดใหม่
+        console.log("Undo successful");
+    }
+}
+
+function drawUserWalls(ctx) {
+    if (mapEdits.length === 0 || !activeMap?.meta || !mapImage) return;
+
+    const { resolution, origin } = activeMap.meta;
+    const imgH = mapImage.height;
+
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // ความหนาเส้น (ปรับตามใจชอบ)
+    ctx.lineWidth = 15 / mapView.viewState.scale; 
+
+    mapEdits.forEach(edit => {
+        if (edit.points.length < 2) return;
+        
+        //เลือกสีตามประเภท
+        if (edit.type === 'wall') {
+            ctx.strokeStyle = '#000000'; // สีดำ = สร้างกำแพง
+        } else if (edit.type === 'eraser') {
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // สีขาวโปร่งแสง = ลบกำแพง (แสดงผลบนจอ)
+        }
+
+        ctx.beginPath();
+        edit.points.forEach((point, i) => {
+            const px = (point.x - origin[0]) / resolution;
+            const py = imgH - ((point.y - origin[1]) / resolution);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
+export async function saveEditedMapAsNew(newName) {
+    if (!activeMap.base64 || !activeMap.name) return;
+
+    // สร้าง Canvas ชั่วคราวขนาดเท่ารูปจริง (เพื่อความคมชัด)
+    const tempCanvas = document.createElement('canvas');
+    tempCanvas.width = mapImage.width;
+    tempCanvas.height = mapImage.height;
+    const tCtx = tempCanvas.getContext('2d');
+
+    // 1. วาดรูปแผนที่เดิมลงไป
+    tCtx.drawImage(mapImage, 0, 0);
+
+    const { resolution, origin } = activeMap.meta;
+    tCtx.lineCap = 'round';
+    tCtx.lineJoin = 'round';
+    tCtx.lineWidth = 15; // ความหนาจริงในไฟล์
+
+    mapEdits.forEach(edit => {
+        if (edit.points.length < 2) return;
+        if (edit.type === 'wall') {
+            tCtx.strokeStyle = '#000000'; // Occupied
+        } else {
+            tCtx.strokeStyle = '#FFFFFF'; // Free (ลบกำแพงออก)
+        }
+
+        tCtx.beginPath();
+        edit.points.forEach((point, i) => {
+            const px = (point.x - origin[0]) / resolution;
+            const py = tempCanvas.height - ((point.y - origin[1]) / resolution);
+            if (i === 0) tCtx.moveTo(px, py);
+            else tCtx.lineTo(px, py);
+        });
+        tCtx.stroke();
+    });
+    console.log(`Saving... ${newName}`);
+    
+    //เรียก Service (รอแค่ success/fail)
+    const result = await window.electronAPI.saveEditedMap(newName, activeMap.name, newBase64);
+
+    if (result.success) {
+        alert("Map saved successfully!");
+
+        //ถ้าชื่อเดิม ให้ลบ Cache ทิ้งก่อน
+        if (newName === activeMap.name) {
+             await window.electronAPI.deleteMapCache(newName);
+        }
+        //สั่ง Sync Gallery ใหม่
+        window.electronAPI.syncMaps();
+        //รอ Sync เสร็จ แล้วเรียก loadMap
+        setTimeout(async () => {
+             // โหลดรูปใหม่จาก Server มาแสดง (ข้าม Cache เพราะลบไปแล้ว/หรือเป็นชื่อใหม่)
+             const mapData = await window.electronAPI.getMapDataByName(newName);
+             if (mapData.success) {
+                 // อัปเดตตัวแปร Selection
+                 current_map_select = mapData;
+                 // แสดงผล
+                 mapImage = new Image();
+                 mapImage.onload = () => {
+                     activateMap(newName, mapData.meta);
+                 };
+                 mapImage.src = mapData.base64;
+             }
+        }, 1000); 
+
+        toggleMode('none'); 
+    } else {
+        alert("❌ Failed to save map: " + result.message);
+    }
 }
 
 export function cancelMode() {
