@@ -733,6 +733,9 @@ app.whenReady().then(() => {
     rosWorker = new Worker(path.join(__dirname, 'server.js'));
     rosWorker.on('message', (message) => {
       switch (message.type) {
+        case 'tf-update':
+            mainWindow.webContents.send('tf-update', message.data);
+            break;
         case 'map-data':
           break;
         case 'robot-pose-amcl':

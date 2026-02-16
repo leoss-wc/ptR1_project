@@ -231,6 +231,24 @@ function setupGlobalCallbacks() {
             renderObjects();
         }
     });
+    window.electronAPI.onTfUpdate((tfData) => {
+        // TF ส่งมาเป็น { translation: {x,y,z}, rotation: {x,y,z,w} }
+        // เราต้องแปลงให้เข้ากับฟอร์มที่ updateRobotPose ต้องการ
+        const position = { 
+            x: tfData.translation.x, 
+            y: tfData.translation.y 
+        };
+        const orientation = tfData.rotation;
+
+        // เรียกฟังก์ชันวาดหุ่นยนต์ตัวเดิมของคุณ
+        updateRobotPose(position, orientation);
+        
+        // สั่งวาดใหม่
+        renderDashboardMap();
+        renderObjects(); // วาดหุ่นยนต์และวัตถุอื่นๆ
+    });
+
+
     window.electronAPI.onPlannedPath(setPlannedPath);
     window.electronAPI.onLaserScan((scan) => {
         updateLaserScan(scan);

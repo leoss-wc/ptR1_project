@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onRobotPosAmcl: (callback) => ipcRenderer.on('robot-pose-amcl', (event, ...args) => callback(...args)),
   resetSLAM: () => ipcRenderer.send('reset-slam'),
   onSLAMResetResult: (callback) => ipcRenderer.on('slam-reset-result', (_, result) => callback(result)),
+  onTfUpdate: (callback) => ipcRenderer.on('tf-update', (_event, value) => callback(value)),
+
 
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onPlannedPath: (callback) => ipcRenderer.on('planned-path', (event, ...args) => callback(...args)),

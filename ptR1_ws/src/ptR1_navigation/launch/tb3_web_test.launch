@@ -32,6 +32,7 @@
   <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch">
      <arg name="port" value="9090"/>
   </include>
+  <node name="tf2_web_republisher" pkg="tf2_web_republisher" type="tf2_web_republisher" output="screen" />
 
   <node name="map_manager" pkg="ptR1_navigation" type="navigation_node.py" output="screen" />
 

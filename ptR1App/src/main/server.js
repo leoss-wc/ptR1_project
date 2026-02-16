@@ -778,7 +778,7 @@ function callStartStreamService() {
     console.log('Server : Start Stream Failed: ROS not connected.');
     // ส่งกลับไปบอก Main Process ว่าพัง (Type ต้องตรงกับที่ Main รอรับ)
     parentPort.postMessage({
-      type: 'startStreamResponse', // ⭐ Type นี้ต้องตรงกับที่ Main Process รอ
+      type: 'startStreamResponse',
       success: false,
       message: 'ROS is not connected.'
     });
@@ -800,7 +800,7 @@ function callStartStreamService() {
     
     // 4. ส่งคำตอบกลับไปหา Main Process
     parentPort.postMessage({
-      type: 'startStreamResponse', // ⭐ ส่งกลับด้วย Type นี้
+      type: 'startStreamResponse',
       success: result.success,
       message: result.message
     });
