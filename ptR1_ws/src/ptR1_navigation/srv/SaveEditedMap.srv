@@ -1,7 +1,7 @@
-# Request
 string map_name
-string source_map_name
 string base64_image
+string yaml_content 
 ---
+# Response
 bool success
 string message

@@ -34,8 +34,26 @@ let collisionHeight = 0;
 
 let mapEdits = [];
 
+const mapDependentButtons = [
+    'toggle-draw-mode',
+    'save-path-btn',
+    'toggle-wall-btn',
+    'toggle-eraser-btn',
+    'save-edit-btn'
+];
 
 export { renderObjects, renderScan };
+
+function updateMapToolsState(hasMap) {
+    mapDependentButtons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+            btn.disabled = !hasMap;
+            btn.style.opacity = hasMap ? '1' : '0.5';
+            btn.style.cursor = hasMap ? 'pointer' : 'not-allowed';
+        }
+    });
+}
 
 export function initStaticMap() {
   // 2. Get element และ context ของทุก Layer
@@ -59,6 +77,7 @@ export function initStaticMap() {
   setupCanvasEvents();
   loadLocalMapsToGallery();
   loadLastActiveMap();
+  updateMapToolsState(false);
 }
 
 // ฟังก์ชันสำหรับปรับขนาด Canvas ทั้งหมดให้ตรงกับขนาดของ Container
@@ -194,6 +213,12 @@ function bindUI() {
     const mapName = current_map_select.name;
     if (confirm(`Are you sure you want to PERMANENTLY delete map "${mapName}"?`)) {
       window.electronAPI.deleteMap(mapName);
+      window.electronAPI.deleteMapCache(mapName); // ลบ Cache ที่เกี่ยวข้องด้วย (ถ้ามี)
+      setTimeout(() => {
+        window.electronAPI.syncMaps(); // รีเฟรช Gallery หลังลบ
+        current_map_select = { name: null, base64: null, meta: null };
+        renderAllLayers(); // เคลียร์แผนที่ออกจากหน้าจอ
+        }, 1000);
     }
   });
   document.getElementById('set-home-btn').addEventListener('click', () => {
@@ -232,6 +257,7 @@ function bindUI() {
       ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
       renderObjects();
       // โหลด Gallery ใหม่
+      updateMapToolsState(false);
       loadLocalMapsToGallery();
     } else {
       alert(`Error: ${result.message}`);
@@ -266,7 +292,7 @@ function bindUI() {
 
   document.getElementById('save-edit-btn').addEventListener('click', async () => {
     const defaultName = activeMap.name + "_v2";
-    let newName = prompt("Enter name for the new map:", defaultName);
+    let newName = await showPrompt("Enter name for the new map:", defaultName);
 
     if (!newName) return;
     newName = newName.trim();
@@ -303,18 +329,31 @@ async function getExistingMapNames() {
 }
 
 function toggleMode(newMode) {
-  if (mode === newMode) {
-    cancelMode();
-  } else {
-    cancelMode();
-    mode = newMode;
-    interactionCanvas.style.cursor = 'crosshair';
-    if (mode === 'wall') {
-        interactionCanvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg ...><circle ... fill=\'black\' .../></svg>") 10 10, auto'; 
-    } else if (mode === 'eraser') {
-        // Cursor สีขาวขอบดำ สำหรับยางลบ
-        interactionCanvas.style.cursor = 'url("data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'20\' height=\'20\'><circle cx=\'10\' cy=\'10\' r=\'8\' fill=\'white\' stroke=\'black\' stroke-width=\'2\'/></svg>") 10 10, auto';
+    if (mode === newMode) {
+      cancelMode();
     } else {
+      cancelMode();
+      mode = newMode;
+      const wallBtn = document.getElementById('toggle-wall-btn');
+      const eraserBtn = document.getElementById('toggle-eraser-btn');
+      
+    if (mode === 'wall') {
+        interactionCanvas.style.cursor = 'crosshair'; 
+        if(wallBtn) {
+            wallBtn.textContent = 'Wall :ON'; // เปลี่ยนข้อความ
+            wallBtn.classList.add('active');  // เปลี่ยนสีปุ่ม
+        }
+    } else if (mode === 'eraser') {
+        interactionCanvas.style.cursor = 'crosshair';
+        if(eraserBtn) {
+            eraserBtn.textContent = 'Eraser:ON'; // เปลี่ยนข้อความ
+            eraserBtn.classList.add('active');    // เปลี่ยนสีปุ่ม
+        }
+    } else if (mode === 'none') {
+        //ถ้าไม่มีโหมด (เช่นสั่ง toggleMode('none')) ต้องเป็นลูกศรปกติ
+        interactionCanvas.style.cursor = 'default';
+    } else {
+        //โหมดเครื่องมืออื่นๆ (Goal, Pose, Draw) ใช้เป้าเล็งเพื่อความแม่นยำ
         interactionCanvas.style.cursor = 'crosshair';
     }
     
@@ -323,7 +362,7 @@ function toggleMode(newMode) {
     if (newMode === 'pose') document.getElementById('set-pose-btn').classList.add('active');
     if (newMode === 'draw') {
         const btn = document.getElementById('toggle-draw-mode');
-        btn.textContent = 'Draw :ON';
+        btn.textContent = 'Draw:ON';
         btn.classList.add('active');
         patrolPath.length = 0;
     }
@@ -390,6 +429,7 @@ async function activateMap(mapName, meta) {
   finalMapImage.onload = () => {
       mapImage = finalMapImage;
       resetStaticMapView(); 
+      updateMapToolsState(true);
   };
   finalMapImage.src = activeMap.base64;
 }
@@ -417,7 +457,7 @@ function isClickInsideBounds(worldPoint) {
 }
 
 function preprocessMapData(sourceImage) {
-  console.log("🗺️ StaticMap: Pre-processing with Uint32 Optimization...");
+  console.log("StaticMap: Pre-processing with Uint32 Optimization...");
   
   // 1. เตรียม Canvas ชั่วคราว
   const tempCanvas = document.createElement('canvas');
@@ -505,7 +545,8 @@ function setupCanvasEvents() {
         });
         
         addEditPoint(e); // เก็บจุดแรก
-        renderObjects(); 
+        renderObjects();
+        return; 
         
     }
   if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
@@ -680,24 +721,25 @@ export function undoLastEdit() {
 
 function drawUserWalls(ctx) {
     if (mapEdits.length === 0 || !activeMap?.meta || !mapImage) return;
-
     const { resolution, origin } = activeMap.meta;
     const imgH = mapImage.height;
 
     ctx.save();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
+    
     // ความหนาเส้น (ปรับตามใจชอบ)
-    ctx.lineWidth = 15 / mapView.viewState.scale; 
+    // การหารด้วย scale ถูกต้องแล้ว เพื่อให้เส้นไม่บวมเวลาซูม
+    ctx.lineWidth = 10 / mapView.viewState.scale; 
 
     mapEdits.forEach(edit => {
         if (edit.points.length < 2) return;
         
         //เลือกสีตามประเภท
         if (edit.type === 'wall') {
-            ctx.strokeStyle = '#000000'; // สีดำ = สร้างกำแพง
+            ctx.strokeStyle = '#000000'; // สีดำ
         } else if (edit.type === 'eraser') {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // สีขาวโปร่งแสง = ลบกำแพง (แสดงผลบนจอ)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)'; // สีขาว
         }
 
         ctx.beginPath();
@@ -713,70 +755,95 @@ function drawUserWalls(ctx) {
 }
 
 export async function saveEditedMapAsNew(newName) {
-    if (!activeMap.base64 || !activeMap.name) return;
+    if (!activeMap.name) return;
 
-    // สร้าง Canvas ชั่วคราวขนาดเท่ารูปจริง (เพื่อความคมชัด)
+    // 1. โหลดข้อมูลแผนที่ "ต้นฉบับ" (ตัวเต็ม ไม่ใช่ตัว Crop ที่โชว์อยู่)
+    // เราต้องดึงใหม่จาก Backend เพื่อความชัวร์ว่าเป็นไฟล์ Original จริงๆ
+    const originalMapData = await window.electronAPI.getMapDataByName(activeMap.name);
+    
+    if (!originalMapData.success) {
+        console.log("❌ Failed to load original map base.");
+        return;
+    }
+
+    // 2. สร้าง Image Object จากรูปต้นฉบับ
+    const fullImage = new Image();
+    fullImage.src = originalMapData.base64;
+    await new Promise(resolve => fullImage.onload = resolve);
+
+    // 3. เตรียม Canvas ขนาดเท่า "รูปต้นฉบับ"
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = mapImage.width;
-    tempCanvas.height = mapImage.height;
+    tempCanvas.width = fullImage.width;
+    tempCanvas.height = fullImage.height;
     const tCtx = tempCanvas.getContext('2d');
 
-    // 1. วาดรูปแผนที่เดิมลงไป
-    tCtx.drawImage(mapImage, 0, 0);
+    // 4. วาดรูปต้นฉบับลงไป
+    tCtx.imageSmoothingEnabled = false;
+    tCtx.drawImage(fullImage, 0, 0);
 
-    const { resolution, origin } = activeMap.meta;
+    // 5. วาดเส้น Edits ทับลงไป
+    // ⚠️ สำคัญ: ต้องใช้ Meta ของ "ต้นฉบับ" ในการคำนวณพิกัด
+    const { resolution, origin } = originalMapData.meta; 
+    
     tCtx.lineCap = 'round';
     tCtx.lineJoin = 'round';
-    tCtx.lineWidth = 15; // ความหนาจริงในไฟล์
+    // ปรับความหนาเส้น (เนื่องจากรูปเต็มอาจจะใหญ่กว่ารูป Crop ต้องกะขนาดให้ดี)
+    // หรือใช้สูตร: 15 / scale ถ้าต้องการ
+    tCtx.lineWidth = 10 / mapView.viewState.scale; ; 
 
     mapEdits.forEach(edit => {
         if (edit.points.length < 2) return;
+        
         if (edit.type === 'wall') {
-            tCtx.strokeStyle = '#000000'; // Occupied
+            tCtx.strokeStyle = '#000000'; 
         } else {
-            tCtx.strokeStyle = '#FFFFFF'; // Free (ลบกำแพงออก)
+            tCtx.strokeStyle = '#FFFFFF'; 
         }
 
         tCtx.beginPath();
         edit.points.forEach((point, i) => {
+            // ⚠️ สูตรคำนวณ: ใช้ origin ของต้นฉบับ (originalMapData.meta.origin)
+            // point.x/y คือ World Coordinate (เมตร) ซึ่งเป็นค่าสากล ไม่เปลี่ยนตามการ Crop
             const px = (point.x - origin[0]) / resolution;
-            const py = tempCanvas.height - ((point.y - origin[1]) / resolution);
+            const py = fullImage.height - ((point.y - origin[1]) / resolution);
+            
             if (i === 0) tCtx.moveTo(px, py);
             else tCtx.lineTo(px, py);
         });
         tCtx.stroke();
     });
-    console.log(`Saving... ${newName}`);
-    
-    //เรียก Service (รอแค่ success/fail)
-    const result = await window.electronAPI.saveEditedMap(newName, activeMap.name, newBase64);
+
+    // 6. แปลงเป็น Base64
+    const newBase64 = tempCanvas.toDataURL('image/png');
+
+    // 7. สร้าง YAML Content โดยใช้ค่า Origin/Resolution ของ "ต้นฉบับ"
+    // เพราะเราเซฟรูปขนาดเท่าเดิม Origin ก็ต้องเท่าเดิม
+    const x = origin[0];
+    const y = origin[1];
+    const th = origin[2] || 0.0;
+
+    const newYamlContent = `image: ${newName}.pgm
+resolution: ${resolution}
+origin: [${x}, ${y}, ${th}]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+`;
+
+    console.log(`Saving full-size map: ${newName}`);
+
+    // 8. ส่งไปบันทึก
+    const result = await window.electronAPI.saveEditedMap(newName, newBase64, newYamlContent);
 
     if (result.success) {
-        alert("Map saved successfully!");
-
-        //ถ้าชื่อเดิม ให้ลบ Cache ทิ้งก่อน
+        alert("Map saved successfully (Full Size)!");
+        // ... (Logic การเคลียร์ Cache หรือ Reload Gallery เดิมของคุณ) ...
         if (newName === activeMap.name) {
              await window.electronAPI.deleteMapCache(newName);
         }
-        //สั่ง Sync Gallery ใหม่
         window.electronAPI.syncMaps();
-        //รอ Sync เสร็จ แล้วเรียก loadMap
-        setTimeout(async () => {
-             // โหลดรูปใหม่จาก Server มาแสดง (ข้าม Cache เพราะลบไปแล้ว/หรือเป็นชื่อใหม่)
-             const mapData = await window.electronAPI.getMapDataByName(newName);
-             if (mapData.success) {
-                 // อัปเดตตัวแปร Selection
-                 current_map_select = mapData;
-                 // แสดงผล
-                 mapImage = new Image();
-                 mapImage.onload = () => {
-                     activateMap(newName, mapData.meta);
-                 };
-                 mapImage.src = mapData.base64;
-             }
-        }, 1000); 
-
         toggleMode('none'); 
+        mapEdits.length = 0; // เคลียร์ Edits หลังบันทึก
     } else {
         alert("❌ Failed to save map: " + result.message);
     }
@@ -804,7 +871,16 @@ export function cancelMode() {
       drawModeBtn.textContent = 'Draw :OFF';
       drawModeBtn.classList.remove('active');
   }
-
+  const wallBtn = document.getElementById('toggle-wall-btn');
+  if(wallBtn) {
+      wallBtn.textContent = 'Wall:OFF'; // คืนค่าเดิม
+      wallBtn.classList.remove('active');
+  }
+  const eraserBtn = document.getElementById('toggle-eraser-btn');
+  if(eraserBtn) {
+      eraserBtn.textContent = 'Eraser:OFF'; // คืนค่าเดิม
+      eraserBtn.classList.remove('active');
+  }
   renderObjects();
 }
 
@@ -1301,4 +1377,48 @@ async function loadLastActiveMap() {
   } else {
       console.warn("⚠️ Could not load last map:", result.message);
   }
+}
+
+function showPrompt(title, defaultValue = "") {
+    return new Promise((resolve) => {
+        const modal = document.getElementById('custom-prompt-modal');
+        const titleEl = document.getElementById('modal-title');
+        const inputEl = document.getElementById('modal-input');
+        const confirmBtn = document.getElementById('modal-confirm-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
+
+        // ตั้งค่าข้อความ
+        titleEl.textContent = title;
+        inputEl.value = defaultValue;
+        modal.classList.remove('hidden');
+        inputEl.focus();
+
+        // ฟังก์ชันเมื่อจบการทำงาน (Cleanup)
+        const cleanup = () => {
+            modal.classList.add('hidden');
+            confirmBtn.removeEventListener('click', onConfirm);
+            cancelBtn.removeEventListener('click', onCancel);
+            inputEl.removeEventListener('keydown', onKey);
+        };
+
+        const onConfirm = () => {
+            cleanup();
+            resolve(inputEl.value); // ส่งค่ากลับ
+        };
+
+        const onCancel = () => {
+            cleanup();
+            resolve(null); // ส่งค่า null (เหมือนกด Cancel ใน prompt ปกติ)
+        };
+
+        const onKey = (e) => {
+            if (e.key === 'Enter') onConfirm();
+            if (e.key === 'Escape') onCancel();
+        };
+
+        // ผูก Event
+        confirmBtn.addEventListener('click', onConfirm);
+        cancelBtn.addEventListener('click', onCancel);
+        inputEl.addEventListener('keydown', onKey);
+    });
 }

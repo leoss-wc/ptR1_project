@@ -56,60 +56,41 @@ class MapManager:
         
         rospy.on_shutdown(self.shutdown_hook)
         rospy.loginfo("All Map Manager services are ready.")
+
     def handle_save_edited_map(self, req):
-        new_name = req.map_name
-        source_name = req.source_map_name
-        
-        if not new_name:
-            return SaveEditedMapResponse(False, "New map name is empty")
-
-        rospy.loginfo(f"Saving edited map as '{new_name}' (Source: {source_name})...")
-
         try:
-            base_path = MAP_FOLDER
+            map_name = req.map_name
+            base64_str = req.base64_image
+            yaml_content = req.yaml_content #รับเนื้อหา YAML มาจาก JS
             
-            # ไฟล์ใหม่ 3 ไฟล์
-            pgm_path = os.path.join(base_path, f"{new_name}.pgm")
-            png_path = os.path.join(base_path, f"{new_name}.png")
-            yaml_path = os.path.join(base_path, f"{new_name}.yaml")
-            
-            # ไฟล์ต้นฉบับ (ไว้ก๊อป yaml)
-            source_yaml_path = os.path.join(base_path, f"{source_name}.yaml")
-
-            # 2. แปลง Base64 -> Image
-            img_data = base64.b64decode(req.base64_image.split(',')[1])
+            maps_dir = MAP_FOLDER
+            # Save PNG & PGM (Logic เดิม)
+            if "," in base64_str:
+                base64_str = base64_str.split(",")[1]
+            img_data = base64.b64decode(base64_str)
             np_arr = np.frombuffer(img_data, np.uint8)
-            image = cv2.imdecode(np_arr, cv2.IMREAD_GRAYSCALE)
-
-            # 3. บันทึกรูปภาพ (Save PGM for ROS & PNG for App)
-            cv2.imwrite(pgm_path, image) # PGM
-            cv2.imwrite(png_path, image) # PNG ✅
+            image = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
             
-            # 4. สร้างไฟล์ YAML (โดยการก๊อปจากต้นฉบับแล้วแก้ชื่อรูป)
-            if os.path.exists(source_yaml_path):
-                with open(source_yaml_path, 'r') as f:
-                    yaml_content = f.readlines()
-                
-                with open(yaml_path, 'w') as f:
-                    for line in yaml_content:
-                        # แก้บรรทัด image: ให้ชี้ไปไฟล์ใหม่
-                        if line.strip().startswith('image:'):
-                            f.write(f"image: {new_name}.pgm\n")
-                        else:
-                            f.write(line)
+            # Save PNG
+            cv2.imwrite(os.path.join(maps_dir, f"{map_name}.png"), image)
+            
+            # Save PGM (Convert to Gray)
+            if len(image.shape) > 2:
+                gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
-                # กรณีหาไฟล์ต้นฉบับไม่เจอ (สร้างใหม่แบบ Default)
-                rospy.logwarn("Source YAML not found. Creating default YAML.")
-                with open(yaml_path, 'w') as f:
-                    f.write(f"image: {new_name}.pgm\n")
-                    f.write("resolution: 0.05\norigin: [-10.0, -10.0, 0.0]\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n")
-####
-            rospy.loginfo(f"Map saved: {new_name}.pgm, .png, .yaml")
-            return SaveEditedMapResponse(True, f"Saved as {new_name}")
+                gray_image = image
+            cv2.imwrite(os.path.join(maps_dir, f"{map_name}.pgm"), gray_image)
+
+            # Save YAML (เขียนไฟล์ใหม่จาก Content ที่ส่งมาเลย)
+            yaml_path = os.path.join(maps_dir, f"{map_name}.yaml")
+            with open(yaml_path, 'w') as f:
+                f.write(yaml_content)
+
+            return {"success": True, "message": f"Saved {map_name} (PGM, PNG, YAML)"}
 
         except Exception as e:
-            rospy.logerr(f"❌ Failed to save map: {e}")
-            return SaveEditedMapResponse(False, str(e))       
+            return {"success": False, "message": str(e)}
+
 # ------ Map/SLAM Handlers------
     def handle_list_maps(self, req):
         rospy.loginfo("Listing maps...")

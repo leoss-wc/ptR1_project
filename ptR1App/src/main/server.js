@@ -36,7 +36,7 @@ parentPort.on('message', (message) => {
         callSaveMapService(message.mapName);
         break;
       case 'saveEditedMap':
-        callSaveEditedMapService(message.data.name, message.data.sourceName, message.data.base64);
+        callSaveEditedMapService(message.data.name, message.data.base64, message.data.yamlContent);
         break;
       case 'sendSingleGoal':
         sendSingleGoalToMoveBase(message.data); 
@@ -152,7 +152,10 @@ function connectROSBridge(url) {
 
   ros.on('connection', () => {
     console.log('Serverosbridger : Connected to ROSBridge at', url);
-    parentPort.postMessage({ type: 'connection', data: 'connected' });
+    parentPort.postMessage({ 
+        type: 'connection', 
+        data: { isConnected: true } 
+    });
     //subscribe function
     subscribeMapData();
     subscribePlannedPath();
@@ -170,13 +173,19 @@ function connectROSBridge(url) {
 
   ros.on('error', (error) => {
     console.log('Server : Error connecting to ROSBridge:');
-    parentPort.postMessage({ type: 'connection', data: 'error' });
+    parentPort.postMessage({ 
+        type: 'connection', 
+        data: { isConnected: false } 
+    });
     startReconnect();
   });
 
   ros.on('close', () => {
     console.log('Server :  Connection to ROSBridge closed url : ',url);
-    parentPort.postMessage({ type: 'connection', data: 'disconnected' });
+    parentPort.postMessage({ 
+        type: 'connection', 
+        data: { isConnected: false } 
+    });
     startReconnect();
   });
 }
@@ -545,12 +554,12 @@ function requestMapFileAsBase64(mapName) {
   });
 }
 
-function callSaveEditedMapService(mapName, sourceMapName, base64Data) {
+function callSaveEditedMapService(newName, base64Data, yamlContent) {
   // เช็ค connection
   if (!ros || !ros.isConnected) {
      parentPort.postMessage({
         type: 'map-save-edited',
-        data: { success: false, message: 'ROS disconnected', name: mapName }
+        data: { success: false, message: 'ROS disconnected', name: newName }
      });
      return;
   }
@@ -562,10 +571,10 @@ function callSaveEditedMapService(mapName, sourceMapName, base64Data) {
   });
 
   const request = new ROSLIB.ServiceRequest({
-    map_name: mapName,          // ชื่อไฟล์ใหม่
-    source_map_name: sourceMapName, //ชื่อไฟล์ต้นฉบับ (เพื่อไปก๊อป .yaml)
-    base64_image: base64Data    // ข้อมูลรูปภาพ
-  });
+    map_name: newName,     // <--- ต้องใช้ newName (ตามที่คุณส่งจาก main.js)
+    base64_image: base64Data,
+    yaml_content: yamlContent
+    });
 
   service.callService(request, (result) => {
     parentPort.postMessage({
@@ -573,7 +582,7 @@ function callSaveEditedMapService(mapName, sourceMapName, base64Data) {
       data: {
         success: result.success,
         message: result.message,
-        name: mapName
+        name: newName
       }
     });
   }, (err) => {
@@ -582,7 +591,7 @@ function callSaveEditedMapService(mapName, sourceMapName, base64Data) {
       data: {
         success: false,
         message: 'Service Error: ' + err.toString(),
-        name: mapName
+        name: newName
       }
     });
   });

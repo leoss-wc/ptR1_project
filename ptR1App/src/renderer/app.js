@@ -22,6 +22,7 @@ import { initInputControl } from './modules/inputControl.js';
 import { initProfileManager } from './modules/profileManager.js';
 import { initSlamControl } from './modules/slamControl.js';
 import { RobotStatusRenderer, PidTuner} from './modules/robotStatusView.js';
+import { OverlayCanvas } from './modules/OverlayCanvas.js';
 
 
 let recorder = null;
@@ -31,11 +32,20 @@ const targetFPS = 1; //live map  Frame Rate
 const fpsInterval = 1000 / targetFPS;
 let liveMapRenderId = null;
 let isHomeMapInitialized = false;
+const rosDependentButtons = [
+  'delete-map-btn',
+  'sync-maps-btn',
+  'save-map-btn',
+  'start-slam-btn',
+  'set-pose-btn',
+  'set-home-btn',
+  'go-home-btn',
+  'start-nav-btn'
+  ];
 
 document.addEventListener('DOMContentLoaded', async() => {
   console.log("app: DOMContentLoaded fired!");
   switchView('home')
-  setupVideoPlayer();
   initInputControl();       // จัดการ Keyboard/Servo/Speed
   await initProfileManager(); // จัดการ Profile/Connect
   initSlamControl();        // จัดการ SLAM ปุ่มต่างๆ
@@ -45,6 +55,13 @@ document.addEventListener('DOMContentLoaded', async() => {
   initRelayButtons();
   setupRecorder();
   setupGlobalCallbacks();
+  setupVideoPlayer();
+  const videoElement = document.getElementById('stream');
+  if (videoElement) {
+      window.overlay = new OverlayCanvas('yolo-overlay', videoElement);
+      console.log("Overlay initialized globally.");
+  }
+
   //ตั้งค่าการสลับ View ผ่าน Sidebar
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => switchView(item.dataset.view));
@@ -60,7 +77,6 @@ document.addEventListener('DOMContentLoaded', async() => {
       );
     }
     resetLiveMapView();
-
   document.getElementById('reset-live-view-btn').addEventListener('click', () => {
     resetLiveMapView();
   });
@@ -76,8 +92,62 @@ document.addEventListener('DOMContentLoaded', async() => {
     } else {
         console.warn("window.api.onRobotStatus not found");
     }
-  });
+  
+  //Detection Schedule Elements
+  const scheduleToggle = document.getElementById('schedule-toggle');
+  const startTimeInput = document.getElementById('alert-start-time');
+  const endTimeInput = document.getElementById('alert-end-time');
+  const setScheduleBtn = document.getElementById('update-schedule-btn');
+  function updateSecuritySchedule() {
+    const start = startTimeInput.value;
+    const end = endTimeInput.value;
+    const isEnabled = scheduleToggle.checked;
 
+    //ดึงค่าจาก Checkbox ทั้งหมดที่มี class 'sec-item-check'
+    const checkboxes = document.querySelectorAll('.sec-item-check');
+    const selectedItems = [];
+    checkboxes.forEach(cb => {
+        if (cb.checked) {
+            selectedItems.push(cb.value); // เก็บค่า value (เช่น 'person', 'cat')
+        }
+    });
+
+    // 2. ส่งค่าไปอัปเดต Overlay
+    if (window.overlay) {
+        window.overlay.setRestrictedTime(start, end, isEnabled);
+        window.overlay.setRestrictedItems(selectedItems); // ส่ง Array รายการที่เลือกไป
+    }
+    
+    return selectedItems; // Return ไว้ log เล่นๆ
+    }
+    if (setScheduleBtn) {
+        setScheduleBtn.addEventListener('click', () => {
+            const items = updateSecuritySchedule();
+            alert(`Settings Updated!\nActive: ${scheduleToggle.checked}\nTime: ${startTimeInput.value} - ${endTimeInput.value}\nAlert Objects: ${items.join(', ')}`);
+        });
+    }
+    // อัปเดตทันทีเมื่อกด Toggle
+    if (scheduleToggle) {
+        scheduleToggle.addEventListener('change', updateSecuritySchedule);
+    }
+    // (Optional) อัปเดตทันทีเมื่อติ๊กเลือกของ ก็ทำได้เช่นกัน
+    document.querySelectorAll('.sec-item-check').forEach(cb => {
+        cb.addEventListener('change', updateSecuritySchedule);
+    });
+
+
+  });
+function updateRosButtons(isConnected) {
+        rosDependentButtons.forEach(id => {
+            const btn = document.getElementById(id);
+            if (btn) {
+                btn.disabled = !isConnected;
+                // เพิ่ม/ลดความทึบแสงเพื่อให้รู้ว่ากดไม่ได้ (Optional)
+                btn.style.opacity = isConnected ? '1' : '0.5';
+                btn.style.cursor = isConnected ? 'pointer' : 'not-allowed';
+            }
+        });
+    }
 // --- Helper Functions ---
 function setupMapToggles() {
     document.getElementById('btn-static-map').addEventListener('click', () => {
@@ -129,10 +199,13 @@ function setupRecorder() {
 function setupGlobalCallbacks() {
     // ROS Connection Status
     const rosStatusEl = document.getElementById('home-ros-status');
+    updateRosButtons(false);
     window.electronAPI.onConnectionStatus((status) => {
         rosStatusEl.textContent = status.message;
         rosStatusEl.className = status.connected ? 'status-connected' : (status.connecting ? 'status-connecting' : 'status-disconnected');
+        updateRosButtons(status.connected);
     });
+    
     
     window.electronAPI.onStreamStatus((res) => console.log("Stream:", res));
 

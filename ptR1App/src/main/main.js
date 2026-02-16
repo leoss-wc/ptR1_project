@@ -490,7 +490,41 @@ ipcMain.on('stop-slam', () => {
 });
 
 ipcMain.on('delete-map', (_, mapName) => {
-  if (rosWorker) rosWorker.postMessage({ type: 'deleteMap', mapName });
+  try {
+        console.log(` Deleting map: ${mapName}`);
+
+        //กำหนด Path ของโฟลเดอร์ maps ใน userData
+        const localMapFolder = path.join(app.getPath('userData'), 'maps');
+        const yamlFolder = path.join(localMapFolder, 'yaml');
+        const pngFolder = path.join(localMapFolder, 'png');
+
+        //กำหนดชื่อไฟล์ที่ต้องการลบ
+        const filesToDelete = [
+            path.join(yamlFolder, `${mapName}.yaml`), // ไฟล์ YAML
+            path.join(pngFolder, `${mapName}.png`),   // ไฟล์ PNG
+             // ถ้ามีไฟล์ .pgm ด้วย ก็ลบไปด้วยเลย
+            path.join(yamlFolder, `${mapName}.pgm`)  
+        ];
+
+        //วนลูปเช็คและลบไฟล์
+        filesToDelete.forEach(filePath => {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath); // คำสั่งลบไฟล์
+                console.log(`Deleted local file: ${filePath}`);
+            } else {
+                console.log(`File not found (skip): ${filePath}`);
+            }
+        });
+
+        if (rosWorker) rosWorker.postMessage({ type: 'deleteMap', mapName });
+
+        return { success: true, message: "Local files deleted" };
+
+    } catch (error) {
+        console.error("❌ Delete map error:", error);
+        return { success: false, message: error.message };
+    }
+
 });
 
 ipcMain.on('reset-slam', () => {
@@ -585,7 +619,7 @@ ipcMain.handle('get-local-maps', async () => {
   return files.sort((a, b) => a.name.localeCompare(b.name)).reverse();
 });
 
-ipcMain.handle('save-edited-map', async (event, { newName, sourceName, base64 }) => {
+ipcMain.handle('save-edited-map', async (event, { newName, base64, yamlContent }) => {
     return new Promise((resolve, reject) => {
         if (!rosWorker) {
             resolve({ success: false, message: "Server/Worker not found" });
@@ -596,9 +630,8 @@ ipcMain.handle('save-edited-map', async (event, { newName, sourceName, base64 })
         const workerListener = (message) => {
             // เช็คว่าเป็นข้อความตอบกลับเรื่องนี้หรือเปล่า
             if (message.type === 'map-save-edited') {
-                // ✅ ได้คำตอบแล้ว -> ลบ Listener ทิ้งทันที (Clean up)
+                //ได้คำตอบแล้ว -> ลบ Listener ทิ้งทันที (Clean up)
                 rosWorker.off('message', workerListener);
-                
                 // ส่ง data กลับไปที่ Frontend
                 resolve(message.data);
             }
@@ -610,8 +643,8 @@ ipcMain.handle('save-edited-map', async (event, { newName, sourceName, base64 })
             type: 'saveEditedMap',
             data: {
                 name: newName, 
-                sourceName: sourceName, // ส่ง sourceName ไปด้วย
-                base64: base64 
+                base64: base64,
+                yamlContent: yamlContent
             }
         });
         // 4. Timeout (เผื่อ Server ค้าง)
@@ -712,7 +745,13 @@ app.whenReady().then(() => {
           console.error('Worker Error:', message.data);
           break;
         case 'connection':
-          mainWindow?.webContents.send('connection-status', message.data);
+          const isConnected = message.data.isConnected;
+            
+          console.log(`ROS Connection Status: ${isConnected}`);
+          mainWindow.webContents.send('connection-status', {
+              connected: isConnected,
+              message: isConnected ? 'Connected' : 'Disconnected'
+          });
           break;
         case 'map-list':
           mainWindow.webContents.send('ros:map-list', message.data);

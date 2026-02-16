@@ -1,14 +1,12 @@
 // modules/profileManager.js
 import { WebRTCPlayer } from './webrtcPlayer.js';
 import { FrameProcessor } from './FrameProcessor.js';
-import { OverlayCanvas } from './OverlayCanvas.js';
 
 let allRobotProfiles = [];
 let selectedProfileName = null;
 
 let rtcPlayer = null;
 let frameProcessor = null;
-let yoloOverlay = null;
 
 export async function initProfileManager() {
   document.getElementById('robot-profile-select').addEventListener('change', handleProfileSelection);
@@ -168,32 +166,29 @@ export function connectPlayerAndAI(address, whepPort) {
 }
 
 function manageAIState(shouldEnable, videoElement) {
+    //เรียกใช้จาก app.js กลาง (window.overlay)
+    const overlay = window.overlay; 
+
     if (shouldEnable) {
         console.log("Starting AI Processor...");
-        // สร้าง Overlay ถ้ายังไม่มี
-        if (!yoloOverlay) {
-            yoloOverlay = new OverlayCanvas('yolo-overlay', videoElement);
-        }
-        yoloOverlay.resize(); // ปรับขนาดให้ตรง
-        // สร้าง Processor ถ้ายังไม่มี
+        
+        // ไม่ต้อง new แล้ว เพราะ app.js สร้างให้แล้ว
+        if (overlay) overlay.resize(); 
+
         if (!frameProcessor) {
             frameProcessor = new FrameProcessor(videoElement, (detections) => {
-                if (yoloOverlay) yoloOverlay.drawDetections(detections);
+                // ✅ ส่งข้อมูลไปวาด
+                if (overlay) overlay.drawDetections(detections);
             });
         }
-        frameProcessor.start(); // เริ่มทำงาน
+        frameProcessor.start();
     } else {
         console.log("zzZ Stopping AI Processor...");
-        // หยุดการประมวลผล
         if (frameProcessor) {
             frameProcessor.stop();
-            // frameProcessor = null; // (Optional) ไม่ต้อง null ก็ได้ถ้าอยาก start เร็วๆ ครั้งหน้า
         }
-        // ล้างกรอบสี่เหลี่ยมบนจอ
-        if (yoloOverlay) {
-            yoloOverlay.clear();
-            // yoloOverlay = null;
-        }
+        // ✅ สั่งเคลียร์หน้าจอ
+        if (overlay) overlay.clear();
     }
 }
 
@@ -203,11 +198,9 @@ export function disconnectPlayerAndAI() {
         frameProcessor.stop();
         frameProcessor = null;
     }
-    if (yoloOverlay) {
-        yoloOverlay.clear();
-        yoloOverlay = null;
+    if (window.overlay) {
+        window.overlay.clear();
     }
-
     // หยุด Player
     if (rtcPlayer) {
         rtcPlayer.disconnect();
