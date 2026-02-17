@@ -946,7 +946,7 @@ function subscribePatrolStatus() {
     // message.data จะเป็น string "IDLE", "PATROLLING", "PAUSED", "FINISHED"
     parentPort.postMessage({
       type: 'patrol-status', 
-      status: message.data.toLowerCase()
+      data: message.data
     });
   });
 }

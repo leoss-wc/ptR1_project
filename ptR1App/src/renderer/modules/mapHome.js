@@ -361,12 +361,6 @@ function drawPatrolPath() {
     const py = imgH - (point.y - origin[1]) / resolution;
     const screenX = px * zoom + offset.x;
     const screenY = py * zoom + offset.y;
-
-    // ✨ DEBUG: แสดงค่าพิกัดของจุดแรกที่คำนวณได้
-    if (index === 0) {
-      console.log(`First point calculated at screen coordinates: (x: ${screenX.toFixed(2)}, y: ${screenY.toFixed(2)})`);
-    }
-
     if (index === 0) {
       ctx.moveTo(screenX, screenY);
     } else {

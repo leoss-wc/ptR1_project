@@ -93,8 +93,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   stopPatrol: () => ipcRenderer.send('stop-patrol'),
   onPatrolStopResult: (callback) => ipcRenderer.on('patrol-stop-result', (_, result) => callback(result)),
-  onPatrolStatusChange: (callback) => ipcRenderer.on('patrol-status-change', (_, status) => callback(status)),
-
+  onPatrolStatusChange: (callback) => ipcRenderer.on('patrol-status', (_, status) => callback(status)),
 
 
   // SLAM related api

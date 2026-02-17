@@ -13,19 +13,28 @@ export function addStatusListener(callback) {
 }
 
 // ฟังก์ชันสำหรับอัปเดตสถานะและแจ้งเตือน Listener ทั้งหมด
-export function updateStatus(newStatus) {
+export function updateStatus(newStatus, forcePatrollingState = null) {
     currentStatus = newStatus;
     const statusLower = newStatus.toLowerCase();
-    if (statusLower === 'active' || statusLower === 'patrolling' || statusLower === 'paused') {
-        // กรณี Active หรือ Paused ถือว่ายังอยู่ใน "โหมดตรวจการณ์" (เส้นทางควรยังแสดงอยู่)
-        isPatrolling = true;
-    } else {
-        // กรณี Idle, Stopped, Finished หรืออื่นๆ ให้ปิดโหมด
-        isPatrolling = false;
+    if (forcePatrollingState !== null) {
+        isPatrolling = forcePatrollingState;
+    } 
+    else {
+        if (statusLower.includes('patrolling') || 
+            statusLower.includes('active') || 
+            statusLower === 'paused' ||
+            statusLower.includes('goal reached') ||
+            statusLower.includes('moving')) {       
+            isPatrolling = true;
+        } else if (statusLower.includes('idle') || 
+                   statusLower.includes('finished') || 
+                   statusLower.includes('stopped')) {
+            isPatrolling = false;
+        }
+        // กรณีอื่นๆ (เช่น Error) ให้คงค่าเดิมไว้ ไม่ต้องไปเปลี่ยนมัน
     }
 
     console.log(`State Updated: Status="${currentStatus}", isPatrolling=${isPatrolling}`);
-    // แจ้งเตือน Listener
     statusListeners.forEach(cb => cb(currentStatus));
 }
 

@@ -258,11 +258,11 @@ function setupGlobalCallbacks() {
     window.electronAPI.onPatrolStatusChange((status) => {
         console.log(`ROS Patrol Status: ${status}`);
         if (status === 'active' || status === 'patrolling') {
-            setPatrolling(true);
-            updateStatus("Patrolling"); // อัปเดตข้อความบนจอ
+            patrolState.setPatrolling(true);
+            patrolState.updateStatus("Patrolling"); // อัปเดตข้อความบนจอ
         } else {
-            setPatrolling(false);
-            updateStatus("Idle");
+            patrolState.setPatrolling(false);
+            patrolState.updateStatus("Idle");
         }
     });
     console.log('app: Global callbacks set up.');

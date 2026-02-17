@@ -612,8 +612,22 @@ function setupCanvasEvents() {
           window.electronAPI.switchPoseSubscriber('amcl');
       } else {
           stopPatrol();
-          setGoalPoint(poseData);
-          window.electronAPI.startPatrol([poseData], false); 
+          const goalData = {
+          header: { 
+            frame_id: 'map', 
+            stamp: { secs: 0, nsecs: 0 } 
+          },
+          pose: {
+            position: { 
+                x: poseStartPosition.x, 
+                y: poseStartPosition.y, 
+                z: 0.0
+            },
+            orientation: quaternion
+        }
+    };
+          setGoalPoint(goalData.pose);
+          window.electronAPI.startPatrol([goalData], false); 
           console.log("New Goal Set via UI");
       }
       isSettingPose = false;

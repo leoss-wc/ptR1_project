@@ -817,7 +817,7 @@ app.whenReady().then(() => {
             mainWindow?.webContents.send('robot-status', message.data);
             break;
         case 'patrol-status':
-            mainWindow?.webContents.send('patrol-status-change', message.data);
+            mainWindow.webContents.send('patrol-status', message.data);
             break;
 
         default:
