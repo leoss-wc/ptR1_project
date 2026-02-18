@@ -31,6 +31,7 @@ let dimmerMaskImage = null;//ตัวแปรสำหรับเก็บภ
 let collisionMapData = null; // เก็บข้อมูล Pixel แผนที่เพื่อเช็คชน
 let collisionWidth = 0;
 let collisionHeight = 0;
+let homePose = null;
 
 let mapEdits = [];
 
@@ -110,6 +111,7 @@ function renderObjects() {
     }
 
   // วาดทุกอย่างที่ไม่ใช่ Background และ Scan
+  drawHome(ctx);
   drawPatrolPath(ctx);
   drawRobot(ctx);
   drawGoal(ctx);
@@ -169,19 +171,81 @@ function resetStaticMapView() {
   renderAllLayers();
 }
 
-document.getElementById('start-nav-btn').addEventListener('click', () => {
-  // ตรวจสอบก่อนว่าเลือกแผนที่และโหลดรูปภาพมาแล้วหรือยัง
-  if (!activeMap.name || !mapImage) {
-    alert("❗ Please select a map from the gallery first.");
-    return;
-  }
-  console.log(`Activated map: ${activeMap.name} to AMCL and Map Server.`);
-  window.electronAPI.selectMap(activeMap.name);
-  console.log(`Attempting to auto-init home for ${activeMap.name}...`);
-  setTimeout(() => {
-      window.electronAPI.initHome(activeMap.name);
-  }, 1500); // รอ 1 วินาทีให้ Map Server/AMCL โหลดเสร็จก่อน
+document.getElementById('start-nav-btn').addEventListener('click', async () => {
+    if (!activeMap.name || !mapImage) {
+        alert("❗ Please select a map from the gallery first.");
+        return;
+    }
+    const btn = document.getElementById('start-nav-btn');
+    const originalText = btn.innerHTML;
+    
+    //ปรับ UI ให้รู้ว่ากำลังทำงาน
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Loading Map...`;
+
+    try {
+        console.log(`Selecting Map '${activeMap.name}'...`);
+        await window.electronAPI.selectMap(activeMap.name);
+
+        console.log("Starting Navigation...");
+        // ส่ง false ไปก่อน (ไม่เอา Last Pose) เพราะเราอยากลอง Init Home ดูก่อน
+        const navRes = await window.electronAPI.startNavigation(false); 
+        
+        if (!navRes.success) throw new Error(navRes.message);
+
+        //รอ AMCL ตื่น
+        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Initializing...`;
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+        // 4. ลองสั่ง Init Home (Best Effort)
+        console.log(`Step 3: Attempting Auto-Init Home for ${activeMap.name}...`);
+        const homeRes = await window.electronAPI.initHome(activeMap.name);
+
+        if (homeRes.success) {
+            console.log("Robot initialized at HOME position.");
+            alert(`System Started! Robot is at Home.`);
+        } else {
+            // กรณีล้มเหลว (เช่น ไม่เคยเซ็ต Home ไว้): ไม่เป็นไร แค่แจ้งเตือน
+            console.warn(" Could not init home (Home not set?). User must set pose manually.");
+            alert(`System Started. \n Warning: Home location not found.\nPlease set '2D Pose Estimate' manually.`);
+        }
+    } catch (error) {
+        console.error("❌ Error sequence:", error);
+        alert(`Error: ${error.message}`);
+    } finally {
+        // คืนค่าปุ่ม
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+    }
 });
+const stopNavBtn = document.getElementById('stop-nav-btn');
+if (stopNavBtn) {
+    stopNavBtn.addEventListener('click', async () => {
+        console.log("Stop Nav Button Clicked");
+        
+        // ใส่ Effect ให้ปุ่มดูเหมือนกำลังทำงาน (Optional)
+        stopNavBtn.disabled = true;
+        stopNavBtn.innerText = "Stopping...";
+
+        try {
+            // เรียก API ผ่าน Bridge
+            const result = await window.electronAPI.stopNavigation(true); // true = save pose
+            
+            if (result.success) {
+                console.log("Navigation Stopped Successfully:", result.message);
+                // แจ้งเตือนผู้ใช้ (ถ้ามีระบบ notify)
+            } else {
+                console.error("Failed to stop navigation:", result.message);
+            }
+        } catch (error) {
+            console.error("Error stopping navigation:", error);
+        } finally {
+            // คืนค่าปุ่มกลับสู่ปกติ
+            stopNavBtn.disabled = false;
+            stopNavBtn.innerHTML = "Stop nav";
+        }
+    });
+}
 
 function bindUI() {
   // Zoom Controls
@@ -238,8 +302,10 @@ function bindUI() {
 
   window.electronAPI.onHomeResult((res) => {
     if (res.success) {
-      // ถ้าเป็นการ Go Home ไม่ต้อง Alert ก็ได้ เดี๋ยวรำคาญ
       if (res.action !== 'Go Home') alert(`✅ ${res.action}: Success`);
+      if (res.action === 'Set Home') {
+          updateHomePose(); 
+      }
       console.log(`[Home] ${res.action}: ${res.message}`);
     } else {
       alert(`❌ ${res.action} Failed: ${res.message}`);
@@ -424,6 +490,8 @@ async function activateMap(mapName, meta) {
   mapHitCtx = mapHitCanvas.getContext('2d', { willReadFrequently: true });
   mapHitCtx.putImageData(inflatedImageData, 0, 0);
   createDimmerMask(inflatedImageData);
+
+  await updateHomePose();
 
   const finalMapImage = new Image();
   finalMapImage.onload = () => {
@@ -1435,4 +1503,71 @@ function showPrompt(title, defaultValue = "") {
         cancelBtn.addEventListener('click', onCancel);
         inputEl.addEventListener('keydown', onKey);
     });
+}
+
+async function updateHomePose() {
+    if (!activeMap.name) return;
+    try {
+        const result = await window.electronAPI.getMapHome(activeMap.name);
+        if (result.success) {
+            homePose = result.data;
+            console.log("🏠 Home pose loaded:", homePose);
+        } else {
+            homePose = null; // ถ้าไม่มี Home ให้เคลียร์ทิ้ง
+        }
+        renderObjects(); // วาดใหม่ทันทีที่โหลดเสร็จ
+    } catch (err) {
+        console.error("Failed to load home pose:", err);
+    }
+}
+
+function drawHome(ctx) {
+    if (!homePose || !activeMap?.meta || !mapImage) return;
+
+    const { resolution, origin } = activeMap.meta;
+    const mapImgHeight = mapImage.height;
+
+    // 1. แปลง World Coordinate เป็น Map Pixel
+    const px = (homePose.x - origin[0]) / resolution;
+    const py = mapImgHeight - ((homePose.y - origin[1]) / resolution);
+    
+    // 2. คำนวณ Scale เพื่อให้ไอคอนขนาดคงที่เวลาซูม
+    const scale = 1.0 / mapView.viewState.scale; 
+    const size = 12 * scale; // ขนาดบ้าน
+
+    ctx.save();
+    ctx.translate(px, py);
+
+    // (Optional) ถ้าอยากให้บ้านหมุนตามทิศที่ตั้งไว้
+    // const yaw = getYawFromQuaternion({ x: homePose.ox, y: homePose.oy, z: homePose.oz, w: homePose.ow });
+    // ctx.rotate(-yaw); 
+
+    // 3. วาดรูปบ้าน (House Icon)
+    ctx.beginPath();
+    // หลังคา
+    ctx.moveTo(0, -size); 
+    ctx.lineTo(size, -size * 0.3);
+    ctx.lineTo(size * 0.8, -size * 0.3);
+    // ตัวบ้าน
+    ctx.lineTo(size * 0.8, size);
+    ctx.lineTo(-size * 0.8, size);
+    ctx.lineTo(-size * 0.8, -size * 0.3);
+    ctx.lineTo(-size, -size * 0.3);
+    ctx.closePath();
+
+    // ลงสี
+    ctx.fillStyle = '#007bff'; // สีน้ำเงิน
+    ctx.fill();
+    ctx.strokeStyle = 'white';
+    ctx.lineWidth = 2 * scale;
+    ctx.stroke();
+
+    // วาดตัว H ตรงกลาง
+    ctx.fillStyle = 'white';
+    ctx.font = `bold ${10 * scale}px Arial`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText("H", 0, size * 0.4);
+
+    ctx.restore();
 }

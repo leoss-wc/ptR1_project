@@ -7,6 +7,7 @@ import base64
 import signal
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
 from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String
 from std_srvs.srv import Empty
 import json
 from geometry_msgs.msg import PoseWithCovarianceStamped #สำหรับรับ/ส่ง pose
@@ -15,7 +16,7 @@ import cv2
 import numpy as np
 import shutil # ไว้ copy file
 # Import services
-from ptR1_navigation.srv import (ListMaps, ListMapsResponse, LoadMap, LoadMapResponse,
+from ptR1_navigation.srv import (ListMaps, ListMapsResponse, SelectNavMap, SelectNavMapResponse,
                                  GetMapFile, GetMapFileResponse, SaveMap, SaveMapResponse,
                                  StartSLAM, StartSLAMResponse, StopSLAM, StopSLAMResponse,
                                  DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,                                            
@@ -40,11 +41,11 @@ class MapManager:
 
         # --- Action Client ---
         self.move_base_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        # Publisher สำหรับตั้งค่า Initial Pose ให้ AMCL
+        self.current_map_pub = rospy.Publisher('/map_manager/current_map_name', String, queue_size=1, latch=True)
         # --- Services ---
         # Map/SLAM Management
         rospy.Service('/map_manager/list_maps', ListMaps, self.handle_list_maps)
-        rospy.Service('/map_manager/load_map', LoadMap, self.handle_load_map)
+        rospy.Service('/map_manager/select_nav_map', SelectNavMap, self.handle_select_nav_map)
         rospy.Service('/map_manager/save_map', SaveMap, self.handle_save_map)
         rospy.Service('/map_manager/delete_map', DeleteMap, self.handle_delete_map)
         rospy.Service('/map_manager/start_slam', StartSLAM, self.handle_start_slam)
@@ -102,14 +103,14 @@ class MapManager:
             rospy.logerr(f"Could not list maps: {e}")
             return ListMapsResponse([])
 
-    def handle_load_map(self, req):
+    def handle_select_nav_map(self, req):
         map_to_load = req.name
         rospy.loginfo(f"Loading map '{map_to_load}' and starting navigation nodes...")
 
         # 1. เช็คไฟล์ก่อนเลย ถ้าไม่มีจะได้ไม่ต้องไปสั่งหยุด process ให้เสียเวลา
         map_yaml_path = os.path.join(MAP_FOLDER, f"{map_to_load}.yaml")
         if not os.path.exists(map_yaml_path):
-            return LoadMapResponse(False, f"Map '{map_to_load}' not found.")
+            return SelectNavMapResponse(False, f"Map '{map_to_load}' not found.")
 
         # 2. เคลียร์ process เก่า (Nav หรือ SLAM)
         self.handle_stop_processes(None)
@@ -119,11 +120,12 @@ class MapManager:
             rospy.loginfo(f"Executing: {' '.join(command)}")
             self.navigation_process = subprocess.Popen(command)
             self.running_processes.append(self.navigation_process)
+            self.current_map_pub.publish(map_to_load)
 
             rospy.loginfo(f"Navigation started with map '{map_to_load}'.")
-            return LoadMapResponse(True, f"Navigation started with map '{map_to_load}'.")
+            return SelectNavMapResponse(True, f"Navigation started with map '{map_to_load}'.")
         except Exception as e:
-            return LoadMapResponse(False, f"Error starting navigation: {str(e)}")
+            return SelectNavMapResponse(False, f"Error starting navigation: {str(e)}")
         
     def handle_stop_processes(self, req):
         if not self.running_processes:

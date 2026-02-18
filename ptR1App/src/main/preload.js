@@ -45,18 +45,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDefaultVideoPath: () => ipcRenderer.invoke('get-default-video-path'),
   selectFolder: (defaultPath = null) => ipcRenderer.invoke('dialog:select-folder-map', defaultPath),
   getUserDataPath: (subfolder = '') => ipcRenderer.invoke('get-userdata-path', subfolder),
-  selectMap: (mapName) => ipcRenderer.send('select-map', mapName),
+  selectMap: (name) => ipcRenderer.invoke('map-select', name),
   getMapDataByName: (name) => ipcRenderer.invoke('get-map-data-by-name', name),
   saveMapCache: (mapName, imageData) => ipcRenderer.invoke('mapcache:save', { mapName, imageData }),
   loadMapCache: (mapName) => ipcRenderer.invoke('mapcache:load', mapName),
   deleteMapCache: (mapName) => ipcRenderer.invoke('mapcache:delete', mapName),
   saveEditedMap: (newName, base64, yamlContent) => 
         ipcRenderer.invoke('save-edited-map', { newName, base64, yamlContent }),
-  
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),
   deleteMap: (mapName) => ipcRenderer.send('delete-map', mapName),
   onMapDeleteResult: (callback) => ipcRenderer.on('map-delete-result', (_, result) => callback(result)),
+  getMapHome: (mapName) => ipcRenderer.invoke('nav:get-home', mapName),
 
   // Robot pose and planned path api
   onRobotPosSlam: (callback) => ipcRenderer.on('robot-pose-slam', (event, ...args) => callback(...args)),
@@ -64,6 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   resetSLAM: () => ipcRenderer.send('reset-slam'),
   onSLAMResetResult: (callback) => ipcRenderer.on('slam-reset-result', (_, result) => callback(result)),
   onTfUpdate: (callback) => ipcRenderer.on('tf-update', (_event, value) => callback(value)),
+  stopNavigation: (savePose) => ipcRenderer.invoke('nav-stop', savePose),
+  startNavigation: (restorePose) => ipcRenderer.invoke('nav-start', restorePose),
 
 
   switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
@@ -71,7 +73,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setInitialPose: (pose) => ipcRenderer.send('set-initial-pose', pose),
   setHome: (mapName) => ipcRenderer.invoke('nav:set-home', mapName),
   goHome: (mapName) => ipcRenderer.invoke('nav:go-home', mapName),
-  initHome: (mapName) => ipcRenderer.invoke('nav:init-home', mapName),
+  initHome: (mapName) => ipcRenderer.invoke('nav-init-home', mapName),
 
   onHomeResult: (callback) => ipcRenderer.on('nav:home-result', (_, result) => callback(result)),
 

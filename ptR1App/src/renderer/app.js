@@ -40,7 +40,8 @@ const rosDependentButtons = [
   'set-pose-btn',
   'set-home-btn',
   'go-home-btn',
-  'start-nav-btn'
+  'start-nav-btn',
+  'stop-nav-btn'
   ];
 
 document.addEventListener('DOMContentLoaded', async() => {

@@ -26,8 +26,8 @@ parentPort.on('message', (message) => {
       case 'listMaps':
         callListMapsService();
         break;
-      case 'loadMap':
-        callLoadMapService(message.mapName);
+      case 'selectNavMap':
+        callSelectNavMapService(message.mapName);
         break;
       case 'requestMapFileAsBase64':
         requestMapFileAsBase64(message.mapName);
@@ -76,11 +76,17 @@ parentPort.on('message', (message) => {
       case 'deleteMap':
         callDeleteMapService(message.mapName);
         break;
+      case 'startNavigation':
+        callStartNavService(message.data.restorePose);
+        break;
       case 'stopNavigation':
         callStopNavigationService();
         break;
       case 'resetSLAM':
         callResetSLAMService();
+        break;
+      case 'stopNavigation':
+        callStopNavService(message.data.savePose);
         break;
       case 'startPatrol':
         callStartPatrolService(message.goals, message.loop);
@@ -493,41 +499,66 @@ function callListMapsService() {
   });
 }
 // service call สำหรับ load_map ให้เป็น active map
-function callLoadMapService(mapName) {
+function callSelectNavMapService(mapName) {
   if (!ros || !ros.isConnected) {
-    parentPort.postMessage({ type: 'map-load', data: { success: false, message: 'ROSBridge not connected' } });
+    parentPort.postMessage({ type: 'select-map-response', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
 
   const service = new ROSLIB.Service({
     ros: ros,
-    name: '/map_manager/load_map',
-    serviceType: 'ptR1_navigation/LoadMap'
+    name: '/map_manager/select_nav_map',
+    serviceType: 'ptR1_navigation/SelectNavMap'
   });
 
   const request = new ROSLIB.ServiceRequest({ name: mapName });
 
   service.callService(request, (result) => {
   parentPort.postMessage({
-    type: 'map-load',
+    type: 'select-map-response',
     data: {
       ...result,
-      name: mapName  // ✅ ใส่ชื่อ map ที่โหลดอยู่
+      name: mapName
     }
   });
 }, (err) => {
-  console.error('❌ load_map service failed:', err);
+  console.error('❌ select_nav_map service failed:', err);
   parentPort.postMessage({
-    type: 'map-load',
+    type: 'select-map-response',
     data: {
       success: false,
       message: err.toString(),
-      name: mapName  // แม้ error ก็ยังส่งชื่อกลับ
+      name: mapName
     }
   });
 });
 
 }
+function callStopNavService(shouldSavePose) {
+    if (!ros || !ros.isConnected) {
+        console.log("❌ ROS not connected. Cannot stop navigation.");
+        return;
+    }
+    const stopNavClient = new ROSLIB.Service({
+        ros: ros,
+        name: '/nav/stop',          
+        serviceType: 'ptR1_navigation/StopAMCL'
+    });
+    const request = new ROSLIB.ServiceRequest({
+        save_pose: shouldSavePose || true
+    });
+    console.log("Calling /nav/stop service...");
+    stopNavClient.callService(request, (result) => {
+        console.log("Navigation Stopped. Result:", result);
+        parentPort.postMessage({
+            type: 'operation-result',
+            data: { success: result.success, message: result.message }
+        });
+    }, (error) => {
+        console.error("❌ Failed to call /nav/stop:", error);
+    });
+}
+
 // service call สำหรับ map_file จากชื่อ
 function requestMapFileAsBase64(mapName) {
   const service = new ROSLIB.Service({
@@ -932,6 +963,40 @@ function callStopNavigationService() {
   });
 }
 
+function callStartNavService(restorePose) {
+    if (!ros || !ros.isConnected) {
+        parentPort.postMessage({
+            type: 'nav-start-response',
+            data: { success: false, message: "ROS not connected" }
+        });
+        return;
+    }
+
+    const startNavClient = new ROSLIB.Service({
+        ros: ros,
+        name: '/nav/start',
+        serviceType: 'ptR1_navigation/StartAMCL' 
+    });
+
+    const request = new ROSLIB.ServiceRequest({
+        restore_pose: restorePose
+    });
+
+    console.log(`🚀 Calling /nav/start (restore=${restorePose})...`);
+
+    startNavClient.callService(request, (result) => {
+        parentPort.postMessage({
+            type: 'nav-start-response', 
+            data: { success: result.success, message: result.message }
+        });
+    }, (error) => {
+        parentPort.postMessage({
+            type: 'nav-start-response',
+            data: { success: false, message: `Service Error: ${error}` }
+        });
+    });
+}
+
 function subscribePatrolStatus() {
   if (!ros || !ros.isConnected) return;
   const patrolStatusTopic = new ROSLIB.Topic({
@@ -964,19 +1029,38 @@ function callHomeService(serviceName, mapName, actionLabel) {
   const service = new ROSLIB.Service({
     ros: ros,
     name: serviceName,
-    serviceType: 'ptR1_navigation/SaveMap' // ใช้ Type นี้เพราะ structure มันตรงกัน
+    serviceType: 'ptR1_navigation/SaveMap'
   });
 
   const request = new ROSLIB.ServiceRequest({ name: mapName });
 
   service.callService(request, (result) => {
     console.log(`Server: ${actionLabel} Success`);
+    
+    if (actionLabel === 'Init Home') {
+        parentPort.postMessage({
+            type: 'nav-init-home-response',
+            data: { success: result.success, message: result.message }
+        });
+    }
+
+    // ส่ง home-result แบบเดิมด้วยก็ได้ เผื่อ UI ส่วนอื่นใช้
     parentPort.postMessage({ 
       type: 'home-result', 
       data: { success: result.success, message: result.message, action: actionLabel } 
     });
+
   }, (err) => {
     console.error(`Server: ${actionLabel} Failed`, err);
+    
+    // ✅ กรณี Error ก็ต้องส่งกลับ
+    if (actionLabel === 'Init Home') {
+        parentPort.postMessage({
+            type: 'nav-init-home-response',
+            data: { success: false, message: err.toString() }
+        });
+    }
+
     parentPort.postMessage({ 
       type: 'home-result', 
       data: { success: false, message: err.toString(), action: actionLabel } 

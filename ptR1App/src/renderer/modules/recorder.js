@@ -1,5 +1,3 @@
-// canvas.captureStream + MediaRecorder loop
-
 // modules/recorder.js
 
 export class CanvasRecorder {
@@ -16,8 +14,9 @@ export class CanvasRecorder {
   }
 
   start() {
-    console.log('start record');
-    if (this.#isRecording) return;
+    console.log('Start recording segment...');
+    // ถ้ากำลังอัดอยู่แล้ว (และไม่ใช่การ loop ต่อเนื่อง) ให้ข้าม
+    if (this.#isRecording && this.#mediaRecorder?.state === 'recording') return;
 
     const stream = this.#canvas.captureStream(this.fps);
     this.#recordedChunks = [];
@@ -32,20 +31,22 @@ export class CanvasRecorder {
     this.#mediaRecorder.onstop = () => this.#handleSegmentComplete();
 
     this.#mediaRecorder.start();
+    
+    // ตั้งเวลาสำหรับตัดคลิป
     this.#recordingTimeout = setTimeout(() => {
       if (this.#mediaRecorder?.state === 'recording') {
+        console.log('⏱Segment finished (timeout). Stopping...');
         this.#mediaRecorder.stop();
       }
     }, this.segmentMs);
   }
 
   stop() {
-    console.log('stop record');
-
+    console.log('Stop recording manually.');
     if (!this.#isRecording) return;
 
     clearTimeout(this.#recordingTimeout);
-    this.#isRecording = false;
+    this.#isRecording = false; // ปิด flag เพื่อไม่ให้ loop ต่อ
 
     if (this.#mediaRecorder?.state === 'recording') {
       this.#mediaRecorder.stop();
@@ -53,26 +54,30 @@ export class CanvasRecorder {
   }
 
   #handleSegmentComplete() {
+    if (this.#isRecording) {
+      this.start(); 
+    }
+
     const blob = new Blob(this.#recordedChunks, { type: 'video/webm' });
+    this.#recordedChunks = []; // เคลียร์เมมโมรี่
 
     if (blob.size === 0) {
       console.warn("⚠️ Skipped empty recording (0 byte)");
-      if (this.#isRecording) this.start(); // วนรอบถัดไป
       return;
     }
 
     const now = new Date();
     const dateStr = now.toISOString().split('T')[0]; // yyyy-mm-dd
     const timeStr = now.toTimeString().slice(0, 5).replace(':', '-'); // hh-mm
-    console.log('save video');
+    
+    console.log(`Saving video segment (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
+
     blob.arrayBuffer().then((buffer) => {
       window.electronAPI.saveVideo({
         buffer,
         date: dateStr,
         filename: `record-${timeStr}.webm`
       });
-
-      if (this.#isRecording) this.start(); // 🔁 เริ่มรอบถัดไป
     });
   }
 }

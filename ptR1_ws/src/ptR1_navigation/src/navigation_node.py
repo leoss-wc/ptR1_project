@@ -32,6 +32,7 @@ class NavigationManager:
         self.nav_process = None
         self.latest_pose = None
         self.auto_resume = False
+        self.current_map_name = "unknown"
         
         # Patrol State
         self.goal_list = [] # ลิสต์เก็บ Goal ที่จะส่งไปในโหมด Patrol
@@ -47,12 +48,13 @@ class NavigationManager:
         self.initial_pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=1)
         rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.amcl_pose_callback)
         rospy.Subscriber('/robot/cmd', String, self.cmd_callback)
+        rospy.Subscriber('/map_manager/current_map_name', String, self.map_name_callback)
         # --- Services ---
-        # 1. Navigation (AMCL + MoveBase)
+        # Navigation (AMCL + MoveBase)
         rospy.Service('/nav/start', StartAMCL, self.handle_start_nav) 
         rospy.Service('/nav/stop', StopAMCL, self.handle_stop_nav)
         
-        # 2. Patrol
+        #Patrol
         rospy.Service('/nav/start_patrol', StartPatrol, self.handle_start_patrol)
         rospy.Service('/nav/stop_patrol', StopPatrol, self.handle_stop_patrol)
         rospy.Service('/nav/pause_patrol', PausePatrol, self.handle_pause_patrol)
@@ -84,10 +86,14 @@ class NavigationManager:
                 rospy.LogInfo("Manual Mode OFF: AUTO Resuming patrol...")
                 self.is_paused = False
                 self.send_next_goal() # ส่ง Goal เดิมให้เดินต่อ
-    
+    def map_name_callback(self, msg):
+        """อัปเดตชื่อแผนที่เมื่อ MapManager แจ้งมา"""
+        self.current_map_name = msg.data
+        rospy.loginfo(f"Nav node: Current map updated to: {self.current_map_name}")
+
     def update_status(self, status_text):
         self.status_pub.publish(status_text)
-    # --- 1. Pose Management ---
+    # Pose Management ---
     def amcl_pose_callback(self, msg):
         self.latest_pose = msg
 
@@ -99,6 +105,7 @@ class NavigationManager:
             
         try:
             pose_data = {
+                "map_name": self.current_map_name,
                 "position": {
                     "x": self.latest_pose.pose.pose.position.x,
                     "y": self.latest_pose.pose.pose.position.y,
@@ -133,6 +140,13 @@ class NavigationManager:
         try:
             with open(POSE_FILE, 'r') as f:
                 data = json.load(f)
+
+            saved_map = data.get("map_name", "unknown")
+            # ถ้าเรารู้ชื่อแผนที่ปัจจุบัน (ไม่ใช่ unknown) และมันไม่ตรงกับที่เซฟไว้
+            if self.current_map_name != "unknown" and saved_map != self.current_map_name:
+                rospy.logerr(f"Nav node: Map Mismatch Current: {self.current_map_name}, Saved: {saved_map}")
+                rospy.logerr("Nav node: Aborting restore_pose to prevent localization errors.")
+                return False
                 
             msg = PoseWithCovarianceStamped()
             msg.header.stamp = rospy.Time.now()
@@ -159,7 +173,7 @@ class NavigationManager:
             rospy.logerr(f"❌ Failed to load pose: {e}")
             return False
 
-    # --- 2. Process Management ---
+    # Process Management ---
     def handle_start_nav(self, req):
         if self.nav_process:
             return StartAMCLResponse(True, "Navigation already running.")
@@ -169,19 +183,20 @@ class NavigationManager:
         self.nav_process = subprocess.Popen(cmd)
         
         if req.restore_pose:
+
             # รอระบบขึ้นสักครู่แล้วค่อย Restore Pose
             rospy.Timer(rospy.Duration(5.0), lambda e: self.restore_pose(), oneshot=True)
 
         return StartAMCLResponse(True, "Navigation System Started.")
 
     def handle_stop_nav(self, req):
-        rospy.loginfo("🛑 Stopping Navigation Stack...")
+        rospy.loginfo("Stopping Navigation Stack...")
 
-        # 1. บันทึกตำแหน่งล่าสุดก่อนปิด (ถ้าต้องการ)
+        # บันทึกตำแหน่งล่าสุดก่อนปิด
         if req.save_pose:
             self.save_pose_to_file()
             
-        # 2. ปิด Process หลัก (ที่รัน launch file)
+        # ปิด Process หลัก (ที่รัน launch file)
         if self.nav_process:
             self.nav_process.terminate()
             try:
@@ -191,7 +206,7 @@ class NavigationManager:
             self.nav_process = None
             rospy.loginfo("Navigation launch process terminated.")
 
-        # 3. [เพิ่ม] สั่ง Kill Nodes ที่อาจจะค้างอยู่แบบเจาะจง (Force Kill)
+        # สั่ง Kill Nodes ที่อาจจะค้างอยู่แบบเจาะจง (Force Kill)
         # เพื่อเคลียร์ Topic /map และ /tf ให้ว่างสำหรับ SLAM
         try:
             # ใช้ os.system เพื่อเรียกคำสั่ง rosnode kill
@@ -202,7 +217,7 @@ class NavigationManager:
 
         return StopAMCLResponse(True, "Navigation and Map Server Stopped.")
 
-    # --- 3. Patrol Logic ---
+    # Patrol Logic ---
     def handle_start_patrol(self, req):
         if not req.goals:
             return StartPatrolResponse(False, "Goal list cannot be empty.")
