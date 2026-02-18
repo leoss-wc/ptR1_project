@@ -764,7 +764,7 @@ function sendSingleGoalToMoveBase(data) {
 
 function publishInitialPose(pose) {
   if (!ros || !ros.isConnected) {
-    console.error('Server : ❌ Cannot send initial pose: ROSBridge is not connected.');
+    console.error('Server : Cannot send initial pose: ROSBridge is not connected.');
     return;
   }
 
@@ -789,17 +789,17 @@ function publishInitialPose(pose) {
       },
       // Covariance บอกถึงความไม่แน่นอน (ค่ามาตรฐานที่ใช้กันทั่วไป)
       covariance: [
-        0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 
+        0.1, 0.0, 0.0, 0.0, 0.0, 0.0,  
+        0.0, 0.1, 0.0, 0.0, 0.0, 0.0,  
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
         0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0685
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.05  // Yaw (Rotation)
       ]
     }
   });
 
-  console.log('Server : 📤 Publishing to /initialpose:', message);
+  console.log('Server : Publishing to /initialpose:', message);
   initialPoseTopic.publish(message);
 }
 

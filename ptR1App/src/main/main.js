@@ -128,6 +128,10 @@ function createRosWorker() {
         case 'stopStreamResponse':
             internalEvents.emit('stop-stream-done', message);
             return;
+        case 'home-result': 
+            mainWindow.webContents.send('nav:home-result', message.data); 
+            internalEvents.emit('home-result', message.data); 
+            return;
       }
 
       //Handle Updates (ส่งตรงไปหน้าเว็บ)
@@ -303,13 +307,27 @@ ipcMain.handle('save-edited-map', async (_, { newName, base64, yamlContent }) =>
 });
 
 ipcMain.on('delete-map', (_, mapName) => {
-     // ลบไฟล์ Local
-     const pngPath = path.join(mapFolder, 'png', `${mapName}.png`);
-     const yamlPath = path.join(mapFolder, 'yaml', `${mapName}.yaml`);
-     if(fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
-     if(fs.existsSync(yamlPath)) fs.unlinkSync(yamlPath);
-     // ลบที่ ROS
-     rosWorker?.postMessage({ type: 'deleteMap', mapName });
+    try {
+        // ลบไฟล์ Map Local (PNG & YAML)
+        const pngPath = path.join(mapFolder, 'png', `${mapName}.png`);
+        const yamlPath = path.join(mapFolder, 'yaml', `${mapName}.yaml`);
+        
+        if (fs.existsSync(pngPath)) fs.unlinkSync(pngPath);
+        if (fs.existsSync(yamlPath)) fs.unlinkSync(yamlPath);
+
+        // ลบไฟล์ Cache
+        // mapCacheDir ต้องถูกประกาศไว้ด้านบนของไฟล์ main.js แล้ว (path.join(userDataPath, 'map_cache'))
+        const cachePath = path.join(mapCacheDir, `${mapName}.json`);
+        
+        if (fs.existsSync(cachePath)) {
+            fs.unlinkSync(cachePath);
+            console.log(`[Main] Deleted map cache for: ${mapName}`);
+        }
+        rosWorker?.postMessage({ type: 'deleteMap', mapName });
+
+    } catch (error) {
+        console.error(`[Main] Error deleting map '${mapName}':`, error);
+    }
 });
 ipcMain.handle('get-map-meta', async (_, mapName) => {
   const yamlPath = path.join(mapFolder, 'yaml', `${mapName}.yaml`);
@@ -364,7 +382,6 @@ ipcMain.on('uint32-command', (_, msg) => {
 ipcMain.on('relay-command', (_, data) => rosWorker?.postMessage({ type: 'sendRelay', ...data }));
 
 // --- 3.5 Patrol & Goals ---
-ipcMain.on('send-single-goal', (_, data) => rosWorker?.postMessage({ type: 'sendSingleGoal', data }));
 ipcMain.on('start-patrol', (_, data) => rosWorker?.postMessage({ type: 'startPatrol', ...data }));
 ipcMain.on('pause-patrol', () => rosWorker?.postMessage({ type: 'pausePatrol' }));
 ipcMain.on('resume-patrol', () => rosWorker?.postMessage({ type: 'resumePatrol' }));
@@ -398,7 +415,7 @@ ipcMain.handle('get-video-path', (_, relativePath) => {
 ipcMain.handle('dialog:select-folder', async () => {
     const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
     if (result.canceled) return null;
-    return result.filePaths[0]; // Fix: Simplified logic
+    return result.filePaths[0]; 
 });
 
 ipcMain.on('save-video', (_, { buffer, date, filename }) => {
@@ -479,6 +496,48 @@ ipcMain.handle('nav:get-home', async (_, mapName) => {
     return { success: false, message: error.message };
   }
 });
+ipcMain.on('set-initial-pose', (_, pose) => {
+    console.log('[Main] Setting Initial Pose:', pose);
+    rosWorker?.postMessage({ 
+        type: 'setInitialPose', 
+        pose: pose 
+    });
+});
+ipcMain.handle('nav:set-home', async (_, mapName) => {
+    // 1. ส่งคำสั่งไปที่ Worker
+    rosWorker?.postMessage({ type: 'setHome', mapName });
+
+    // 2. สร้าง Promise รอผลลัพธ์
+    return new Promise((resolve) => {
+        const timeoutMs = 5000; // รอสูงสุด 5 วินาที
+        // ฟังก์ชัน Callback เมื่อได้รับผล
+        const handler = (data) => {
+            // เช็คว่าเป็นผลลัพธ์ของ action 'Set Home' หรือไม่
+            if (data.action === 'Set Home') {
+                clearTimeout(timeoutTimer);
+                internalEvents.off('home-result', handler); // ลบ Listener ออก
+                resolve(data); // ส่งผลลัพธ์กลับไปให้ frontend
+            }
+        };
+
+        // ตั้ง Timeout กันค้าง
+        const timeoutTimer = setTimeout(() => {
+            internalEvents.off('home-result', handler);
+            resolve({ success: false, message: "Timeout: No response from ROS" });
+        }, timeoutMs);
+        // เริ่มรอฟัง Event
+        internalEvents.on('home-result', handler);
+    });
+});
+
+ipcMain.handle('nav:go-home', async (_, mapName) => {
+    // ส่งคำสั่งไปที่ ROS
+    rosWorker?.postMessage({ type: 'goHome', mapName });
+    
+    // คืนค่าทันที เพื่อให้ UI ไม่ต้องรอ
+    return { success: true, message: "Go Home command sent." };
+});
+
 // --- 3.8 Cache & Robots ---
 ipcMain.handle('robots:load', loadRobotsFromFile);
 ipcMain.handle('robots:save', (_, robots) => saveRobotsToFile(robots));

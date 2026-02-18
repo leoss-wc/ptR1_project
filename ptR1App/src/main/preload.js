@@ -52,7 +52,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   deleteMapCache: (mapName) => ipcRenderer.invoke('mapcache:delete', mapName),
   saveEditedMap: (newName, base64, yamlContent) => 
         ipcRenderer.invoke('save-edited-map', { newName, base64, yamlContent }),
-  switchPoseSubscriber: (mode) => ipcRenderer.send('switch-pose-subscriber', { mode }),
   onLaserScan: (callback) => ipcRenderer.on('laser-scan-data', (_event, value) => callback(value)),
   deleteMap: (mapName) => ipcRenderer.send('delete-map', mapName),
   onMapDeleteResult: (callback) => ipcRenderer.on('map-delete-result', (_, result) => callback(result)),
@@ -78,9 +77,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHomeResult: (callback) => ipcRenderer.on('nav:home-result', (_, result) => callback(result)),
 
   // Patrol related api
-  sendPatrolPath: (pathArray) => ipcRenderer.send('send-patrol-path', pathArray),
-  sendStopPatrol: () => ipcRenderer.send('send-stop-patrol'),
-  sendSingleGoal: (pt) => ipcRenderer.send('send-single-goal', pt),
   resumePatrol: (path, index) => ipcRenderer.send('resume-patrol', { path, index }),
   cancelCurrentGoal: () => ipcRenderer.send('send-stop-patrol'),
   onGoalResult: (callback) => ipcRenderer.on('goal-result', (_, data) => callback(data)),

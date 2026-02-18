@@ -286,10 +286,11 @@ function bindUI() {
     }
   });
   document.getElementById('set-home-btn').addEventListener('click', () => {
-    if (!activeMap.name) return alert("Please load a map first.");
+    if (!activeMap.name) return
     if (confirm(`Set CURRENT robot position as HOME for map "${activeMap.name}"?`)) {
       window.electronAPI.setHome(activeMap.name);
     }
+
   });
   document.getElementById('go-home-btn').addEventListener('click', () => {
     if (!activeMap.name) return alert("Please load a map first.");
@@ -302,13 +303,13 @@ function bindUI() {
 
   window.electronAPI.onHomeResult((res) => {
     if (res.success) {
-      if (res.action !== 'Go Home') alert(`✅ ${res.action}: Success`);
+      if (res.action !== 'Go Home') console.log(`${res.action}: Success`);
       if (res.action === 'Set Home') {
           updateHomePose(); 
       }
       console.log(`[Home] ${res.action}: ${res.message}`);
     } else {
-      alert(`❌ ${res.action} Failed: ${res.message}`);
+      console.log(`❌ ${res.action} Failed: ${res.message}`);
     }
   });
   // Listener รับผลการลบแผนที่
@@ -673,11 +674,10 @@ function setupCanvasEvents() {
       const quaternion = yawToQuaternion(yaw);
       
       const poseData = { position: poseStartPosition, orientation: quaternion };
-
+      console.log(`Iniial pose :${poseData.position} orien : ${poseData.orientation}`)
       if (mode === 'pose') {
           window.electronAPI.setInitialPose(poseData);
           console.log
-          window.electronAPI.switchPoseSubscriber('amcl');
       } else {
           stopPatrol();
           const goalData = {
