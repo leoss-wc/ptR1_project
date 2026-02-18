@@ -3,6 +3,7 @@
  */
 
 const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
+app.commandLine.appendSwitch('lang', 'en-GB');
 const path = require('path');
 const { Worker } = require('worker_threads');
 const fs = require('fs');
@@ -423,7 +424,7 @@ ipcMain.on('save-video', (_, { buffer, date, filename }) => {
              
              if (success) {
                  console.log(`Converted: ${mp4Path}`);
-                 // ✅ ลบไฟล์ต้นฉบับ .webm ทิ้งเพื่อประหยัดพื้นที่
+                 // ลบไฟล์ต้นฉบับ .webm ทิ้งเพื่อประหยัดพื้นที่
                  fs.unlink(webmPath, (unlinkErr) => {
                      if (unlinkErr) console.error("⚠️ Failed to delete temp .webm:", unlinkErr);
                      else console.log("🗑️ Deleted temp .webm file.");
@@ -533,7 +534,7 @@ app.whenReady().then(() => {
 
   // Init Processes
   startPythonBackend();
-  createRosWorker(); // ✅ Start Worker Here
+  createRosWorker();
   createWindow();
 
   app.on('activate', () => {

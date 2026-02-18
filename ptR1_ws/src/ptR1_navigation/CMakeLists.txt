@@ -67,7 +67,7 @@ find_package(catkin REQUIRED COMPONENTS
  add_service_files(
    FILES
     ListMaps.srv
-    LoadMap.srv
+    SelectNavMap.srv
     GetMapFile.srv
     SaveMap.srv
     StartSLAM.srv

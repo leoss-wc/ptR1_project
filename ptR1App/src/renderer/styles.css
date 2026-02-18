@@ -180,6 +180,33 @@ h2, h3, h4 {
   background-color: #5865f2;
   color: white;
 }
+/* --- Commd View Layout --- */
+.commd-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr; /* แบ่งครึ่งซ้ายขวา */
+    gap: 15px;
+    align-items: start; /* ให้กล่องเริ่มจากด้านบน */
+}
+
+.commd-col {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ทำให้ Grid เป็นคอลัมน์เดียวเมื่อจอเล็ก */
+@media (max-width: 800px) {
+    .commd-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.input-group input {
+    background-color: #222;
+    border: 1px solid #444;
+    color: white;
+    padding: 5px;
+    border-radius: 4px;
+}
 
 /* --- Panels --- */
 .panel {

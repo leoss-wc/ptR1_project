@@ -71,6 +71,8 @@ function drawRobotOnLiveMap(ctx) {
     const px = (pose.position.x - origin.position.x) / resolution;
     const py = height - ((pose.position.y - origin.position.y) / resolution);
 
+    
+
     // วาดตัวหุ่นยนต์ (วงกลมสีฟ้า)
     ctx.beginPath();
     ctx.arc(px, py, 5, 0, 2 * Math.PI, false);
@@ -82,7 +84,7 @@ function drawRobotOnLiveMap(ctx) {
 
     // วาดลูกศรบอกทิศทาง
     const yaw = quaternionToYaw(pose.orientation);
-    const arrowLength = 10;
+    const arrowLength = 15;
     ctx.beginPath();
     ctx.moveTo(px, py);
     ctx.lineTo(px + arrowLength * Math.cos(-yaw), py + arrowLength * Math.sin(-yaw));
@@ -112,6 +114,16 @@ function setupLiveCanvasEvents() {
 
 export function drawLiveMap() {
     if (!canvas) return;
+    const displayWidth = canvas.clientWidth;
+    const displayHeight = canvas.clientHeight;
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+        canvas.width = displayWidth;
+        canvas.height = displayHeight;
+        
+        // ถ้ามีการปรับขนาด อาจจะอยากให้ Reset View ใหม่อีกรอบ (Optional)
+        resetLiveMapView(); 
+    }
+
     const ctx = canvas.getContext('2d');
     
     // ปิด Smoothing เพื่อให้แผนที่คมชัดแบบ Pixel Art

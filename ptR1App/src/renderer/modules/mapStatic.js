@@ -676,7 +676,7 @@ function setupCanvasEvents() {
 
       if (mode === 'pose') {
           window.electronAPI.setInitialPose(poseData);
-          console.log("Initial Pose Set via UI");
+          console.log
           window.electronAPI.switchPoseSubscriber('amcl');
       } else {
           stopPatrol();
@@ -697,6 +697,7 @@ function setupCanvasEvents() {
           setGoalPoint(goalData.pose);
           window.electronAPI.startPatrol([goalData], false); 
           console.log("New Goal Set via UI");
+          
       }
       isSettingPose = false;
       isSettingGoal = false;

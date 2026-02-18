@@ -6,8 +6,8 @@ export class OverlayCanvas {
 
         // Default Config
         this.securityConfig = {
-            danger: ['fire', 'knife', 'weapon'], // อันตรายเสมอ (เปลี่ยนไม่ได้)
-            restricted: ['person'], // 🟢 Default: ตรวจแค่คน (เดี๋ยวอัปเดตจาก UI)
+            danger: ['fire', 'knife', 'weapon'],
+            restricted: ['person'], 
         };
 
         this.restrictedTime = { start: "22:00", end: "06:00", enabled: false };
@@ -36,15 +36,30 @@ export class OverlayCanvas {
         this.restrictedTime = { start, end, enabled };
     }
     isCurrentTimeRestricted() {
+        // ถ้าไม่ได้เปิดใช้งาน Schedule (enabled = false) 
+        // ให้ถือว่าแจ้งเตือนตลอดเวลา (return true)
         if (!this.restrictedTime.enabled) return true;
+
         const now = new Date();
+        // getHours() คืนค่า 0-23 (24-hour format)
         const currentMinutes = now.getHours() * 60 + now.getMinutes();
+
+        // แปลงเวลา Start/End ที่รับมา ("22:00", "06:00") เป็นนาทีรวม
         const [startH, startM] = this.restrictedTime.start.split(':').map(Number);
         const [endH, endM] = this.restrictedTime.end.split(':').map(Number);
+        
         const startTotal = startH * 60 + startM;
         const endTotal = endH * 60 + endM;
-        if (startTotal < endTotal) return currentMinutes >= startTotal && currentMinutes <= endTotal;
-        else return currentMinutes >= startTotal || currentMinutes <= endTotal;
+
+        // กรณีช่วงเวลาปกติ (เช่น 08:00 - 17:00)
+        if (startTotal < endTotal) {
+            return currentMinutes >= startTotal && currentMinutes <= endTotal;
+        } 
+        // กรณีข้ามคืน (เช่น 22:00 - 06:00)
+        // ต้องตรวจสอบว่าเวลาปัจจุบัน "มากกว่าเวลาเริ่ม" หรือ "น้อยกว่าเวลาจบ"
+        else {
+            return currentMinutes >= startTotal || currentMinutes <= endTotal;
+        }
     }
     setRestrictedItems(items) {
         this.securityConfig.restricted = items;
@@ -60,6 +75,8 @@ export class OverlayCanvas {
         // คำนวณอัตราส่วน (Canvas Size / Video Resolution)
         const scaleX = this.canvas.width / this.videoElement.videoWidth;
         const scaleY = this.canvas.height / this.videoElement.videoHeight;
+        // isFlashOn สำหรับเอฟเฟกต์กระพริบ (เปลี่ยนค่าทุก 500ms)
+        const isFlashOn = Math.floor(Date.now() / 500) % 2 === 0;
 
         detections.forEach(det => {
             const [x1, y1, x2, y2] = det.box;
@@ -73,7 +90,7 @@ export class OverlayCanvas {
                 // 2. เช็คของใน Check List (Restricted)
                 else if (this.securityConfig.restricted.includes(det.class)) {
                     // ถ้าอยู่ในรายการที่ติ๊กไว้ -> เช็คเวลาต่อ
-                    if (isRestrictedTime) {
+                    if (this.isCurrentTimeRestricted()) {
                         alertLevel = 'restricted';
                     }
                 }

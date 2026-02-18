@@ -35,7 +35,7 @@ export class CanvasRecorder {
     // ตั้งเวลาสำหรับตัดคลิป
     this.#recordingTimeout = setTimeout(() => {
       if (this.#mediaRecorder?.state === 'recording') {
-        console.log('⏱Segment finished (timeout). Stopping...');
+        console.log('Segment finished (timeout). Stopping...');
         this.#mediaRecorder.stop();
       }
     }, this.segmentMs);

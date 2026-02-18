@@ -28,10 +28,11 @@ import { OverlayCanvas } from './modules/OverlayCanvas.js';
 let recorder = null;
 let isFirstMapReceived = false; // ตัวแปรเพื่อตรวจสอบว่าได้รับข้อมูลแผนที่ครั้งแรกหรือยัง
 let lastFrameTime = 0;
-const targetFPS = 1; //live map  Frame Rate 
+const targetFPS = 15; //live map  Frame Rate 
 const fpsInterval = 1000 / targetFPS;
 let liveMapRenderId = null;
 let isHomeMapInitialized = false;
+let isTfRenderPending = false;
 const rosDependentButtons = [
   'delete-map-btn',
   'sync-maps-btn',
@@ -57,12 +58,6 @@ document.addEventListener('DOMContentLoaded', async() => {
   setupRecorder();
   setupGlobalCallbacks();
   setupVideoPlayer();
-  const videoElement = document.getElementById('stream');
-  if (videoElement) {
-      window.overlay = new OverlayCanvas('yolo-overlay', videoElement);
-      console.log("Overlay initialized globally.");
-  }
-
   //ตั้งค่าการสลับ View ผ่าน Sidebar
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => switchView(item.dataset.view));
@@ -94,50 +89,143 @@ document.addEventListener('DOMContentLoaded', async() => {
         console.warn("window.api.onRobotStatus not found");
     }
   
-  //Detection Schedule Elements
-  const scheduleToggle = document.getElementById('schedule-toggle');
-  const startTimeInput = document.getElementById('alert-start-time');
-  const endTimeInput = document.getElementById('alert-end-time');
-  const setScheduleBtn = document.getElementById('update-schedule-btn');
-  function updateSecuritySchedule() {
-    const start = startTimeInput.value;
-    const end = endTimeInput.value;
-    const isEnabled = scheduleToggle.checked;
+const videoElement = document.getElementById('stream');
+    if (videoElement) {
+        window.overlay = new OverlayCanvas('yolo-overlay', videoElement);
+        console.log("Overlay initialized globally.");
+    }
 
-    //ดึงค่าจาก Checkbox ทั้งหมดที่มี class 'sec-item-check'
-    const checkboxes = document.querySelectorAll('.sec-item-check');
-    const selectedItems = [];
-    checkboxes.forEach(cb => {
-        if (cb.checked) {
-            selectedItems.push(cb.value); // เก็บค่า value (เช่น 'person', 'cat')
+    // --- Security Schedule Elements (New UI) ---
+    const modeRadios = document.querySelectorAll('input[name="sec-mode"]');
+    const timeBox = document.getElementById('time-settings-box');
+    const timeInputs = ['alert-start-time', 'alert-end-time'];
+    const updateBtn = document.getElementById('update-security-btn');
+
+    // ฟังก์ชันหลักสำหรับอ่านค่าและส่งไป Overlay
+    function applySecuritySettings() {
+        if (!window.overlay) return;
+
+        // 1. หาโหมดที่เลือก (Radio)
+        // ต้องเช็คก่อนว่ามี element ไหม เพื่อป้องกัน error ถ้า HTML โหลดไม่ทัน
+        const radioChecked = document.querySelector('input[name="sec-mode"]:checked');
+        if (!radioChecked) return; 
+        
+        const selectedMode = radioChecked.value;
+        const startTime = document.getElementById('alert-start-time').value;
+        const endTime = document.getElementById('alert-end-time').value;
+
+        // 2. ดึงรายการ Restricted จาก Checkbox
+        const checkboxes = document.querySelectorAll('.sec-item-check');
+        const selectedRestricted = [];
+        checkboxes.forEach(cb => {
+            if (cb.checked) selectedRestricted.push(cb.value);
+        });
+
+        // 3. ส่งค่าไปที่ OverlayCanvas ตามโหมด
+        switch (selectedMode) {
+            case 'disable':
+                // ปิดระบบความปลอดภัยทั้งหมด
+                window.overlay.setSecurityMode(false);
+                break;
+
+            case 'always':
+                // เปิดระบบ + ปิดการเช็คเวลา (ให้ทำงานตลอดเวลา)
+                window.overlay.setSecurityMode(true);
+                window.overlay.setRestrictedTime(startTime, endTime, false); 
+                break;
+
+            case 'schedule':
+                // เปิดระบบ + เปิดการเช็คเวลา
+                window.overlay.setSecurityMode(true);
+                window.overlay.setRestrictedTime(startTime, endTime, true); 
+                break;
+        }
+
+        // อัปเดตรายการของ
+        window.overlay.setRestrictedItems(selectedRestricted);
+        
+        // อัปเดต UI สรุปผล
+        updateSummaryDisplay(selectedMode, selectedRestricted);
+    }
+
+    function updateSummaryDisplay(mode, restrictedItems) {
+        const dangerEl = document.getElementById('summary-danger');
+        const restrictedEl = document.getElementById('summary-restricted');
+        const timeBox = document.getElementById('time-settings-box');
+
+        // จัดการการแสดงผลช่องเวลา
+        if (mode === 'schedule') {
+            timeBox.style.opacity = '1';
+            timeBox.style.pointerEvents = 'auto';
+        } else {
+            timeBox.style.opacity = '0.3';
+            timeBox.style.pointerEvents = 'none';
+        }
+
+        // แสดงรายการ Danger
+        if(dangerEl) dangerEl.textContent = "Fire, Knife, Weapon"; 
+
+        // แสดงรายการ Restricted
+        if (restrictedEl) {
+            if (mode === 'disable') {
+                restrictedEl.textContent = "System Disabled";
+                restrictedEl.style.color = "#aaa";
+            } else {
+                restrictedEl.textContent = restrictedItems.length > 0 ? restrictedItems.join(', ') : "None";
+                restrictedEl.style.color = "#ccc";
+            }
+        }
+    }
+
+    // --- Event Listeners ---
+
+    // 1. ปุ่ม Update (New UI)
+    if (updateBtn) {
+        updateBtn.addEventListener('click', () => {
+            applySecuritySettings();
+            
+            // Effect ปุ่มกดแล้วเปลี่ยนสี
+            const originalText = updateBtn.innerHTML;
+            updateBtn.innerHTML = "Saved!";
+            updateBtn.classList.replace('btn-primary', 'btn-success');
+            setTimeout(() => {
+                updateBtn.innerHTML = originalText;
+                updateBtn.classList.replace('btn-success', 'btn-primary');
+            }, 1000);
+        });
+    }
+
+    // 2. เมื่อเปลี่ยนโหมด Radio ให้ Enable/Disable ช่องเวลาทันที (UX)
+    modeRadios.forEach(radio => {
+        radio.addEventListener('change', () => {
+            const isSchedule = (radio.value === 'schedule');
+            const timeBox = document.getElementById('time-settings-box');
+            if(timeBox) {
+                if (isSchedule) {
+                    timeBox.style.opacity = '1';
+                    timeBox.style.pointerEvents = 'auto';
+                } else {
+                    timeBox.style.opacity = '0.3';
+                    timeBox.style.pointerEvents = 'none';
+                }
+            }
+        });
+    });
+
+    // 3. ป้องกันพิมพ์เวลาแล้ว Key ลั่นไปโดนหุ่นยนต์
+    timeInputs.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('keydown', (e) => e.stopPropagation());
+            el.addEventListener('keyup', (e) => e.stopPropagation());
         }
     });
 
-    // 2. ส่งค่าไปอัปเดต Overlay
-    if (window.overlay) {
-        window.overlay.setRestrictedTime(start, end, isEnabled);
-        window.overlay.setRestrictedItems(selectedItems); // ส่ง Array รายการที่เลือกไป
-    }
-    
-    return selectedItems; // Return ไว้ log เล่นๆ
-    }
-    if (setScheduleBtn) {
-        setScheduleBtn.addEventListener('click', () => {
-            const items = updateSecuritySchedule();
-            alert(`Settings Updated!\nActive: ${scheduleToggle.checked}\nTime: ${startTimeInput.value} - ${endTimeInput.value}\nAlert Objects: ${items.join(', ')}`);
-        });
-    }
-    // อัปเดตทันทีเมื่อกด Toggle
-    if (scheduleToggle) {
-        scheduleToggle.addEventListener('change', updateSecuritySchedule);
-    }
-    // (Optional) อัปเดตทันทีเมื่อติ๊กเลือกของ ก็ทำได้เช่นกัน
-    document.querySelectorAll('.sec-item-check').forEach(cb => {
-        cb.addEventListener('change', updateSecuritySchedule);
-    });
-
-
+    // เรียกครั้งแรกเพื่อ Init UI ให้ตรงกับ Default Value
+    setTimeout(applySecuritySettings, 500);
   });
+
+
 function updateRosButtons(isConnected) {
         rosDependentButtons.forEach(id => {
             const btn = document.getElementById(id);
@@ -187,14 +275,39 @@ function setupPatrolEvents() {
 }
 function setupRecorder() {
     const canvas = document.getElementById('capture-canvas');
-    if(canvas) {
+    const video = document.getElementById('stream');
+    const overlayCanvas = document.getElementById('yolo-overlay');
+
+    if(canvas && video && overlayCanvas) {
+        // 1. เริ่มต้น Recorder
         recorder = new CanvasRecorder(canvas, { fps: 30, segmentMs: 10 * 60 * 1000 });
+        
         const startBtn = document.getElementById('start-record');
         const stopBtn = document.getElementById('stop-record');
         
-        startBtn.addEventListener('click', () => { recorder.start(); startBtn.disabled = true; stopBtn.disabled = false; });
-        stopBtn.addEventListener('click', () => { recorder.stop(); startBtn.disabled = false; stopBtn.disabled = true; });
-        console.log('Recorder: Canvas recorder initialized.');
+        startBtn.addEventListener('click', () => { 
+            recorder.start(); 
+            startBtn.disabled = true; 
+            stopBtn.disabled = false; 
+        });
+        stopBtn.addEventListener('click', () => { 
+            recorder.stop(); 
+            startBtn.disabled = false; 
+            stopBtn.disabled = true; 
+        });
+        const ctx = canvas.getContext('2d');
+        const drawLoop = () => {
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                // วาดวิดีโอเป็นพื้นหลัง
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                // วาด Overlay ทับ (แม้ overlay จะ display:none ก็วาดติด)
+                ctx.drawImage(overlayCanvas, 0, 0, canvas.width, canvas.height);
+            }
+            requestAnimationFrame(drawLoop);
+        };
+        drawLoop(); // สั่งรัน Loop ทันที
+
+        console.log('Recorder: Canvas recorder & Draw loop initialized.');
     }
 }
 function setupGlobalCallbacks() {
@@ -224,14 +337,8 @@ function setupGlobalCallbacks() {
         }
     });
 
-    window.electronAPI.onRobotPosSlam((pose) => pose.position && updateLiveRobotPose(pose));
-    window.electronAPI.onRobotPosAmcl((pose) => {
-        if (pose.position) {
-            updateRobotPose(pose.position, pose.orientation);
-            renderDashboardMap();
-            renderObjects();
-        }
-    });
+    //window.electronAPI.onRobotPosSlam((pose) => pose.position && updateLiveRobotPose(pose));
+    //window.electronAPI.onRobotPosAmcl((pose) => {});
     window.electronAPI.onTfUpdate((tfData) => {
         // TF ส่งมาเป็น { translation: {x,y,z}, rotation: {x,y,z,w} }
         // เราต้องแปลงให้เข้ากับฟอร์มที่ updateRobotPose ต้องการ
@@ -242,11 +349,22 @@ function setupGlobalCallbacks() {
         const orientation = tfData.rotation;
 
         // เรียกฟังก์ชันวาดหุ่นยนต์ตัวเดิมของคุณ
+        const pose = { position, orientation };
         updateRobotPose(position, orientation);
+        updateLiveRobotPose(pose)
         
-        // สั่งวาดใหม่
-        renderDashboardMap();
-        renderObjects(); // วาดหุ่นยนต์และวัตถุอื่นๆ
+        if (!isTfRenderPending) {
+        isTfRenderPending = true;
+
+        requestAnimationFrame(() => {
+            // วาดจริงตรงนี้ (จะทำงานเมื่อหน้าจอพร้อม Refresh)
+            renderDashboardMap(); // วาด Mini Map
+            renderObjects();      // วาด Main Map (หุ่นยนต์)
+            
+            // ปลดล็อค เพื่อให้รอบหน้าสั่งวาดใหม่ได้
+            isTfRenderPending = false;
+        });
+    }
     });
 
 
@@ -273,7 +391,7 @@ function renderLoop(currentTime) {
   // Get the canvas element.
   const liveMapCanvas = document.getElementById('liveMapCanvas');
 
-  // 🛑 SELF-STOPPING GUARD: If the canvas is hidden or doesn't exist,
+  // SELF-STOPPING GUARD: If the canvas is hidden or doesn't exist,
   // stop the render loop immediately by not requesting the next frame.
   if (!liveMapCanvas || liveMapCanvas.classList.contains('hidden')) {
     liveMapRenderId = null; // Ensure the state reflects that the loop is stopped.
@@ -348,6 +466,16 @@ function switchView(viewName) {
   // กรณีหน้า Map
   if (viewName === 'map') {
     initStaticMap();
-    if (typeof initLiveMap === 'function') initLiveMap();
+    
+    //ถ้าปุ่ม Live Map Active อยู่ ให้เริ่ม Loop ใหม่
+    const liveBtn = document.getElementById('btn-live-map');
+    if (liveBtn && liveBtn.classList.contains('active')) {
+        // ต้องเอา class hidden ออกก่อนเรียก start ไม่งั้น loop จะ kill ตัวเองอีก
+        const liveMapCanvas = document.getElementById('liveMapCanvas');
+        if(liveMapCanvas) liveMapCanvas.classList.remove('hidden');
+        
+        if (typeof initLiveMap === 'function') initLiveMap();
+        startLiveMapRender(); // สั่งเริ่ม Loop ใหม่
+    }
   }
 }

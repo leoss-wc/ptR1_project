@@ -1,0 +1,147 @@
+VM118 preload.js:3 [PRELOAD] Using raw preload: /home/leoss/ptR1Project/ptR1App/src/main/preload.js
+app.js:1 app.js started
+app.js:48 app: DOMContentLoaded fired!
+inputControl.js:30 Input Control: Initialized keyboard and servo controls.
+mapHome.js:29 HomeMap: No map image data available at initialization.
+initHomeMap @ mapHome.js:29
+mapHome.js:69 HomeMap: Render loop started at ~25 FPS.
+mapHome.js:338 HomeMap: Resized to 447x300
+profileManager.js:61 Profile Manager: Initialized profile manager and loaded profiles.
+slamControl.js:97 Slam Control: Initialized SLAM control buttons and callbacks.
+patrol.js:36 New Patrol Manager Initialized.
+app.js:186 Patrol: Event listeners set up.
+relayControl.js:26 Relay Control: Initialized relay buttons.
+app.js:222 Recorder: Canvas recorder & Draw loop initialized.
+app.js:289 app: Global callbacks set up.
+app.js:63 Overlay initialized globally.
+robotStatusView.js:12 RobotStatusRenderer initialized.
+robotStatusView.js:117 PidTuner initialized.
+VM116 renderer_init:2 Electron Security Warning (Insecure Content-Security-Policy) This renderer process has either no Content Security
+  Policy set or a policy with "unsafe-eval" enabled. This exposes users of
+  this app to unnecessary security risks.
+
+For more information and help, consult
+https://electronjs.org/docs/tutorial/security.
+This warning will not show up
+once the app is packaged.
+warnAboutInsecureCSP @ VM116 renderer_init:2
+mapHome.js:338 HomeMap: Resized to 428x300
+profileManager.js:338 🔌 Connecting to ROSBridge at localhost:9090
+profileManager.js:73 🚀 Starting Stream Sequence...
+profileManager.js:82 ⏳ Polling for stream availability...
+profileManager.js:103 Checking stream attempt 1/10...
+profileManager.js:108  HEAD http://localhost:8889/mystream/whep net::ERR_ABORTED 405 (Method Not Allowed)
+waitForStreamReady @ profileManager.js:108
+startRobotStream @ profileManager.js:83
+await in startRobotStream
+(anonymous) @ profileManager.js:26
+profileManager.js:115 Server is responding! Ready to connect.
+profileManager.js:86 ✅ Stream is online! Connecting Player...
+profileManager.js:140 🔗 Initializing Player & AI System...
+webrtcPlayer.js:34 Track received: video
+webrtcPlayer.js:71 WebRTC connection established successfully!
+profileManager.js:155 ▶ Video playing logic triggered.
+profileManager.js:173 Starting AI Processor...
+FrameProcessor.js:21 Attempting to connect to YOLO backend at ws://localhost:8765
+FrameProcessor.js:27 WebSocket connection to YOLO backend established.
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+FrameProcessor.js:43 Error parsing YOLO result: ReferenceError: isRestrictedTime is not defined
+    at OverlayCanvas.js:76:21
+    at Array.forEach (<anonymous>)
+    at OverlayCanvas.drawDetections (OverlayCanvas.js:64:20)
+    at FrameProcessor.onMessageCallback (profileManager.js:181:38)
+    at ws.onmessage (FrameProcessor.js:40:26)
+ws.onmessage @ FrameProcessor.js:43
+profileManager.js:186 zzZ Stopping AI Processor...
+FrameProcessor.js:68 Frame processor stopped.
+FrameProcessor.js:52 WebSocket connection to YOLO backend closed.
