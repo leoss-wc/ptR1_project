@@ -191,7 +191,6 @@ include_directories(
  catkin_install_python(PROGRAMS
    src/map_manager_node.py
    src/navigation_node.py
-   src/pose_republisher.py
    src/stream_manager_node.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )

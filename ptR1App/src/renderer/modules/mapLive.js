@@ -9,6 +9,7 @@ const offscreenCtx = offscreenCanvas.getContext('2d');
 let latestRobotPose = null;
 let currentMapInfo = null;
 let isLiveMapReady = false;
+let isLiveMapInitialized = false;
 
 // เตรียมค่าสีไว้ล่วงหน้า (ABGR Format สำหรับ Little Endian Systems)
 // 0xFF = 255
@@ -101,7 +102,11 @@ export function updateLiveRobotPose(pose) {
 export function initLiveMap() {
   canvas = document.getElementById('liveMapCanvas');
   if (!canvas) return;
-  setupLiveCanvasEvents();
+  if (!isLiveMapInitialized) {
+      setupLiveCanvasEvents();
+      isLiveMapInitialized = true;
+      console.log("Live Map Initialized (Once)");
+  }
 }
 
 // ฟังก์ชันสำหรับติดตั้ง Event Listeners
@@ -145,6 +150,7 @@ export function drawLiveMap() {
     // ถ้าแผนที่กลับหัว ให้ลองแก้บรรทัดนี้ หรือเอาออก
     ctx.translate(0, canvas.height);
     ctx.rotate(-Math.PI / 2);
+    ctx.scale(1, -1);
     
     ctx.drawImage(offscreenCanvas, 0, 0);
 

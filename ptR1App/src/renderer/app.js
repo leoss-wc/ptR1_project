@@ -4,7 +4,7 @@ import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
 import {renderObjects, renderScan, initStaticMap, renderAllLayers, cancelMode} from './modules/mapStatic.js';
-import { renderDashboardMap, initHomeMap,startRenderLoop,stopRenderLoop} from './modules/mapHome.js';
+import { renderDashboardMap, initHomeMap,startRenderLoop,stopRenderLoop,resetViewV2} from './modules/mapHome.js';
 
 import { setupVideoPlayer } from './modules/videoPlayer.js';
 
@@ -76,6 +76,12 @@ document.addEventListener('DOMContentLoaded', async() => {
   document.getElementById('reset-live-view-btn').addEventListener('click', () => {
     resetLiveMapView();
   });
+  const resetHomeBtn = document.getElementById('reset-home-view-btn');
+  if (resetHomeBtn) {
+    resetHomeBtn.addEventListener('click', () => {
+      resetViewV2();
+    });
+  }
 
   const statusRenderer = new RobotStatusRenderer();
   const pidTuner = new PidTuner();
@@ -284,16 +290,31 @@ function setupRecorder() {
         
         const startBtn = document.getElementById('start-record');
         const stopBtn = document.getElementById('stop-record');
+        const splitTimeInput = document.getElementById('record-split-time');
         
         startBtn.addEventListener('click', () => { 
+            // อ่านค่าเวลาจาก Input ทันทีที่กด Start
+            if (splitTimeInput) {
+                let mins = parseInt(splitTimeInput.value);
+                // ป้องกันคนกรอกค่าติดลบ หรือ 0 ให้ใช้ค่า default 10 นาทีแทน
+                if (isNaN(mins) || mins < 1) mins = 10; 
+                splitTimeInput.value = mins;
+                
+                // แปลงนาทีเป็นมิลลิวินาที แล้วอัปเดตลงใน recorder
+                recorder.segmentMs = mins * 60 * 1000;
+                console.log(`Recording segment limit set to: ${mins} minutes (${recorder.segmentMs} ms)`);
+            }
+
             recorder.start(); 
             startBtn.disabled = true; 
             stopBtn.disabled = false; 
+            splitTimeInput.disabled = true; //ล็อคช่องพิมพ์ระหว่างอัด
         });
         stopBtn.addEventListener('click', () => { 
             recorder.stop(); 
             startBtn.disabled = false; 
             stopBtn.disabled = true; 
+            splitTimeInput.disabled = false; //ปลดล็อคช่องพิมพ์เมื่อหยุดอัด
         });
         const ctx = canvas.getContext('2d');
         const drawLoop = () => {

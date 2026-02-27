@@ -339,36 +339,59 @@ function resizeCanvas() {
   }
 }
 function drawPatrolPath() {
-  if (patrolPath.length < 2 || !activeMap?.meta || !mapImg) return;
-
-  // console.log("--- Debugging drawPatrolPath ---");
-  // console.log("First point in path:", patrolPath[0]);
-  // console.log("Origin from meta:", activeMap.meta.origin);
-  // console.log("---------------------------------");
+  // เปลี่ยนเป็น < 1 เพื่อให้แม้มีแค่จุดเดียวก็ยังวาดโชว์บนหน้า Home ได้
+  if (patrolPath.length < 1 || !activeMap?.meta || !mapImg) return; 
 
   const { resolution, origin } = activeMap.meta;
   const imgH = mapImg.height;
 
-  ctx.strokeStyle = 'orange'; // สีส้ม เหมือนกับในหน้า Static Map
-  ctx.lineWidth = 2;
-  ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ เพื่อแยกความแตกต่าง
-  ctx.beginPath();
+  // --- 1. วาดเส้นประเชื่อมแต่ละจุด (ถ้ามีมากกว่า 1 จุด) ---
+  if (patrolPath.length > 1) {
+    ctx.strokeStyle = 'orange'; // สีส้ม
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 5]); // ทำให้เป็นเส้นประ
+    ctx.beginPath();
 
-  //console.log(`--- Drawing on Canvas (Size: ${canvas.width}x${canvas.height}) ---`);
+    patrolPath.forEach((point, index) => {
+      // แปลง World Coordinate เป็น Screen Coordinate
+      const px = (point.x - origin[0]) / resolution;
+      const py = imgH - (point.y - origin[1]) / resolution;
+      const screenX = px * zoom + offset.x;
+      const screenY = py * zoom + offset.y;
+      
+      if (index === 0) {
+        ctx.moveTo(screenX, screenY);
+      } else {
+        ctx.lineTo(screenX, screenY);
+      }
+    });
+    ctx.stroke();
+    ctx.setLineDash([]); // คืนค่าให้เป็นเส้นทึบสำหรับส่วนอื่น
+  }
+
+  // --- 2. วาดจุด Waypoint แต่ละจุด (วงกลม) ---
   patrolPath.forEach((point, index) => {
-    // แปลง World Coordinate เป็น Screen Coordinate
+    // แปลงพิกัดอีกรอบสำหรับวาดวงกลม
     const px = (point.x - origin[0]) / resolution;
     const py = imgH - (point.y - origin[1]) / resolution;
     const screenX = px * zoom + offset.x;
     const screenY = py * zoom + offset.y;
-    if (index === 0) {
-      ctx.moveTo(screenX, screenY);
-    } else {
-      ctx.lineTo(screenX, screenY);
-    }
+    
+    // ตั้งค่าขนาดจุด (รัศมี 4 พิกเซล)
+    const radius = 4;
+    
+    ctx.beginPath();
+    ctx.arc(screenX, screenY, radius, 0, 2 * Math.PI);
+    
+    // สีของจุด: จุดแรก (Start) สีเขียว, จุดอื่นๆ สีฟ้า (Cyan) ให้เหมือนหน้า Static
+    ctx.fillStyle = (index === 0) ? '#00FF00' : 'cyan'; 
+    ctx.fill();
+    
+    // ตัดขอบดำบางๆ ให้จุดดูมีมิติและมองเห็นชัดขึ้นเวลาอยู่บนพื้นสีสว่าง
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
   });
-  ctx.stroke();
-  ctx.setLineDash([]); // คืนค่าให้เป็นเส้นทึบสำหรับส่วนอื่น
 }
 
 function drawLaserScan() {

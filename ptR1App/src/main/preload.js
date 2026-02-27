@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   startFFmpegStream: () => ipcRenderer.invoke('start-stream'),
   stopFFmpegStream: () => ipcRenderer.invoke('stop-stream'),
   onStreamStatus: (callback) => ipcRenderer.on('stream-status', (_, data) => callback(data)),
+  saveDatasetImage: (base64Data) => ipcRenderer.send('save-dataset-image', base64Data),
 
   loadRobots: () => ipcRenderer.invoke('robots:load'),
   saveRobots: (robots) => ipcRenderer.invoke('robots:save', robots),

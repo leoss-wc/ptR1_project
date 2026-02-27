@@ -25,6 +25,9 @@ const mapCacheDir = path.join(userDataPath, 'map_cache');
 const mapFolder = path.join(userDataPath, 'maps');
 const dataFolder = path.join(userDataPath, 'data');
 const videoFolder = path.join(app.getPath('videos'), 'ptR1');
+const captureDir = path.join(app.getPath('pictures'), 'ptR1_capture');
+
+
 const isDev = !app.isPackaged;
 
 // --- Dev Server for Videos ---
@@ -474,6 +477,24 @@ ipcMain.handle('stop-stream', async () => {
         setTimeout(() => resolve(true), 3000);
     });
 });
+ipcMain.on('save-dataset-image', (event, base64Data) => {
+    if (!fs.existsSync(captureDir)){
+      fs.mkdirSync(captureDir);
+    }
+    // ตัดส่วนหัว 'data:image/jpeg;base64,' ออก
+    const base64Image = base64Data.split(';base64,').pop();
+    
+    // ตั้งชื่อไฟล์ด้วย Timestamp
+    const fileName = `frame_${Date.now()}.jpg`;
+    const filePath = path.join(captureDir, fileName);
+
+    // บันทึกไฟล์
+    fs.writeFile(filePath, base64Image, {encoding: 'base64'}, function(err) {
+        if (err) console.log('Error saving image:', err);
+    });
+});
+
+
 ipcMain.handle('nav:get-home', async (_, mapName) => {
   try {
     const homeConfigPath = path.join(dataFolder, 'map_homes.json');

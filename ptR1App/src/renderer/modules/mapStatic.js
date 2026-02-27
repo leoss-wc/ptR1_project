@@ -35,6 +35,8 @@ let homePose = null;
 
 let mapEdits = [];
 
+let isStaticMapInitialized = false;
+
 const mapDependentButtons = [
     'toggle-draw-mode',
     'save-path-btn',
@@ -73,12 +75,21 @@ export function initStaticMap() {
   backgroundCtx = backgroundCanvas.getContext('2d');
   objectsCtx = objectsCanvas.getContext('2d');
   scanCtx = scanCanvas.getContext('2d');
-  
-  bindUI();
-  setupCanvasEvents();
-  loadLocalMapsToGallery();
-  loadLastActiveMap();
-  updateMapToolsState(false);
+
+  if (!isStaticMapInitialized) {
+      bindUI();
+      setupCanvasEvents();
+      loadLocalMapsToGallery();
+      loadLastActiveMap();
+      updateMapToolsState(false);
+      
+      isStaticMapInitialized = true;
+      console.log("Static Map Initialized (Once)");
+  }
+  requestAnimationFrame(() => {
+      // บังคับให้ระบบคำนวณขนาด (Resize) ใหม่ให้พอดีกับหน้าต่าง
+      window.dispatchEvent(new Event('resize'));
+  });
 }
 
 // ฟังก์ชันสำหรับปรับขนาด Canvas ทั้งหมดให้ตรงกับขนาดของ Container

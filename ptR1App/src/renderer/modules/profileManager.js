@@ -61,6 +61,73 @@ export async function initProfileManager() {
   console.log('Profile Manager: Initialized profile manager and loaded profiles.');
 }
 
+export function initDatasetCollector() {
+    // รับฟัง Event การกดคีย์บอร์ด
+    document.addEventListener('keydown', (event) => {
+        // เช็คว่ากดปุ่ม Spacebar และไม่ได้กำลังพิมพ์ข้อความในช่อง Input อยู่
+        if (event.code === 'Space' && event.target.tagName !== 'INPUT') {
+            event.preventDefault(); // ป้องกันไม่ให้หน้าจอเลื่อนลงมาเวลากดสเปซบาร์
+            captureSingleFrame();
+        }
+    });
+
+    console.log("Dataset Collector Ready: Press SPACEBAR to capture a frame.");
+}
+
+function captureSingleFrame() {
+    const videoElement = document.getElementById('stream');
+    const canvas = document.getElementById('capture-canvas');
+    if (!videoElement || videoElement.paused || videoElement.ended) {
+        console.warn("Video is not playing. Cannot capture.");
+        return;
+    }
+
+    const context = canvas.getContext('2d');
+    
+    // ตั้งขนาด Canvas ให้พอดีกับวิดีโอ
+    canvas.width = videoElement.videoWidth || 640;
+    canvas.height = videoElement.videoHeight || 480;
+
+    // วาดภาพปัจจุบันลง Canvas
+    context.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+    
+    // แปลงภาพเป็น Base64 (JPEG คุณภาพ 90%)
+    const base64Image = canvas.toDataURL('image/jpeg', 0.9);
+
+    // ส่งภาพไปให้ main.js
+    if (window.electronAPI && window.electronAPI.saveDatasetImage) {
+        window.electronAPI.saveDatasetImage(base64Image);
+        showFlashEffect();
+    }
+}
+function showFlashEffect() {
+    // หา div ที่ครอบวิดีโออยู่
+    const videoContainer = document.querySelector('.video-stream');
+    if (!videoContainer) return;
+
+    // สร้างแผ่นสีขาวทับหน้าจอ
+    const flash = document.createElement('div');
+    flash.style.position = 'absolute';
+    flash.style.top = '0';
+    flash.style.left = '0';
+    flash.style.width = '100%';
+    flash.style.height = '100%';
+    flash.style.backgroundColor = 'white';
+    flash.style.opacity = '0.5'; // ความสว่างของแฟลช
+    flash.style.pointerEvents = 'none'; // ให้คลิกทะลุได้
+    flash.style.transition = 'opacity 0.15s ease-out'; // ความเร็วในการเฟดออก
+    flash.style.zIndex = '999';
+    
+    videoContainer.appendChild(flash);
+    
+    // สั่งให้แฟลชจางหายไปอย่างรวดเร็ว (เหมือนกดชัตเตอร์กล้อง)
+    setTimeout(() => {
+        flash.style.opacity = '0';
+        setTimeout(() => flash.remove(), 150);
+    }, 50);
+}
+
+
 export async function startRobotStream() {
     const address = document.getElementById('profile-address').value;
     const whepPort = document.getElementById('profile-whep-port').value; 
