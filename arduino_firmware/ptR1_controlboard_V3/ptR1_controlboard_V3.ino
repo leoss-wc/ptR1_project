@@ -36,6 +36,8 @@ const char* password = "leoleo76";
 
 bool debug_mode = false;
 bool manual_mode = false;
+bool enable_lpf = true;
+double lpf_alpha = 0.25;
 
 //---พินของมอเตอร์ไดรเวอร์ (Motor Driver)---
   const uint8_t md1_PWMA  = 6; // to esp32 pin
@@ -113,7 +115,7 @@ bool manual_mode = false;
   float filter_amp_adc = 0; // เก็บค่า ADC ที่กรองแล้ว ของ current sensor
 
 // --- PID object and variables ---
-  double Kp = 4.5, Ki = 14, Kd = 0.0;
+  double Kp = 5.5, Ki = 30, Kd = 0.0;
   // PID Objects  setpoint(ROS) input(Encoder) output(PID)
   double sp_FL=0, in_FL=0, out_FL=0;
   double sp_FR=0, in_FR=0, out_FR=0;
@@ -128,7 +130,7 @@ bool manual_mode = false;
   unsigned long prevPIDTime = 0;
   //Ramp Filter
   double target_FL = 0, target_FR = 0, target_RL = 0, target_RR = 0;
-  const double RAMP_STEP = 5.0; // ค่าความชันการเร่ง (Rad/s ต่อ Loop) ยิ่งน้อยยิ่งนุ่ม
+  const double RAMP_STEP = 10.0; // ค่าความชันการเร่ง
 
 
 //---Encoder variable---
@@ -230,7 +232,6 @@ void setup() {
   ArduinoOTA.setHostname("ptR1_ESP32S3");
   ArduinoOTA.begin();
   Serial.println("พร้อมอัปโหลดผ่าน WiFi แล้ว");
-  
   //Setup PCF8575
   pcf.begin();
   pcf_buffer = 0x0000;
@@ -299,7 +300,7 @@ void setup() {
   wheels_msg.data_length = 4;
   wheels_msg.data = (float *)malloc(sizeof(float) * 4);
 
-  nh.getHardware()->setBaud(115200);
+  nh.getHardware()->setBaud(921600);
   nh.initNode();
   broadcaster.init(nh);
   nh.subscribe(subCmdVelManual);
@@ -324,7 +325,7 @@ void setup() {
   const unsigned long PUB_INTERVAL_MS = 50; // 50ms = 20Hz
 
   unsigned long prevHeartbeat = 0;
-  const unsigned long HEARTBEAT_INTERVAL = 5000;
+  const unsigned long HEARTBEAT_INTERVAL = 1000;
 
   unsigned long lastCmdTime = 0;
   const unsigned long CMD_TIMEOUT = 300; // watchdog
@@ -335,6 +336,11 @@ void setup() {
   unsigned long prevVoltRead = 0;
 
   int compassCounter = 0;
+
+// --- CPU Load Variables ---
+  unsigned long active_micros_acc = 0;
+  unsigned long last_cpu_measure_time = 0;
+  float cpu_usage_percent = 0.0;
 
 void loop() {
   ArduinoOTA.handle();
@@ -387,6 +393,7 @@ void loop() {
   //PID Loop 
   unsigned long currentMicros = micros();
   if (currentMicros - prevPIDMicros >= PID_INTERVAL_US) {
+    unsigned long work_start = micros();
     float dt = (currentMicros - prevPIDMicros) / 1000000.0; // แปลง us เป็น seconds
     prevPIDMicros = currentMicros;
 
@@ -400,11 +407,24 @@ void loop() {
     
     double ticks_to_rads = RADS_PER_TICK / dt;
 
-    in_FL = (curFL - oldFL) * ticks_to_rads;
-    in_FR = (curFR - oldFR) * ticks_to_rads;
-    in_RL = (curRL - oldRL) * ticks_to_rads;
-    in_RR = (curRR - oldRR) * ticks_to_rads;
-    oldFL = curFL; oldFR = curFR; oldRL = curRL; oldRR = curRR;
+    // คำนวณความเร็วดิบก่อน (Raw Velocity)
+    double raw_FL = (curFL - oldFL) * ticks_to_rads;
+    double raw_FR = (curFR - oldFR) * ticks_to_rads;
+    double raw_RL = (curRL - oldRL) * ticks_to_rads;
+    double raw_RR = (curRR - oldRR) * ticks_to_rads;
+
+    // เลือกใช้แบบผ่าน Filter หรือไม่ผ่าน
+    if (enable_lpf) {
+        in_FL = (in_FL * (1.0 - lpf_alpha)) + (raw_FL * lpf_alpha);
+        in_FR = (in_FR * (1.0 - lpf_alpha)) + (raw_FR * lpf_alpha);
+        in_RL = (in_RL * (1.0 - lpf_alpha)) + (raw_RL * lpf_alpha);
+        in_RR = (in_RR * (1.0 - lpf_alpha)) + (raw_RR * lpf_alpha);
+    } else {
+        in_FL = raw_FL; in_FR = raw_FR; in_RL = raw_RL; in_RR = raw_RR;
+    }
+
+    oldFL = curFL; oldFR = curFR; 
+    oldRL = curRL; oldRR = curRR;
 
     //Odometry calculate and update
     calculateOdometry(dt, in_FL, in_FR, in_RL, in_RR);
@@ -428,21 +448,36 @@ void loop() {
     setPCFBit(STBY_PCF_1, HIGH);
     setPCFBit(STBY_PCF_2, HIGH);
     pcf.write16(pcf_buffer);
+    active_micros_acc += (micros() - work_start);
   }
   if (currentMillis - prevPubMillis >= PUB_INTERVAL_MS) {
+    unsigned long work_start = micros();
     prevPubMillis = currentMillis;
-    publishOdometryAndTF(); 
+    publishOdometryAndTF();
+    active_micros_acc += (micros() - work_start); 
   }
   if (currentMillis - prevHeartbeat >= HEARTBEAT_INTERVAL) {
       prevHeartbeat = currentMillis;
-      publishRobotStatus(); // ส่งสถานะรวม (แบต + ระบบ)
+      publishRobotStatus();
     }
-  if (currentMillis - prevVoltRead >= 200) { 
+  if (currentMillis - prevVoltRead >= 100) { 
     prevVoltRead = currentMillis;
     voltage = readVoltageEMA();
     current = readCurrentEMA();
     }
+  
+  unsigned long work_start = micros();
   nh.spinOnce();
+
+  //สะสมเวลาที่ CPU ทำงานจริงในลูปรอบนี้
+  active_micros_acc += (micros() - work_start);
+
+  //คำนวณเปอร์เซ็นต์ทุกๆ 1 วินาที (1,000 ms)
+  if (currentMillis - last_cpu_measure_time >= 1000) {
+      cpu_usage_percent = (active_micros_acc / 1000000.0) * 100.0;
+      active_micros_acc = 0; 
+      last_cpu_measure_time = currentMillis;
+  }
 }
 
 // ฟังก์ชันช่วยคำนวณ Inverse Kinematics (ใช้ร่วมกันทั้ง Auto และ Manual)
@@ -451,7 +486,7 @@ void computeWheelSpeeds(float vx, float vy, float w) {
 
   double w_final = w;
 
-  if (enable_heading_hold) {
+  if (enable_heading_hold && manual_mode) {
     // กรณีที่ 1: เราสั่งให้หยุดหมุน (w = 0) -> เข้าโหมด "ล็อกทิศ"
     if (abs(w) < 0.005) {
       if (is_turning) {
@@ -531,44 +566,27 @@ void sysCommandCallback(const std_msgs::String& msg) {
   String cmd = msg.data;
   bool status_changed = false;
   if (cmd == "manual_on") {
-    manual_mode = true;
-    // Reset ความเร็วเป็น 0 เพื่อความปลอดภัยตอนสลับโหมด
     sp_FL = 0; sp_FR = 0; sp_RL = 0; sp_RR = 0;
-    status_changed = true;
+    manual_mode = true; status_changed = true;
   } 
   else if (cmd == "manual_off" || cmd == "auto_on") { 
-    manual_mode = false;
-    // Reset ความเร็วเป็น 0
     sp_FL = 0; sp_FR = 0; sp_RL = 0; sp_RR = 0;
-    status_changed = true;
+    manual_mode = false; status_changed = true;
   }
-  else if (cmd == "r1_on") {
-    setPCFBit(RELAY1_PCF, LOW); 
-    pcf.write16(pcf_buffer);
-    status_changed = true;
-    } 
-  else if (cmd == "r1_off") {
-    setPCFBit(RELAY1_PCF, HIGH);
-    pcf.write16(pcf_buffer);
-    status_changed = true;
+  else if (cmd == "r1_on") { setPCFBit(RELAY1_PCF, LOW); pcf.write16(pcf_buffer); status_changed = true; } 
+  else if (cmd == "r1_off") { setPCFBit(RELAY1_PCF, HIGH); pcf.write16(pcf_buffer); status_changed = true; }
+  else if (cmd == "r2_on")  { setPCFBit(RELAY2_PCF, LOW); pcf.write16(pcf_buffer); status_changed = true; }
+  else if (cmd == "r2_off") { setPCFBit(RELAY2_PCF, HIGH); pcf.write16(pcf_buffer); status_changed = true; }
+  else if (cmd == "debug_on") { debug_mode = true; status_changed = true; }
+  else if (cmd == "debug_off") { debug_mode = false; status_changed = true; }
+  else if (cmd == "lpf_on") { enable_lpf = true; status_changed = true; }
+  else if (cmd == "lpf_off") { enable_lpf = false; status_changed = true; }
+  else if (cmd.startsWith("set_lpf:")) {
+    float a = cmd.substring(8).toFloat();
+    if (a > 0.0 && a <= 1.0) {
+      lpf_alpha = a;
+      status_changed = true;
     }
-  else if (cmd == "r2_on")  {
-    setPCFBit(RELAY2_PCF, LOW);
-    pcf.write16(pcf_buffer);
-    status_changed = true;
-  }
-  else if (cmd == "r2_off") {
-    setPCFBit(RELAY2_PCF, HIGH);
-    pcf.write16(pcf_buffer);
-    status_changed = true;
-  }
-  else if (cmd == "debug_on") {
-    debug_mode = true;
-    status_changed = true;
-  }
-  else if (cmd == "debug_off") {
-    debug_mode = false;
-    status_changed = true;
   }
   else if (cmd.startsWith("set_pid:")) {
     // ตัดเอาเฉพาะส่วนตัวเลขหลังเครื่องหมาย :
@@ -695,69 +713,28 @@ void publishOdometryAndTF() {
     broadcaster.sendTransform(t);
 }
 
-double mag_heading = 0;
-const float MAGNETIC_DECLINATION = 0.0 * DEG_TO_RAD;
 void calculateOdometry(float dt, double v_fl, double v_fr, double v_rl, double v_rr) {
-    //Wheel Odometry ---
+    // Control Inputs (จากล้อและ Gyro) ---
     linear_x  = (v_fl + v_fr + v_rl + v_rr) * (WHEEL_RADIUS / 4.0);
     linear_y  = (-v_fl + v_fr + v_rl - v_rr) * (WHEEL_RADIUS / 4.0);
 
-    //Gyro Integration (ทำทุกรอบ เพื่อความต่อเนื่อง) ---
     mpu.update();
-    double gyro_z_reading = mpu.getGyroZ() * DEG_TO_RAD; 
-    // ถ้าค่า Gyro น้อยมากๆ (Noise ตอนจอดนิ่ง) ให้ตัดเป็น 0 ไปเลย (Deadzone)
-    if (abs(gyro_z_reading) < 0.01) gyro_z_reading = 0;
+    double gyro_z_reading = mpu.getGyroZ() * DEG_TO_RAD;
+    if (abs(gyro_z_reading) < 0.015) gyro_z_reading = 0.0; // Deadzone กันไหล
     gyro_z = gyro_z_reading;
-    
-    // บวกค่า Gyro เข้าไปก่อนเลย (Prediction Step)
-    theta += gyro_z * dt; 
 
-    // Normalize Theta (-PI to +PI) กันค่าล้น
+    //คำนวณพิกัด (Basic Odometry) ---
+    theta += gyro_z * dt; // เชื่อ Gyro เพียวๆ
+
+    // Normalize มุม Theta ให้อยู่ในช่วง -PI ถึง PI
     if (theta > PI)  theta -= TWO_PI;
     if (theta < -PI) theta += TWO_PI;
-
-    /*
-    // --- 3. Compass Correction (ทำเฉพาะรอบที่มีข้อมูลใหม่) ---
-    compassCounter++;
-    if (compassCounter >= 4) {
-        compass.read(); 
-        float mag_x = compass.getX();
-        float mag_y = compass.getY();
-        
-        // คำนวณ Heading ใหม่
-        mag_heading = atan2(mag_y, mag_x) + MAGNETIC_DECLINATION;
-        
-        // Normalize Compass Heading
-        if (mag_heading > PI)  mag_heading -= TWO_PI;
-        if (mag_heading < -PI) mag_heading += TWO_PI;
-
-        // --- คำนวณ Error และ Fusion เฉพาะตรงนี้ ---
-        double error = mag_heading - theta;
-
-        // แก้ปัญหา Wrap Around (เช่น Compass 3.14, Theta -3.14 -> error ควรนิดเดียว)
-        if (error > PI)  error -= TWO_PI;
-        if (error < -PI) error += TWO_PI;
-
-        // Apply Correction (เชื่อ Compass 2%)
-        theta += (0.02 * error);
-
-        // Normalize Theta อีกรอบหลังแก้
-        if (theta > PI)  theta -= TWO_PI;
-        if (theta < -PI) theta += TWO_PI;
-
-        compassCounter = 0; // Reset counter
-    }
-    */
-
-    // --- 4. Position Integration ---
-    // ใช้ Theta ล่าสุดที่ผ่านการ Fusion แล้วมาแตกแรง
-    double delta_x = (linear_x * cos(theta) - linear_y * sin(theta)) * dt;
-    double delta_y = (linear_x * sin(theta) + linear_y * cos(theta)) * dt;
-
-    x_pos += delta_x;
-    y_pos += delta_y;
     
-    // อัปเดต Quaternion
+    // คำนวณตำแหน่ง X, Y
+    x_pos += (linear_x * cos(theta) - linear_y * sin(theta)) * dt;
+    y_pos += (linear_x * sin(theta) + linear_y * cos(theta)) * dt;
+
+    //อัปเดต Quaternion เตรียม Publish ---
     odom_quat.w = cos(theta / 2.0);
     odom_quat.z = sin(theta / 2.0);
     odom_quat.x = 0.0;
@@ -830,30 +807,29 @@ void applyRampFilter() {
 }
 
 void publishRobotStatus() {
-  //เช็คสถานะโหมด
-  String modeStr = manual_mode ? "MAN" : "AUTO"; // ย่อให้สั้นลงนิดนึง
+  // เช็คสถานะโหมดการทำงาน ---
+  String modeStr = manual_mode ? "MAN" : "AUTO";
   if (debug_mode) modeStr += "+DBG";
+  if (enable_lpf) modeStr += "+LPF"; // เพิ่มสถานะ LPF ตรงนี้
 
-  //เช็คสถานะ Watchdog
+  // เช็คสถานะ Watchdog ---
   unsigned long timeSinceLastCmd = millis() - lastCmdTime;
   String wdStr = (timeSinceLastCmd > CMD_TIMEOUT) ? "STOP" : "OK";
 
-  //เช็คสถานะ Relay
+  // เช็คสถานะ Relay (Active LOW) ---
   bool r1 = !((pcf_buffer >> RELAY1_PCF) & 1);
   bool r2 = !((pcf_buffer >> RELAY2_PCF) & 1);
 
-  //อัดทุกอย่างลง Buffer
-  // Format: [MODE] Bat:VV.V(A.AA) | WD:State | PID:P,I,D | Relay:1,2
+  // อัดทุกอย่างลง Buffer เตรียมส่ง ---
   snprintf(status_buffer, sizeof(status_buffer), 
-    "[%s] Bat:%.2fV(%.2fA) | WD:%s(%lums) | PID:%.1f,%.1f,%.2f | R:%d,%d", 
+    "[%s] CPU:%.1f%% | Bat:%.2fV(%.2fA) | WD:%s(%lums) | PID:%.1f,%.1f,%.2f | R:%d,%d",
     modeStr.c_str(),
+    cpu_usage_percent,
     voltage, current,
     wdStr.c_str(), timeSinceLastCmd,
     Kp, Ki, Kd,
     r1, r2
   );
-
-  //ส่งข้อมูล
   status_msg.data = status_buffer;
   status_pub.publish(&status_msg);
 }
