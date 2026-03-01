@@ -20,15 +20,17 @@ class TriggeredMoveTester:
         self.current_y = 0.0
         self.odom_received = False
         
-        # ตัวแปรควบคุมเป้าหมาย
+        # ตัวแปรควบคุมเป้าหมายและการทดสอบ
         self.target_x = 0.0
         self.target_y = 0.0
         self.is_moving = False
+        self.move_axis = 'x'       # ตัวแปรบอกว่าตอนนี้กำลังเทสแกนไหน
+        self.start_time = 0.0      # ตัวแปรสำหรับจับเวลา
         
-        # --- ตั้งค่าพารามิเตอร์ P-Controller (ปรับให้เข้ากับ PID ฝั่งบอร์ด) ---
-        self.kp = 0.8         # Gain ความเร็ว 
-        self.max_v = 0.4      # ความเร็วเชิงเส้นสูงสุดเริ่มต้น (m/s) 
-        self.min_v = 0.05     # ความเร็วเชิงเส้นต่ำสุด (m/s) ป้องกันล้อไม่มีแรงหมุนเข้าเป้า
+        # --- ตั้งค่าพารามิเตอร์ P-Controller ---
+        self.kp = 0.8         
+        self.max_v = 0.4      
+        self.min_v = 0.05     
         self.tolerance = 0.02 # ยอมรับความคลาดเคลื่อนที่ 2 เซนติเมตร (0.02 เมตร)
         
         self.rate = rospy.Rate(50) # 50 Hz loop
@@ -41,10 +43,14 @@ class TriggeredMoveTester:
 
     def print_menu(self):
         rospy.loginfo("==========================================")
-        rospy.loginfo("Ready! Waiting for commands:")
-        rospy.loginfo("1. Move X (Forward 3m, Speed 0.5):  rostopic pub -1 /move_cmd geometry_msgs/Point \"{x: 3.0, y: 0.0, z: 0.5}\"")
-        rospy.loginfo("2. Move Y (Slide Left 3m, Speed 0.2): rostopic pub -1 /move_cmd geometry_msgs/Point \"{x: 0.0, y: 3.0, z: 0.2}\"")
-        rospy.loginfo("3. Reset Start Point:               rostopic pub -1 /reset_dist std_msgs/Empty \"{}\"")
+        rospy.loginfo("   PURE 1D MOVEMENT TESTER (NO DRIFT CORRECTION)   ")
+        rospy.loginfo("==========================================")
+        rospy.loginfo("1. Test X-Axis (Forward 3m, Spd 0.5):")
+        rospy.loginfo("   rostopic pub -1 /move_cmd geometry_msgs/Point \"{x: 3.0, y: 0.0, z: 0.5}\"")
+        rospy.loginfo("2. Test Y-Axis (Slide Left 2m, Spd 0.3):")
+        rospy.loginfo("   rostopic pub -1 /move_cmd geometry_msgs/Point \"{x: 0.0, y: 2.0, z: 0.3}\"")
+        rospy.loginfo("3. Reset Tracker:")
+        rospy.loginfo("   rostopic pub -1 /reset_dist std_msgs/Empty \"{}\"")
         rospy.loginfo("==========================================")
 
     def odom_callback(self, msg):
@@ -65,25 +71,32 @@ class TriggeredMoveTester:
         if not self.is_moving:
             dist_x = msg.x
             dist_y = msg.y
-            target_speed = abs(msg.z) # ดึงค่า z มาเป็นความเร็วเป้าหมาย
+            target_speed = abs(msg.z) 
             
-            # ตรวจสอบว่ามีการส่งความเร็วมาหรือไม่ ถ้าไม่ได้ใส่มาให้ใช้ค่าเริ่มต้น 0.4
             if target_speed > 0.0:
                 self.max_v = target_speed
             else:
                 self.max_v = 0.4
                 
-            rospy.loginfo(f"--> Received command to move: X = {dist_x}m, Y = {dist_y}m at max speed {self.max_v} m/s")
+            # --- วิเคราะห์ว่าจะทดสอบแกนไหน ---
+            if abs(dist_x) >= abs(dist_y):
+                self.move_axis = 'x'
+                rospy.loginfo(f"--> [TESTING X AXIS] Move X = {dist_x}m at max speed {self.max_v} m/s")
+            else:
+                self.move_axis = 'y'
+                rospy.loginfo(f"--> [TESTING Y AXIS] Move Y = {dist_y}m at max speed {self.max_v} m/s")
             
-            # คำนวณเป้าหมายโดยบวกเพิ่มจากตำแหน่ง *ปัจจุบัน*
+            # ตั้งเป้าหมายและเริ่มจับเวลา
             self.target_x = self.current_x + dist_x
             self.target_y = self.current_y + dist_y
+            self.start_time = rospy.Time.now().to_sec()
             self.is_moving = True
+            
         else:
             rospy.logwarn("Robot is already moving! Please wait or send Reset.")
 
     def clamp_velocity(self, velocity):
-        # ฟังก์ชันจำกัดความเร็วไม่ให้เกิน max_v (ที่ตั้งใหม่) และไม่ต่ำกว่า min_v
+        # ฟังก์ชันจำกัดความเร็ว
         if abs(velocity) < 0.001:
             return 0.0
         if velocity > 0:
@@ -98,26 +111,37 @@ class TriggeredMoveTester:
                 error_x = self.target_x - self.current_x
                 error_y = self.target_y - self.current_y
                 
-                # หาระยะห่างรวม (Euclidean distance)
-                distance_left = math.sqrt(error_x**2 + error_y**2)
-                
                 cmd = Twist()
                 
-                # ถ้าเข้าใกล้เป้าหมายในระยะที่รับได้แล้ว ให้หยุด
-                if distance_left < self.tolerance:
-                    self.pub_cmd.publish(cmd) # ส่ง 0.0 ไปหยุดมอเตอร์
-                    self.is_moving = False
-                    rospy.loginfo("+++ Movement Finished! You can measure the distance now. +++")
-                else:
-                    # จ่ายความเร็วตามแกน X และ Y
-                    vel_x = self.kp * error_x
-                    vel_y = self.kp * error_y
-                    
-                    # หุ่นจะเร่งความเร็วไปถึงค่า z ที่เราส่งไป และลดความเร็วเมื่อเข้าใกล้เป้าหมาย
-                    cmd.linear.x = self.clamp_velocity(vel_x)
-                    cmd.linear.y = self.clamp_velocity(vel_y)
-                    
-                    self.pub_cmd.publish(cmd)
+                # ==========================================
+                # โหมดทดสอบแกน X (เดินหน้า-ถอยหลังเพียวๆ)
+                # ==========================================
+                if self.move_axis == 'x':
+                    if abs(error_x) < self.tolerance:
+                        self.pub_cmd.publish(cmd) # หยุดมอเตอร์
+                        self.is_moving = False
+                        elapsed_time = rospy.Time.now().to_sec() - self.start_time
+                        rospy.loginfo("+++ X-Axis Target Reached! +++")
+                        rospy.loginfo(f"Time Taken: {elapsed_time:.2f} seconds")
+                    else:
+                        cmd.linear.x = self.clamp_velocity(self.kp * error_x)
+                        cmd.linear.y = 0.0  # บังคับ Y ให้เป็น 0 ตลอดการเดินทาง
+                        self.pub_cmd.publish(cmd)
+                        
+                # ==========================================
+                # โหมดทดสอบแกน Y (สไลด์ซ้าย-ขวาเพียวๆ)
+                # ==========================================
+                elif self.move_axis == 'y':
+                    if abs(error_y) < self.tolerance:
+                        self.pub_cmd.publish(cmd) # หยุดมอเตอร์
+                        self.is_moving = False
+                        elapsed_time = rospy.Time.now().to_sec() - self.start_time
+                        rospy.loginfo("+++ Y-Axis Target Reached! +++")
+                        rospy.loginfo(f"Time Taken: {elapsed_time:.2f} seconds")
+                    else:
+                        cmd.linear.x = 0.0  # บังคับ X ให้เป็น 0 ตลอดการเดินทาง
+                        cmd.linear.y = self.clamp_velocity(self.kp * error_y)
+                        self.pub_cmd.publish(cmd)
                     
             self.rate.sleep()
 

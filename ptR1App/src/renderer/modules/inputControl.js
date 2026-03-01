@@ -4,7 +4,7 @@ const ABSOLUTE_MAX_LINEAR = 1.1;
 const ABSOLUTE_MAX_ANGULAR = 5.0;
 const SERVO_STEP = 4;
 
-let currentTiltAngle = 90;
+let currentTiltAngle = 45;
 let currentPanAngle = 90;
 let speedMultiplier = 0.7;
 const activeKeys = new Set();

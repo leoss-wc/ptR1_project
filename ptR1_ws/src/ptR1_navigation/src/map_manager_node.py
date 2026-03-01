@@ -22,8 +22,8 @@ from ptR1_navigation.srv import (ListMaps, ListMapsResponse, SelectNavMap, Selec
                                  DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,                                            
                                  ClearCostmaps, ClearCostmapsResponse,SaveEditedMap, SaveEditedMapResponse)
 
-#MAP_FOLDER = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/maps')
-MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
+MAP_FOLDER = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/maps')
+#MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
 
 
 class MapManager:
@@ -38,6 +38,7 @@ class MapManager:
         # --- State Variables ---
         self.running_processes = []
         self.navigation_process = None
+        self.is_saving = False
 
         # --- Action Client ---
         self.move_base_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
@@ -186,13 +187,18 @@ class MapManager:
             return ClearCostmapsResponse(False, f"Failed to clear costmaps: {e}")
 
     def handle_save_map(self, req):
+        if self.is_saving:
+            msg = "Save operation already in progress. Request ignored."
+            rospy.logwarn(msg)
+            return SaveMapResponse(False, msg)
+        self.is_saving = True
         name = req.name
         rospy.loginfo(f"Saving map to {name}")
         try:
             map_filepath = os.path.join(MAP_FOLDER, name)
             
             # 1. Save Map (PGM + YAML)
-            subprocess.check_call(['rosrun', 'map_server', 'map_saver', '-f', map_filepath, 'map:=/rb/slam/map'])
+            subprocess.check_call(['rosrun', 'map_server', 'map_saver', '-f', map_filepath, 'map:=/map'])
             
             # 2. Convert PGM to PNG (Optional but useful for Web UI)
             # เช็คก่อนว่าไฟล์ pgm มาจริงไหม
@@ -205,6 +211,8 @@ class MapManager:
         except Exception as e:
             rospy.logerr(f"Save map error: {e}")
             return SaveMapResponse(False, str(e))
+        finally:
+            self.is_saving = False
         
     def handle_delete_map(self, req):
         map_name = req.name
