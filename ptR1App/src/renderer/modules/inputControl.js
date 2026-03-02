@@ -6,7 +6,7 @@ const SERVO_STEP = 4;
 
 let currentTiltAngle = 45;
 let currentPanAngle = 90;
-let speedMultiplier = 0.7;
+let speedMultiplier = 0.3;
 const activeKeys = new Set();
 let inputInterval = null;
 
