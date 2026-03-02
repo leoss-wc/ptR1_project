@@ -2,7 +2,7 @@
 // เก็บตำแหน่งและทิศทางของหุ่นยนต์ใน map (อัปเดตจาก ROS Topic)
 
 export let robotTrail = []; // เก็บประวัติตำแหน่ง
-const MAX_TRAIL_LENGTH = 500; // กำหนดความยาวสูงสุดของเส้นทาง
+const MAX_TRAIL_LENGTH = 100; // กำหนดความยาวสูงสุดของเส้นทาง
 
 export const robotPose = {
   position: null,       // { x, y, z }

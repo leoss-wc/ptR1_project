@@ -170,6 +170,7 @@ function connectROSBridge(url) {
     subscribeRobotStatus();
     subscribePatrolStatus();
     subscribeTF();
+    subscribeSystemProfile();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
@@ -1129,6 +1130,32 @@ function publishServoPanAngle(angle) {
   });
   topic.publish(new ROSLIB.Message({ data: angle }));
   console.log('Published Servo Pan Angle:', angle);
+}
+
+function subscribeSystemProfile() {
+  if (!ros || !ros.isConnected) return;
+
+  const profileTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/pi/system_profile',
+    messageType: 'std_msgs/String',
+    throttle_rate: 1000 // รับข้อมูลทุกๆ 1 วินาที
+  });
+
+  profileTopic.subscribe((message) => {
+    try {
+      // แปลง JSON String เป็น Object 
+      const profileData = JSON.parse(message.data);
+      
+      // ส่งข้อมูลที่ถูก Parse แล้วไปยัง Main Process
+      parentPort.postMessage({
+        type: 'system-profile-update',
+        data: profileData
+      });
+    } catch (e) {
+      console.error('Server: Error parsing system profile JSON', e);
+    }
+  });
 }
 
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });

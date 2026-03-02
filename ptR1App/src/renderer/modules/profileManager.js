@@ -126,8 +126,6 @@ function showFlashEffect() {
         setTimeout(() => flash.remove(), 150);
     }, 50);
 }
-
-
 export async function startRobotStream() {
     const address = document.getElementById('profile-address').value;
     const whepPort = document.getElementById('profile-whep-port').value; 

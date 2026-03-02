@@ -162,6 +162,7 @@ function createRosWorker() {
         case 'planned-path': mainWindow.webContents.send('planned-path', message.data); break;
         case 'stream-status': mainWindow.webContents.send('stream-status', message.data); break;
         case 'robot-status-update': mainWindow.webContents.send('robot-status', message.data); break;
+        case 'system-profile-update': mainWindow.webContents.send('system-profile-update', message.data); break;
         
         // --- Map Operations ---
         case 'map-list': mainWindow.webContents.send('ros:map-list', message.data); break;
@@ -572,10 +573,8 @@ ipcMain.handle('mapcache:load', async (_, mapName) => {
     catch { return null; }
 });
 
-// ==========================================================
-// 4. App Lifecycle & Window Creation
-// ==========================================================
 
+// 4. App Lifecycle & Window Creation
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -623,6 +622,8 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', async () => {
+  window.electronAPI.stopNavigation(true);
+  window.electronAPI.stopFFmpegStream();
   if (pythonProcess) {
     console.log('[Main] Killing Python backend...');
     pythonProcess.kill();

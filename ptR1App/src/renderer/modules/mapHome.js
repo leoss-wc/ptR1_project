@@ -80,7 +80,6 @@ export function stopRenderLoop() {
 
 function drawRobot() {
   if (!robotPose?.position || !activeMap?.meta || !mapImg){
-    //console.log("mapHome: No robotPose.");
     return;
   } 
 
@@ -102,7 +101,7 @@ function drawRobot() {
   ctx.lineTo(7, 10);
   ctx.lineTo(-7, 10);
   ctx.closePath();
-  ctx.fillStyle = 'lime';
+  ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
   ctx.fill();
   ctx.restore();
 }

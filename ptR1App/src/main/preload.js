@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     callback(data);
     });
   },
+  onSystemPi: (callback) => ipcRenderer.on('system-profile-update', (event, data) => callback(data)),
   // Robot movement related api
   sendTwistCommand: (data) => ipcRenderer.send('twist-command', data),
   sendServoAngleTilt: (angle) => ipcRenderer.send('ros:send-servo-tilt-int16', angle),

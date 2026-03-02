@@ -133,6 +133,45 @@
                     <span style="color: #aaa;">Relay:</span> 
                     <span id="mon-relay">--</span>
                 </div>
+            <h4 style="margin: 0 0 10px 0;">💻 Pi System Monitor</h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 13px; margin-bottom: 10px;">
+                <div>
+                    <span style="color: #aaa;">CPU:</span> 
+                    <span id="sys-cpu-total" style="font-weight: bold; color: #a8a8a8;">--%</span>
+                </div>
+                <div>
+                    <span style="color: #aaa;">RAM:</span> 
+                    <span id="sys-ram" style="font-weight: bold; color: #a8a8a8;">--%</span>
+                </div>
+                <div>
+                    <span style="color: #aaa;">Temp:</span> 
+                    <span id="sys-temp" style="font-weight: bold; color: #a8a8a8;">--°C</span>
+                </div>
+            </div>
+            <div style="border-top: 1px solid #444; padding-top: 10px; font-size: 11px;">
+                <span style="color: #aaa; display: block; margin-bottom: 8px;">CPU by Services:</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">move_base:</span> <span id="sys-svc-movebase" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">gmapping:</span> <span id="sys-svc-gmapping" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">rosserial:</span> <span id="sys-svc-rosserial" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">ydlidar:</span> <span id="sys-svc-ydlidar" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">rosbridge:</span> <span id="sys-svc-rosbridge" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">others:</span> <span id="sys-svc-others" style="color: #ccc;">--%</span>
+                    </div>
+                </div>
+            </div>
+
             </div>
             <div style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #444;">
                 <span style="color: #aaa;">PID:</span> 

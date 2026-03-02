@@ -21,7 +21,7 @@ import { updateLaserScan } from './modules/laserScanState.js';
 import { initInputControl } from './modules/inputControl.js';
 import { initProfileManager } from './modules/profileManager.js';
 import { initSlamControl } from './modules/slamControl.js';
-import { RobotStatusRenderer, PidTuner} from './modules/robotStatusView.js';
+import { RobotStatusRenderer, PidTuner,PiSystemRenderer} from './modules/robotStatusView.js';
 import { OverlayCanvas } from './modules/OverlayCanvas.js';
 
 
@@ -84,6 +84,7 @@ document.addEventListener('DOMContentLoaded', async() => {
   }
 
   const statusRenderer = new RobotStatusRenderer();
+  const piSystemRenderer = new PiSystemRenderer();
   const pidTuner = new PidTuner();
   
   if (window.electronAPI && window.electronAPI.onRobotStatus) {
@@ -93,6 +94,13 @@ document.addEventListener('DOMContentLoaded', async() => {
         });
     } else {
         console.warn("window.api.onRobotStatus not found");
+    }
+  if(window.electronAPI && window.electronAPI.onSystemPi) {
+        window.electronAPI.onSystemPi((data) => {
+            piSystemRenderer.update(data);
+        });
+    } else {
+        console.warn("window.api.onSystemPi not found");
     }
   
 const videoElement = document.getElementById('stream');
@@ -357,12 +365,8 @@ function setupGlobalCallbacks() {
           resetLiveMapView(); isFirstMapReceived = true; 
         }
     });
-
-    //window.electronAPI.onRobotPosSlam((pose) => pose.position && updateLiveRobotPose(pose));
-    //window.electronAPI.onRobotPosAmcl((pose) => {});
     window.electronAPI.onTfUpdate((tfData) => {
         // TF ส่งมาเป็น { translation: {x,y,z}, rotation: {x,y,z,w} }
-        // เราต้องแปลงให้เข้ากับฟอร์มที่ updateRobotPose ต้องการ
         const position = { 
             x: tfData.translation.x, 
             y: tfData.translation.y 
