@@ -36,16 +36,19 @@ export function processLiveMapData(mapData) {
 
     const imageData = offscreenCtx.createImageData(width, height);
     const buf32 = new Uint32Array(imageData.data.buffer);
+    for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+            const rosIdx = x + (y * width);
+            const canvasIdx = x + ((height - 1 - y) * width);
 
-
-    for (let i = 0; i < mapData.data.length; i++) {
-        const val = mapData.data[i];
-        if (val === -1) {
-            buf32[i] = COLOR_UNKNOWN;
-        } else if (val === 0) {
-            buf32[i] = COLOR_FREE;
-        } else {
-            buf32[i] = COLOR_OCCUPIED;
+            const val = mapData.data[rosIdx];
+            if (val === -1) {
+                buf32[canvasIdx] = COLOR_UNKNOWN;
+            } else if (val === 0) {
+                buf32[canvasIdx] = COLOR_FREE;
+            } else {
+                buf32[canvasIdx] = COLOR_OCCUPIED;
+            }
         }
     }
     offscreenCtx.putImageData(imageData, 0, 0);
@@ -56,46 +59,42 @@ function quaternionToYaw(q) {
 }
 
 function drawRobotOnLiveMap(ctx) {
-
-    if (!latestRobotPose) {
-        console.warn("No robot pose  available to draw robot.");
-        return;         
-    }else if(!currentMapInfo){
-        console.warn("No map info available to draw robot.");
-        return;
-    };
+    if (!latestRobotPose || !currentMapInfo) return;
 
     const { resolution, origin, height } = currentMapInfo;
     const pose = latestRobotPose;
   
-    // คำนวณพิกัด Pixel (กลับแกน Y ตามมาตรฐาน Map Server)
+    // คำนวณพิกัด Pixel (หักลบด้วย Height เพื่อให้ตรงกับแผนที่ที่ถูกพลิกแกน Y แล้ว)
     const px = (pose.position.x - origin.position.x) / resolution;
     const py = height - ((pose.position.y - origin.position.y) / resolution);
 
-    
+    const yaw = quaternionToYaw(pose.orientation);
 
-    // วาดตัวหุ่นยนต์ (วงกลมสีฟ้า)
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-yaw);
+
+    // วาดตัวหุ่นยนต์ (วงกลม)
     ctx.beginPath();
-    ctx.arc(px, py, 5, 0, 2 * Math.PI, false);
+    ctx.arc(0, 0, 5, 0, 2 * Math.PI, false);
     ctx.fillStyle = 'rgba(0, 150, 255, 0.8)';
     ctx.fill();
     ctx.lineWidth = 1;
     ctx.strokeStyle = '#FFFFFF';
     ctx.stroke();
 
-    // วาดลูกศรบอกทิศทาง
-    const yaw = quaternionToYaw(pose.orientation);
-    const arrowLength = 15;
+    // วาดลูกศรบอกทิศทาง (ชี้ไปทางแกน +X แบบ ROS)
     ctx.beginPath();
-    ctx.moveTo(px, py);
-    ctx.lineTo(px + arrowLength * Math.cos(-yaw), py + arrowLength * Math.sin(-yaw));
+    ctx.moveTo(0, 0);
+    ctx.lineTo(15, 0);
     ctx.strokeStyle = '#FFFFFF';
     ctx.lineWidth = 2;
     ctx.stroke();
+
+    ctx.restore();
 }
 export function updateLiveRobotPose(pose) {
   latestRobotPose = pose;
-  //console.log(`Update robot pose: x=${pose.position.x}, y=${pose.position.y}`);
 }
 
 // ฟังก์ชันเริ่มต้นสำหรับ Live Map
@@ -124,11 +123,8 @@ export function drawLiveMap() {
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
         canvas.width = displayWidth;
         canvas.height = displayHeight;
-        
-        // ถ้ามีการปรับขนาด อาจจะอยากให้ Reset View ใหม่อีกรอบ (Optional)
         resetLiveMapView(); 
     }
-
     const ctx = canvas.getContext('2d');
     
     // ปิด Smoothing เพื่อให้แผนที่คมชัดแบบ Pixel Art
@@ -145,21 +141,10 @@ export function drawLiveMap() {
     
     // เริ่มวาดแผนที่
     applyTransform(ctx);
-    
-    // หมุนแผนที่ 90 องศาถ้าจำเป็น (ขึ้นอยู่กับการตั้งค่า TF) 
-    // ถ้าแผนที่กลับหัว ให้ลองแก้บรรทัดนี้ หรือเอาออก
-    ctx.translate(0, canvas.height);
-    ctx.rotate(-Math.PI / 2);
-    ctx.scale(1, -1);
-    
     ctx.drawImage(offscreenCanvas, 0, 0);
-
-    // วาดหุ่นยนต์ทับ
     drawRobotOnLiveMap(ctx);
-    
     restoreTransform(ctx);
 }
-
 
 export function resetLiveMapView() {
   if (!canvas || offscreenCanvas.width === 0) return;

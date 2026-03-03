@@ -10,11 +10,11 @@ TebLocalPlannerROS:
   # --- 2. Robot Limits ---
   max_vel_x: 0.5 # ความเร็วเดินหน้าสูงสุด (m/s)
   max_vel_x_backwards: 0.2 # ความเร็วถอยหลังสูงสุด (m/s) // ถอยหลังช้าๆ เพื่อความปลอดภัย
-  max_vel_y: 0.5           # ความเร็วสไลด์ข้างสูงสุด (m/s) 
+  max_vel_y: 0.1           # ความเร็วสไลด์ข้างสูงสุด (m/s) 
   max_vel_theta: 0.8       # ความเร็วหมุนสูงสุด (rad/s)
   
   acc_lim_x: 0.5           # ความเร่งเดินหน้า (m/s^2)
-  acc_lim_y: 0.5           # ความเร่งสไลด์ข้าง (m/s^2)
+  acc_lim_y: 0.2           # ความเร่งสไลด์ข้าง (m/s^2)
   acc_lim_theta: 0.5       # ความเร่งการหมุน (rad/s^2)
 
   # --- 3. Holonomic Settings ---
@@ -23,7 +23,7 @@ TebLocalPlannerROS:
   
   # --- 4. Goal Tolerance ---
   xy_goal_tolerance: 0.10 # ระยะห่างที่ยอมรับได้เมื่อถึงเป้า (เมตร)
-  yaw_goal_tolerance: 0.1 # มุมที่ยอมรับได้เมื่อถึงเป้า (เรเดียน)
+  yaw_goal_tolerance: 0.2 # มุมที่ยอมรับได้เมื่อถึงเป้า (เรเดียน)
   free_goal_vel: false # ยอมให้หุ่นพุ่งผ่านจุดเป้าหมายหรือไม่?
 
   # --- 5. Obstacle Avoidance---
@@ -34,7 +34,7 @@ TebLocalPlannerROS:
 
   # --- 6. Optimization Weights ---
   weight_kinematics_nh: 1      #  1 (เพื่อให้สไลด์ข้างได้)
-  weight_kinematics_forward_drive: 1 # ความสำคัญของเดินหน้ามากกว่าถอย/สไลด์"
+  weight_kinematics_forward_drive: 100 
   weight_optimaltime: 1 # น้ำหนัก "ความเร็ว" (Time Optimality)
   weight_obstacle: 50  # น้ำหนัก "กลัวชน"
   weight_viapoint: 1.0 # น้ำหนัก "ผ่านจุดกำหนด"

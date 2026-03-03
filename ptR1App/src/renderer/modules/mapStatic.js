@@ -1190,6 +1190,10 @@ function drawRobot(ctx) {
   ctx.closePath();
   ctx.fillStyle = 'rgba(255, 0, 0, 0.8)'; // สีแดง
   ctx.fill();
+
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.stroke();
   
   ctx.restore();
 }

@@ -69,7 +69,7 @@ export function startRenderLoop() {
   console.log(`HomeMap: Render loop started at ~${TARGET_FPS} FPS.`);
 }
 
-// หยุด Loop (เพื่อประหยัด CPU เมื่อเปลี่ยนหน้า)
+// หยุด Loop เมื่อเปลี่ยนหน้า
 export function stopRenderLoop() {
   if (animationFrameId) {
     cancelAnimationFrame(animationFrameId);
@@ -86,23 +86,37 @@ function drawRobot() {
   const { resolution, origin } = activeMap.meta;
   const imgH = mapImg.height;
 
+  // 1. แปลง World Coordinate เป็นพิกัดพิกเซลบนแผนที่
   const px = (robotPose.position.x - origin[0]) / resolution;
   const py = imgH - (robotPose.position.y - origin[1]) / resolution;
 
-  const yaw = getYawFromQuaternion(robotPose.orientation);
+  // 2. แปลงเป็นพิกัดหน้าจอ (บวกการเลื่อน Offset และการซูม)
   const screenX = px * zoom + offset.x;
   const screenY = py * zoom + offset.y;
 
+  // 3. ดึงมุม Yaw
+  const yaw = getYawFromQuaternion(robotPose.orientation);
+
   ctx.save();
-  ctx.translate(screenX, screenY);
-  ctx.rotate(-yaw);
+  ctx.translate(screenX, screenY); // ย้ายจุดศูนย์กลางการวาดไปที่ตัวหุ่น
+  ctx.rotate(-yaw);                // หมุนตามทิศทางหุ่น (ROS ใช้มุมทวนเข็มนาฬิกาเป็นบวก)
+
+  // 4. วาดรูปสามเหลี่ยม (หัวชี้ไปทางแกน +X ทิศตะวันออก)
   ctx.beginPath();
-  ctx.moveTo(0, -10);
-  ctx.lineTo(7, 10);
-  ctx.lineTo(-7, 10);
+  ctx.moveTo(12, 0);     // จุดแหลม (หัวหุ่น)
+  ctx.lineTo(-6, -6);    // ท้ายหุ่นฝั่งซ้าย
+  ctx.lineTo(-6, 6);     // ท้ายหุ่นฝั่งขวา
   ctx.closePath();
+  
+  // ลงสีแดงโปร่งแสง
   ctx.fillStyle = 'rgba(255, 0, 0, 0.8)';
   ctx.fill();
+  
+  //ใส่ขอบสีดำบางๆ ให้ตัวหุ่นดูโดดเด่นขึ้นเวลาวิ่งบนแผนที่สว่าง
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
   ctx.restore();
 }
 
