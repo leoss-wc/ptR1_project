@@ -94,7 +94,7 @@
     
     <div id="view-commd" class="view hidden">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-        <h2 style="margin:0;">🎛️ Command Center</h2>
+        <h2 style="margin:0;"><i class="fa-solid fa-sliders"></i> Command Center</h2>
       </div>
 
       <div class="commd-grid">
@@ -102,7 +102,7 @@
         <div class="commd-col">
           
           <div class="panel" style="margin-bottom: 10px;">
-            <h4 style="margin: 0 0 10px 0;">🚀 Motor Speed</h4>
+            <h4 style="margin: 0 0 10px 0;"><i class="fa-solid fa-gauge-high"></i> Motor Speed</h4>
             <div style="display: flex; align-items: center; gap: 10px;">
                <input type="range" id="pwm-slider" min="0" max="100" value="30" step="1" style="flex: 1;">
                <span id="pwm-value-label" style="background: #222; padding: 2px 8px; border-radius: 4px; min-width: 30px; text-align: center;">30</span>
@@ -110,7 +110,7 @@
           </div>
 
           <div class="status-card panel" style="margin-bottom: 10px;">
-            <h4 style="margin: 0 0 10px 0;">🤖 Robot Status</h4>
+            <h4 style="margin: 0 0 10px 0;"><i class="fa-solid fa-robot"></i> Robot Status</h4>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; font-size: 13px;">
                 <div>
                     <span style="color: #aaa;">Mode:</span> 
@@ -129,41 +129,77 @@
                     <span style="color: #aaa;">Relay:</span> 
                     <span id="mon-relay">--</span>
                 </div>
-            <h4 style="margin: 0 0 10px 0;">💻 Pi System Monitor</h4>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 10px; margin-bottom: 10px;">
+            <h4 style="margin: 10px 0 8px 0;"><i class="fa-solid fa-microchip"></i> Pi System Monitor</h4>
+
+            <!-- System Overview -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; font-size: 11px; margin-bottom: 8px;">
                 <div>
-                    <span style="color: #aaa;">CPU:</span> 
+                    <span style="color: #aaa;">CPU:</span>
                     <span id="sys-cpu-total" style="font-weight: bold; color: #a8a8a8;">--%</span>
                 </div>
                 <div>
-                    <span style="color: #aaa;">RAM:</span> 
+                    <span style="color: #aaa;">RAM:</span>
                     <span id="sys-ram" style="font-weight: bold; color: #a8a8a8;">--%</span>
+                    <span id="sys-ram-mb" style="color: #666; font-size: 10px;"> (-- MB)</span>
                 </div>
                 <div>
-                    <span style="color: #aaa;">Temp:</span> 
-                    <span id="sys-temp" style="font-weight: bold; color: #a8a8a8;">--°C</span>
+                    <span style="color: #aaa;">Temp:</span>
+                    <span id="sys-temp" style="font-weight: bold;">--°C</span>
                 </div>
             </div>
-            <div style="border-top: 1px solid #444; padding-top: 10px; font-size: 11px;">
-                <span style="color: #aaa; display: block; margin-bottom: 8px;">CPU by Services:</span>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+
+            <!-- CPU by Services -->
+            <div style="border-top: 1px solid #444; padding-top: 8px; font-size: 11px;">
+                <span style="color: #aaa; display: block; margin-bottom: 6px;">CPU by Services:</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px;">
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">stream_mgr:</span> <span id="sys-svc-streammgr" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">ffmpeg:</span> <span id="sys-svc-ffmpeg" style="color: #ccc;">--%</span>
+                    </div>
                     <div style="display: flex; justify-content: space-between; padding-right: 5px;">
                         <span style="color: #888;">move_base:</span> <span id="sys-svc-movebase" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">amcl:</span> <span id="sys-svc-amcl" style="color: #ccc;">--%</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-right: 5px;">
                         <span style="color: #888;">gmapping:</span> <span id="sys-svc-gmapping" style="color: #ccc;">--%</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-right: 5px;">
-                        <span style="color: #888;">rosserial:</span> <span id="sys-svc-rosserial" style="color: #ccc;">--%</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
-                        <span style="color: #888;">ydlidar:</span> <span id="sys-svc-ydlidar" style="color: #ccc;">--%</span>
+                        <span style="color: #888;">map_server:</span> <span id="sys-svc-mapserver" style="color: #ccc;">--%</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-right: 5px;">
                         <span style="color: #888;">rosbridge:</span> <span id="sys-svc-rosbridge" style="color: #ccc;">--%</span>
                     </div>
                     <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">ydlidar:</span> <span id="sys-svc-ydlidar" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
+                        <span style="color: #888;">rosserial:</span> <span id="sys-svc-rosserial" style="color: #ccc;">--%</span>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; padding-right: 5px;">
                         <span style="color: #888;">others:</span> <span id="sys-svc-others" style="color: #ccc;">--%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Section -->
+            <div style="border-top: 1px solid #444; padding-top: 8px; margin-top: 8px; font-size: 11px;">
+                <span style="color: #aaa; display: block; margin-bottom: 6px;"><i class="fa-solid fa-brain"></i> AI Detection:</span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
+                    <div>
+                        <span style="color: #888;">Status:</span>
+                        <span id="sys-ai-enabled" style="font-weight: bold;">--</span>
+                    </div>
+                    <div>
+                        <span style="color: #888;">Mode:</span>
+                        <span id="sys-ai-mode" style="color: #ccc;">--</span>
+                    </div>
+                    <div>
+                        <span style="color: #888;">Infer:</span>
+                        <span id="sys-ai-ms" style="color: #ccc;">-- ms</span>
                     </div>
                 </div>
             </div>
@@ -176,7 +212,7 @@
           </div>
 
           <div class="panel pid-tuner-card">
-            <h4 style="margin: 0 0 10px 0;">🔧 PID Tuner</h4>
+            <h4 style="margin: 0 0 10px 0;"><i class="fa-solid fa-screwdriver-wrench"></i> PID Tuner</h4>
             <div style="display: flex; gap: 5px; margin-bottom: 10px;">
                 <div class="input-group" style="flex: 1;">
                     <label style="font-size: 10px; color: #aaa;">Kp</label>
@@ -253,22 +289,22 @@
                 <label><strong>Alert Classes:</strong></label>
                 <div id="det-class-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
                   <label class="det-chip">
-                    <input type="checkbox" data-class="person" checked> 🧍 Person
+                    <input type="checkbox" data-class="person" checked> <i class="fa-solid fa-person"></i> Person
                   </label>
                   <label class="det-chip">
-                    <input type="checkbox" data-class="car"> 🚗 Car
+                    <input type="checkbox" data-class="car"> <i class="fa-solid fa-car"></i> Car
                   </label>
                   <label class="det-chip">
-                    <input type="checkbox" data-class="motorcycle"> 🏍️ Motorcycle
+                    <input type="checkbox" data-class="motorcycle"> <i class="fa-solid fa-motorcycle"></i> Motorcycle
                   </label>
                   <label class="det-chip">
-                    <input type="checkbox" data-class="bicycle"> 🚲 Bicycle
+                    <input type="checkbox" data-class="bicycle"> <i class="fa-solid fa-bicycle"></i> Bicycle
                   </label>
                   <label class="det-chip">
-                    <input type="checkbox" data-class="dog"> 🐕 Dog
+                    <input type="checkbox" data-class="dog"> <i class="fa-solid fa-dog"></i> Dog
                   </label>
                   <label class="det-chip">
-                    <input type="checkbox" data-class="backpack"> 🎒 Backpack
+                    <input type="checkbox" data-class="backpack"> <i class="fa-solid fa-bag-shopping"></i> Backpack
                   </label>
                 </div>
               </div>
@@ -276,7 +312,7 @@
               <!-- Update button -->
               <div style="display:flex; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap;">
                 <button id="det-update-btn" class="btn btn-blue btn-small" style="padding:6px 18px;">
-                  💾 Update Detection
+                  <i class="fa-solid fa-floppy-disk"></i> Update Detection
                 </button>
                 <span id="det-status-label"
                   style="font-size:12px; color:#aaa; background:#2a2a2a;
@@ -300,7 +336,7 @@
             </div>
         </div>
         <div class="video-right">
-          <button id="select-folder-btn" class="btn btn-blue btn-large">📂 Select Video Folder</button>
+          <button id="select-folder-btn" class="btn btn-blue btn-large"><i class="fa-solid fa-folder-open"></i> Select Video Folder</button>
           <div id="video-gallery" class="video-grid"></div>
         </div>
       </div>
@@ -313,8 +349,8 @@
           <div class="map-left">
             <div class="map-box">
               <div class="map-mode-toggle">
-                <button id="btn-static-map" class="btn btn-blue active">🗺️ Static Map</button>
-                <button id="btn-live-map" class="btn btn-blue">📡 Live Mapping</button>
+                <button id="btn-static-map" class="btn btn-blue active"><i class="fa-solid fa-map"></i> Static Map</button>
+                <button id="btn-live-map" class="btn btn-blue"><i class="fa-solid fa-satellite-dish"></i> Live Mapping</button>
                 <span id="patrol-status-label">Idle</span>
               </div>
 
@@ -341,9 +377,9 @@
                     <fieldset style="flex: 1; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 110px;">
                       <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Navigation sys</legend>
                       <div style="display: grid; grid-template-columns: 1fr; gap: 2px;">
-                        <button id="select-map-btn" class="btn btn-blue mini-btn">▶ Select Map</button>
-                        <button id="start-nav-btn" class="btn btn-blue mini-btn">▶ Start nav</button>
-                        <button id="stop-nav-btn" class="btn btn-red mini-btn">⏹ Stop nav</button>
+                        <button id="select-map-btn" class="btn btn-blue mini-btn"><i class="fa-solid fa-play"></i> Select Map</button>
+                        <button id="start-nav-btn" class="btn btn-blue mini-btn"><i class="fa-solid fa-play"></i> Start nav</button>
+                        <button id="stop-nav-btn" class="btn btn-red mini-btn"><i class="fa-solid fa-stop"></i> Stop nav</button>
                       </div>
                     </fieldset>
 
@@ -360,12 +396,12 @@
                     <fieldset style="flex: 1.5; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 150px;">
                       <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Path</legend>
                       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 2px; margin-bottom: 2px;">
-                         <button id="set-goal-btn" class="btn btn-orange mini-btn" style="grid-column: span 3;">🎯 Set Goal</button>
+                         <button id="set-goal-btn" class="btn btn-orange mini-btn" style="grid-column: span 3;"><i class="fa-solid fa-crosshairs"></i> Set Goal</button>
                       </div>
                       <div style="display: flex; gap: 2px;">
-                         <button id="toggle-draw-mode" class="btn btn-dark mini-btn" style="flex:1;">✏️ Draw</button>
-                         <button id="save-path-btn" class="btn btn-dark mini-btn" style="flex:1;">💾 Save</button>
-                         <button id="clear-path-btn" class="btn btn-dark mini-btn" style="width: 25px;">❌</button>
+                         <button id="toggle-draw-mode" class="btn btn-dark mini-btn" style="flex:1;"><i class="fa-solid fa-pencil"></i> Draw</button>
+                         <button id="save-path-btn" class="btn btn-dark mini-btn" style="flex:1;"><i class="fa-solid fa-floppy-disk"></i> Save</button>
+                         <button id="clear-path-btn" class="btn btn-dark mini-btn" style="width: 25px;"><i class="fa-solid fa-xmark"></i></button>
                       </div>
                       <div style="margin-top: 2px; display: flex; align-items: center; justify-content: center; background: #333; border-radius: 2px;">
                           <input type="checkbox" id="loop-patrol-checkbox" style="transform: scale(0.8);">
@@ -376,10 +412,10 @@
                     <fieldset style="flex: 1; border: 1px solid #555; padding: 2px; margin: 0; border-radius: 4px; min-width: 100px;">
                       <legend style="font-size: 9px; color: #aaa; padding: 0 2px; margin-left: 2px;">Patrol command</legend>
                       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px; height: 100%;">
-                        <button id="start-patrol-btn" class="btn btn-blue mini-btn">▶ Start</button>
-                        <button id="pause-patrol-btn" class="btn btn-orange mini-btn">II Pause</button>
-                        <button id="resume-patrol-btn" class="btn btn-blue mini-btn">▶II Resume</button>
-                        <button id="stop-patrol-btn" class="btn btn-red mini-btn"># Stop</button>
+                        <button id="start-patrol-btn" class="btn btn-blue mini-btn"><i class="fa-solid fa-play"></i> Start</button>
+                        <button id="pause-patrol-btn" class="btn btn-orange mini-btn"><i class="fa-solid fa-pause"></i> Pause</button>
+                        <button id="resume-patrol-btn" class="btn btn-blue mini-btn"><i class="fa-solid fa-forward-step"></i> Resume</button>
+                        <button id="stop-patrol-btn" class="btn btn-red mini-btn"><i class="fa-solid fa-stop"></i> Stop</button>
                       </div>
                     </fieldset>
 
@@ -400,7 +436,7 @@
                   </div>
 
                   <div style="display: flex; gap: 3px; width: 100%;">
-                    <button id="start-slam-btn" class="btn btn-blue" style="flex: 1; padding: 4px; font-size: 11px;">▶ Start</button>
+                    <button id="start-slam-btn" class="btn btn-blue" style="flex: 1; padding: 4px; font-size: 11px;"><i class="fa-solid fa-play"></i> Start</button>
                     <button id="stop-slam-btn" class="btn btn-red" style="flex: 1; padding: 4px; font-size: 11px;">Stop</button>
                     <button id="reset-slam-btn" class="btn btn-orange" style="flex: 1; padding: 4px; font-size: 11px;">Reset slam</button>
                   </div>
@@ -420,13 +456,13 @@
         </div> </div> </div> 
         
         <div id="view-settings" class="view hidden">
-      <h2>⚙️ Settings & Robot Profiles</h2>
+      <h2><i class="fa-solid fa-gear"></i> Settings & Robot Profiles</h2>
       <div class="settings-section">
         <h3>Select Robot Profile</h3>
         <div class="profile-controls">
           <select id="robot-profile-select"></select>
-          <button id="add-profile-btn" class="btn btn-blue btn-large">➕ Add</button>
-          <button id="delete-profile-btn" class="btn btn-red btn-large">🗑️ Delete</button>
+          <button id="add-profile-btn" class="btn btn-blue btn-large"><i class="fa-solid fa-plus"></i> Add</button>
+          <button id="delete-profile-btn" class="btn btn-red btn-large"><i class="fa-solid fa-trash"></i> Delete</button>
         </div>
       </div>
       <div id="profile-form-section" class="settings-section" style="display: none;">
@@ -448,8 +484,8 @@
           <input type="number" id="profile-whep-port" value="8889">
         </div>
         <div class="form-actions" style="margin: 5px; display: flex; gap: 10px;">
-          <button id="save-profile-btn" class="btn btn-blue btn-small">💾 Save Profile</button>
-          <button id="connect-all-btn" class="btn btn-blue btn-small">🔌 Connect Using This Profile</button>
+          <button id="save-profile-btn" class="btn btn-blue btn-small"><i class="fa-solid fa-floppy-disk"></i> Save Profile</button>
+          <button id="connect-all-btn" class="btn btn-blue btn-small"><i class="fa-solid fa-plug"></i> Connect Using This Profile</button>
         </div>
       </div>
       <p id="settings-status" style="margin-top: 15px;"></p>
