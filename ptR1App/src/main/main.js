@@ -131,6 +131,8 @@ function createRosWorker() {
         case 'stopStreamResponse':
             internalEvents.emit('stop-stream-done', message);
             return;
+        case 'detection-update-result':internalEvents.emit('detection-update-done', message.data);
+            break;
         case 'home-result': 
             mainWindow.webContents.send('nav:home-result', message.data); 
             internalEvents.emit('home-result', message.data); 
@@ -163,6 +165,8 @@ function createRosWorker() {
         case 'stream-status': mainWindow.webContents.send('stream-status', message.data); break;
         case 'robot-status-update': mainWindow.webContents.send('robot-status', message.data); break;
         case 'system-profile-update': mainWindow.webContents.send('system-profile-update', message.data); break;
+        case 'detection-alert':mainWindow?.webContents.send('detection-alert', message.data);break;
+        
         
         // --- Map Operations ---
         case 'map-list': mainWindow.webContents.send('ros:map-list', message.data); break;
@@ -558,6 +562,17 @@ ipcMain.handle('nav:go-home', async (_, mapName) => {
     
     // คืนค่าทันที เพื่อให้ UI ไม่ต้องรอ
     return { success: true, message: "Go Home command sent." };
+});
+//AI Detection Update
+ipcMain.handle('detection:update', async (_, settings) => {
+  rosWorker?.postMessage({ type: 'updateDetection', data: settings });
+
+  return new Promise((resolve) => {
+    internalEvents.once('detection-update-done', (data) => resolve(data));
+    setTimeout(() => {
+      resolve({ success: false, message: 'Timeout: No response from ROS' });
+    }, 5000);
+  });
 });
 
 // --- 3.8 Cache & Robots ---

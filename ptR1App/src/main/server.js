@@ -127,6 +127,9 @@ parentPort.on('message', (message) => {
       case 'sendServoPanInt16':
         publishServoPanAngle(message.angle);
         break;
+      case 'updateDetection':
+        callUpdateDetectionService(message.data);
+        break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -171,6 +174,7 @@ function connectROSBridge(url) {
     subscribePatrolStatus();
     subscribeTF();
     subscribeSystemProfile();
+    subscribeDetectionAlert();
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
@@ -1154,6 +1158,61 @@ function subscribeSystemProfile() {
       });
     } catch (e) {
       console.error('Server: Error parsing system profile JSON', e);
+    }
+  });
+}
+
+function callUpdateDetectionService(settings) {
+  if (!ros || !ros.isConnected) {
+    parentPort.postMessage({
+      type: 'detection-update-result',
+      data: { success: false, message: 'ROSBridge not connected' }
+    });
+    return;
+  }
+
+  const service = new ROSLIB.Service({
+    ros: ros,
+    name: '/stream_manager/update_detection',
+    serviceType: 'ptR1_navigation/UpdateDetection'
+  });
+
+  const request = new ROSLIB.ServiceRequest({
+    mode:       settings.mode,
+    time_start: settings.time_start,
+    time_end:   settings.time_end,
+    classes:    settings.classes,
+    enabled:    settings.enabled
+  });
+
+  service.callService(request, (result) => {
+    parentPort.postMessage({
+      type: 'detection-update-result',
+      data: { success: result.success, message: result.message }
+    });
+  }, (err) => {
+    parentPort.postMessage({
+      type: 'detection-update-result',
+      data: { success: false, message: err.toString() }
+    });
+  });
+}
+
+function subscribeDetectionAlert() {
+  if (!ros || !ros.isConnected) return;
+
+  const alertTopic = new ROSLIB.Topic({
+    ros: ros,
+    name: '/stream_manager/alert',
+    messageType: 'std_msgs/String'
+  });
+
+  alertTopic.subscribe((msg) => {
+    try {
+      const data = JSON.parse(msg.data);
+      parentPort.postMessage({ type: 'detection-alert', data });
+    } catch (e) {
+      console.error('[Server] Failed to parse alert:', e);
     }
   });
 }

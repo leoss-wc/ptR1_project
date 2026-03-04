@@ -112,6 +112,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   loadSettings: () => ipcRenderer.invoke('settings:load'),
 
+  // Detection settings related api
+updateDetection: (settings) => ipcRenderer.invoke('detection:update', settings),
+onDetectionStatus: (callback) => ipcRenderer.on('detection-status', (_, data) => callback(data)),
+onDetectionAlert: (callback) => ipcRenderer.on('detection-alert', (_, data) => callback(data)),
 });
 
 

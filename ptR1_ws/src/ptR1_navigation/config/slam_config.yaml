@@ -5,12 +5,12 @@ map_frame: map
 scan_topic: /scan
 
 # --- Map Configuration ---
-map_update_interval: 1.0  # อัปเดตแผนที่ทุก 1 วินาที (ถ้าเร็วไป CPU จะทำงานหนัก)
+map_update_interval: 1.0  # อัปเดตแผนที่ทุก 1 วินาที
 delta: 0.05               # ความละเอียด 5cm (มาตรฐาน)
 
 # --- Laser Parameters ---
-maxRange: 12.0            # ระยะไกลสุดที่ LiDAR ยิงถึง (ตามสเปค LiDAR คุณ)
-maxUrange: 10.0           # ระยะที่นำมาใช้สร้างแผนที่จริง (ควรน้อยกว่า maxRange)
+maxRange: 12.0            # ระยะไกลสุดที่ LiDAR ยิงถึง 
+maxUrange: 10.0           # ระยะที่นำมาใช้สร้างแผนที่จริง
 sigma: 0.05
 kernelSize: 1
 lstep: 0.05

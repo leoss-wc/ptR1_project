@@ -76,7 +76,7 @@ class NavigationManager:
         # กรณีได้รับ manual_on -> ให้ Pause Patrol (ถ้ากำลังเดินอยู่)
         if command == 'manual_on':
             if self.is_patrolling and not self.is_paused:
-                rospy.LogInfo("Manual Mode ON: Pausing patrol...")
+                rospy.loginfo("Manual Mode ON: Pausing patrol...")
                 self.is_paused = True
                 self.move_base_client.cancel_goal() # สั่งหยุดหุ่นยนต์
                 self.update_status("paused")
@@ -84,7 +84,7 @@ class NavigationManager:
         # กรณีได้รับ manual_off -> ให้ Resume Patrol (ถ้าต้องการ)
         if self.auto_resume and command == 'manual_off':
             if self.is_patrolling and self.is_paused:
-                rospy.LogInfo("Manual Mode OFF: AUTO Resuming patrol...")
+                rospy.loginfo("Manual Mode OFF: AUTO Resuming patrol...")
                 self.is_paused = False
                 self.send_next_goal() # ส่ง Goal เดิมให้เดินต่อ
     def map_name_callback(self, msg):
@@ -276,7 +276,7 @@ class NavigationManager:
             'w': math.cos(yaw / 2.0)
         }
     
-    def get_yaw_from_quaternion(q):
+    def get_yaw_from_quaternion(self,q):
         """แปลง Quaternion เป็นมุม Yaw"""
         return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
     def send_next_goal(self):
@@ -286,14 +286,10 @@ class NavigationManager:
             
         # ตรวจสอบว่าจบ Loop หรือยัง
         if self.current_goal_index >= len(self.goal_list):
-            if self.should_loop:
-                rospy.loginfo("Looping patrol...")
-                self.current_goal_index = 0
-            else:
-                rospy.loginfo("Patrol sequence finished.")
-                self.is_patrolling = False
-                self.update_status("idle")
-                return
+            rospy.logwarn("send_next_goal: index out of range, stopping.")
+            self.is_patrolling = False
+            self.update_status("idle")
+            return
 
         # ใช้ deepcopy เพื่อหลีกเลี่ยงการเขียนทับข้อมูลเป้าหมายเดิม เผื่อต้องการใช้มุมเดิมในอนาคต
         target_pose_msg = copy.deepcopy(self.goal_list[self.current_goal_index])

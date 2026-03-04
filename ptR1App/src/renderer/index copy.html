@@ -72,6 +72,10 @@
             <p><strong>RTC:</strong> <span id="rtc_status">Ready to connect</span></p>
             <div style="display: flex; gap: 10px; margin-top: 10px;">
               <button class="btn btn-dark btn-small" id="connectButton" style="flex: 1;">Connect ROS</button>
+            <!--<button class="btn btn-dark btn-small" id="connect-video-btn" style="flex: 1;">Connect Video</button>-->
+              <div class="toggle-container">
+                <input type="checkbox" id="ai-toggle"> <label for="ai-toggle">Enable Detection</label>
+              </div>
             </div>
           </div>
           <div class="controls" style="margin-top: 15px;">
@@ -196,96 +200,50 @@
         </div>
 
         <div class="commd-col">
-                      <!-- Detection Settings Section -->
-            <div class="settings-section" id="detection-settings-section">
-              <h3> Detection Settings</h3>
+           <div class="security-panel" style="background: #333; padding: 15px; border-radius: 8px; color: white; height: 100%; box-sizing: border-box;">
+              <h4 style="margin: 0 0 15px 0; border-bottom: 1px solid #555; padding-bottom: 5px;">🛡️ Security Mode</h4>
 
-              <!-- Enable toggle -->
-              <div class="form-group" style="display:flex; align-items:center; gap:12px;">
-                <label for="det-enabled"><strong>Enable Detection:</strong></label>
-                <label class="switch">
-                  <input type="checkbox" id="det-enabled">
-                  <span class="slider"></span>
-                </label>
-                <span id="det-enabled-label" style="color:#aaa; font-size:13px;">Disabled</span>
+              <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+                  <label style="cursor: pointer; display: flex; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 5px;">
+                      <input type="radio" name="sec-mode" value="disable" style="margin-right: 10px;"> 
+                      <span style="color: #aaa;">⚪ Disable (Monitor Only)</span>
+                  </label>
+                  
+                  <label style="cursor: pointer; display: flex; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 5px;">
+                      <input type="radio" name="sec-mode" value="always" style="margin-right: 10px;"> 
+                      <span style="color: #ff4d4d;">🔴 Always Active (24/7)</span>
+                  </label>
+                  
+                  <label style="cursor: pointer; display: flex; align-items: center; background: rgba(0,0,0,0.2); padding: 8px; border-radius: 5px;">
+                      <input type="radio" name="sec-mode" value="schedule" checked style="margin-right: 10px;"> 
+                      <span style="color: #ffc107;">🟡 Schedule Mode</span>
+                  </label>
               </div>
 
-              <!-- Mode selector -->
-              <div class="form-group" style="margin-top:12px;">
-                <label><strong>Mode:</strong></label>
-                <div style="display:flex; gap:10px; margin-top:6px;">
-                  <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                    <input type="radio" name="det-mode" value="time" checked> Time-based
-                  </label>
-                  <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                    <input type="radio" name="det-mode" value="manual"> Manual (always on)
-                  </label>
-                </div>
+              <div id="time-settings-box" style="margin-left: 5px; margin-bottom: 20px; display: flex; align-items: center; gap: 8px; background: #222; padding: 8px; border-radius: 5px;">
+                  <span style="font-size: 12px; color: #ccc;">Time:</span>
+                  <input type="text" class="time-input" id="alert-start-time" value="22:00" placeholder="HH:mm" maxlength="5" style="background: #333; color: white; border: 1px solid #555; width: 60px; text-align: center;">
+                  <span style="color: #ccc;">-</span>
+                  <input type="text" class="time-input" id="alert-end-time" value="06:00" placeholder="HH:mm" maxlength="5" style="background: #333; color: white; border: 1px solid #555; width: 60px; text-align: center;">
               </div>
 
-              <!-- Time range -->
-              <div id="det-time-section" class="form-group" style="margin-top:12px;">
-                <label><strong>Active Time Range:</strong></label>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <label for="det-time-start" style="font-size:13px; color:#aaa;">From</label>
-                    <input type="number" id="det-time-start" min="0" max="23" value="22"
-                      style="width:60px; background:#222; color:white; border:1px solid #555;
-                            border-radius:4px; padding:4px 6px; text-align:center;">
-                    <span style="color:#aaa; font-size:13px;">:00</span>
+              <div style="border-top: 1px solid #555; padding-top: 10px; margin-bottom: 15px;">
+                  <span style="font-size: 11px; color: #aaa; display: block; margin-bottom: 8px;">Alert Objects:</span>
+                  <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+                      <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" class="sec-item-check" value="person" checked> Person</label>
+                      <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" class="sec-item-check" value="cat" checked> Cat</label>
+                      <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" class="sec-item-check" value="dog"> Dog</label>
+                      <label style="font-size: 12px; cursor: pointer;"><input type="checkbox" class="sec-item-check" value="cell phone"> Phone</label>
                   </div>
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <label for="det-time-end" style="font-size:13px; color:#aaa;">To</label>
-                    <input type="number" id="det-time-end" min="0" max="23" value="6"
-                      style="width:60px; background:#222; color:white; border:1px solid #555;
-                            border-radius:4px; padding:4px 6px; text-align:center;">
-                    <span style="color:#aaa; font-size:13px;">:00</span>
-                  </div>
-                  <span id="det-time-preview"
-                    style="font-size:12px; color:#f0a500; background:#333; padding:3px 8px; border-radius:4px;">
-                    22:00 → 06:00
-                  </span>
-                </div>
               </div>
-
-              <!-- Class selector -->
-              <div class="form-group" style="margin-top:14px;">
-                <label><strong>Alert Classes:</strong></label>
-                <div id="det-class-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="person" checked> 🧍 Person
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="car"> 🚗 Car
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="motorcycle"> 🏍️ Motorcycle
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="bicycle"> 🚲 Bicycle
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="dog"> 🐕 Dog
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="backpack"> 🎒 Backpack
-                  </label>
-                </div>
+              
+              <div style="background: #222; padding: 8px; border-radius: 5px; font-size: 11px; margin-bottom: 10px;">
+                  <div><strong style="color: #ff4d4d;">Danger:</strong> <span id="summary-danger" style="color: #ccc;">Fire, Weapon</span></div>
+                  <div><strong style="color: #ffc107;">Restricted:</strong> <span id="summary-restricted" style="color: #ccc;">-</span></div>
               </div>
-
-              <!-- Update button -->
-              <div style="display:flex; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap;">
-                <button id="det-update-btn" class="btn btn-blue btn-small" style="padding:6px 18px;">
-                  💾 Update Detection
-                </button>
-                <span id="det-status-label"
-                  style="font-size:12px; color:#aaa; background:#2a2a2a;
-                        padding:4px 10px; border-radius:4px; min-width:160px; text-align:center;">
-                  Not saved yet
-                </span>
-              </div>
-            </div>
-
+              
+              <button id="update-security-btn" class="btn btn-blue btn-small" style="width: 100%; padding: 8px;">Update Settings</button>
+           </div>
         </div>
       </div>
     </div>

@@ -47,16 +47,6 @@ export async function initProfileManager() {
       stopBtn.innerText = "Stop Stream";
   });
 
-  document.getElementById('ai-toggle').addEventListener('change', (event) => {
-        const isEnabled = event.target.checked;
-        const videoElement = document.getElementById('stream');  
-        
-        // ถ้ามี Player และวิดีโอเล่นอยู่ ให้ Toggle ทันที
-        if (rtcPlayer && videoElement && !videoElement.paused) {
-            manageAIState(isEnabled, videoElement);
-        }
-    });
-
   await loadAndDisplayProfiles();
   console.log('Profile Manager: Initialized profile manager and loaded profiles.');
 }

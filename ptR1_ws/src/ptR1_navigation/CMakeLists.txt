@@ -82,6 +82,7 @@ find_package(catkin REQUIRED COMPONENTS
     StopAMCL.srv
     StartAMCL.srv
     SaveEditedMap.srv
+    UpdateDetection.srv
 
  )
 
@@ -192,6 +193,7 @@ include_directories(
    src/map_manager_node.py
    src/navigation_node.py
    src/stream_manager_node.py
+   src/stream_manager_node2.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 

@@ -1,0 +1,11 @@
+# Request
+string mode          # "time" หรือ "manual"
+int32 time_start     # เช่น 22
+int32 time_end       # เช่น 6
+string[] classes     # เช่น ["person", "car"]
+bool enabled         # เปิด/ปิด detection
+
+---
+# Response
+bool success
+string message
