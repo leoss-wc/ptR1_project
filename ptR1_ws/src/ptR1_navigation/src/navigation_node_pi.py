@@ -133,7 +133,7 @@ class NavigationManager:
 
     def restore_pose(self):
         if self.current_map_name == "unknown":
-            rospy.logwarn("⚠️ restore_pose: map name still unknown, proceeding with caution.")   
+        rospy.logwarn("⚠️ restore_pose: map name still unknown, proceeding with caution.")   
         """อ่านไฟล์ JSON และ Publish ไปยัง /initialpose"""
         if not os.path.exists(POSE_FILE):
             rospy.logwarn("⚠️ No saved pose file found.")

@@ -4,7 +4,7 @@ import subprocess
 import time
 import socket
 import cv2
-from ultralytics import YOLO
+#from ultralytics import YOLO
 from std_srvs.srv import Trigger, TriggerResponse
 import threading
 import queue
@@ -13,8 +13,30 @@ from datetime import datetime
 from std_msgs.msg import String
 import json
 
+import onnxruntime as ort
+import numpy as np
+
+COCO_CLASSES = {
+    0: 'person', 1: 'bicycle', 2: 'car', 3: 'motorcycle', 4: 'airplane', 5: 'bus',
+    6: 'train', 7: 'truck', 8: 'boat', 9: 'traffic light', 10: 'fire hydrant',
+    11: 'stop sign', 12: 'parking meter', 13: 'bench', 14: 'bird', 15: 'cat',
+    16: 'dog', 17: 'horse', 18: 'sheep', 19: 'cow', 20: 'elephant', 21: 'bear',
+    22: 'zebra', 23: 'giraffe', 24: 'backpack', 25: 'umbrella', 26: 'handbag',
+    27: 'tie', 28: 'suitcase', 29: 'frisbee', 30: 'skis', 31: 'snowboard',
+    32: 'sports ball', 33: 'kite', 34: 'baseball bat', 35: 'baseball glove',
+    36: 'skateboard', 37: 'surfboard', 38: 'tennis racket', 39: 'bottle',
+    40: 'wine glass', 41: 'cup', 42: 'fork', 43: 'knife', 44: 'spoon', 45: 'bowl',
+    46: 'banana', 47: 'apple', 48: 'sandwich', 49: 'orange', 50: 'broccoli',
+    51: 'carrot', 52: 'hot dog', 53: 'pizza', 54: 'donut', 55: 'cake',
+    56: 'chair', 57: 'couch', 58: 'potted plant', 59: 'bed', 60: 'dining table',
+    61: 'toilet', 62: 'tv', 63: 'laptop', 64: 'mouse', 65: 'remote', 66: 'keyboard',
+    67: 'cell phone', 68: 'microwave', 69: 'oven', 70: 'toaster', 71: 'sink',
+    72: 'refrigerator', 73: 'book', 74: 'clock', 75: 'vase', 76: 'scissors',
+    77: 'teddy bear', 78: 'hair drier', 79: 'toothbrush'
+}
+
 alert_pub = None
-last_alert_time = {}  # ป้องกัน spam ต่อ cla
+last_alert_time = {}  # ป้องกัน spam ต่อ class
 
 ai_result_lock = threading.Lock()
 cached_boxes = []
@@ -34,6 +56,8 @@ mtx_host = 'localhost'
 mtx_port = 8554
 cap = None
 model = None
+model_input_name = None 
+prev_frame_gray = None
 
 detection_enabled = False
 detection_mode    = 'time'   # 'time' | 'manual'
@@ -41,6 +65,26 @@ detection_start   = 22
 detection_end     = 6
 detection_classes = ['person']
 detection_lock    = threading.Lock()
+
+def has_motion(frame, threshold=1000):
+    global prev_frame_gray
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.GaussianBlur(gray, (21, 21), 0)
+
+    if prev_frame_gray is None:
+        prev_frame_gray = gray
+        return False
+
+    diff = cv2.absdiff(prev_frame_gray, gray)
+    prev_frame_gray = gray
+    changed_pixels = np.sum(diff > 25)
+    return changed_pixels > threshold
+
+def is_frame_usable(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    mean_brightness = np.mean(gray)
+    # มืดเกินไป < 20, สว่างเกิน (overexposed) > 240
+    return 20 < mean_brightness < 240
 
 def init_alert_publisher():
     global alert_pub
@@ -63,7 +107,7 @@ def publish_alert(class_name, conf):
         'mode':       detection_mode,
     })
     alert_pub.publish(String(data=payload))
-    rospy.logwarn(f"ALERT published: {class_name}")
+    rospy.loginfo(f"ALERT published: {class_name}")
 
 def is_night_time(start, end): 
     now = datetime.now().hour
@@ -110,8 +154,8 @@ def start_mediamtx():
 
     rospy.loginfo("MediaMTX is NOT running. Attempting to start...")
 
-    mediamtx_exec = rospy.get_param('~mediamtx_exec', '/home/leoss/ptR1Project/mediamtx_v1.14.0_linux_amd64/mediamtx')
-    mediamtx_config = rospy.get_param('~mediamtx_config', '/home/leoss/ptR1Project/mediamtx_v1.14.0_linux_amd64/mediamtx.yml')
+    mediamtx_exec = rospy.get_param('~mediamtx_exec', '/home/patrolR1/MediaMtx/mediamtx')
+    mediamtx_config = rospy.get_param('~mediamtx_config', '/home/patrolR1/MediaMtx/mediamtx.yml')
 
     cmd = [mediamtx_exec]
     if mediamtx_config:
@@ -155,7 +199,7 @@ def launch_ffmpeg_pipe():
     ffmpeg_command = [
     'ffmpeg', '-y',
     '-f', 'rawvideo', '-vcodec', 'rawvideo',
-    '-s', '640x480', '-pix_fmt', 'bgr24', '-r', '15',
+    '-s', '640x480', '-pix_fmt', 'bgr24', '-r', '10',
     '-i', '-',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
     '-profile:v', 'baseline', '-pix_fmt', 'yuv420p',
@@ -266,8 +310,15 @@ def handle_start_stream(req):
         return TriggerResponse(success=False, message="Camera failed")
 
     if model is None:
-        rospy.loginfo("Loading YOLO11 Nano...")
-        model = YOLO('/home/leoss/ptR1Project/yolo11n.onnx')
+        rospy.loginfo("Loading YOLO11 Nano (ONNX Runtime)...")
+        # ใช้ ONNX Runtime โหลดโมเดล
+        model_path = '/home/patrolR1/ptR1_ws/src/ptR1_navigation/model/yolo11n.onnx'
+        sess_options = ort.SessionOptions()
+        sess_options.intra_op_num_threads = 2  # จำกัดให้ใช้แค่ 2 Thread (2 Core)
+        sess_options.inter_op_num_threads = 2  
+        
+        model = ort.InferenceSession(model_path, sess_options=sess_options, providers=['CPUExecutionProvider'])
+        model_input_name = model.get_inputs()[0].name
 
     latest_frame = None
     camera_stop_event.clear()
@@ -311,13 +362,74 @@ def ai_worker(frame):
     try:
         if model is None:
             return
-        results = model.predict(source=frame, imgsz=320, conf=0.35, verbose=False)
-        new_boxes = results[0].boxes.data.cpu().numpy()
+
+        # 1. Pre-processing
+        orig_h, orig_w = frame.shape[:2]
+        img = cv2.resize(frame, (320, 320))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = (img.transpose((2, 0, 1))[np.newaxis] / 255.0).astype(np.float32)
+
+        # 2. Inference
+        outputs = model.run(None, {model_input_name: img})
+        predictions = np.squeeze(outputs[0]).T  # (N, 84)
+
+        # 3. Post-processing แบบ vectorized
+        if len(predictions) == 0:
+            with ai_result_lock:
+                cached_boxes = []
+            return
+
+        classes_scores = predictions[:, 4:]
+        class_ids      = np.argmax(classes_scores, axis=1)
+        scores         = classes_scores[np.arange(len(predictions)), class_ids]
+
+        # กรอง confidence ต่ำออก
+        mask        = scores > 0.35
+        predictions = predictions[mask]
+        scores      = scores[mask]
+        class_ids   = class_ids[mask]
+
+        if len(predictions) == 0:
+            with ai_result_lock:
+                cached_boxes = []
+            return
+
+        # แปลง cx,cy,w,h → x1,y1,bw,bh พร้อม scale กลับขนาดจริง
+        x_scale = orig_w / 320
+        y_scale = orig_h / 320
+
+        cx = predictions[:, 0]
+        cy = predictions[:, 1]
+        w  = predictions[:, 2]
+        h  = predictions[:, 3]
+
+        x1 = ((cx - w / 2) * x_scale).astype(int)
+        y1 = ((cy - h / 2) * y_scale).astype(int)
+        bw = (w * x_scale).astype(int)
+        bh = (h * y_scale).astype(int)
+
+        boxes_list     = np.stack([x1, y1, bw, bh], axis=1).tolist()
+        scores_list    = scores.tolist()
+        class_ids_list = class_ids.tolist()
+
+        # 4. NMS — ลบกรอบซ้อนทับ
+        indices = cv2.dnn.NMSBoxes(boxes_list, scores_list, 0.35, 0.45)
+
+        new_boxes = []
+        if len(indices) > 0:
+            for i in indices.flatten():
+                x, y, bw_, bh_ = boxes_list[i]
+                new_boxes.append([x, y, x + bw_, y + bh_,
+                                  scores_list[i], class_ids_list[i]])
+
+        # 5. อัปเดต cache
         with ai_result_lock:
             cached_boxes = new_boxes
-    finally:
-        ai_running = False  # ✅ ปลดล็อคเสมอ
 
+    except Exception as e:
+        rospy.logerr(f"AI Worker Error: {e}")
+    finally:
+        ai_running = False  # ปลดล็อคเสมอ
 
 def cleanup():
     global is_stream_enabled, ffmpeg_process, mediamtx_process, cap, cached_boxes, ai_running, latest_frame
@@ -355,7 +467,7 @@ def stream_manager_server():
     writer.daemon = True
     writer.start()
 
-    rate = rospy.Rate(15)
+    rate = rospy.Rate(10)
     frame_counter = 0
 
     rospy.Timer(rospy.Duration(5), monitor_loop)
@@ -374,11 +486,12 @@ def stream_manager_server():
                 # --- AI LOGIC ---
                 if detection_enabled and model:
                     frame_counter += 1
-                    if frame_counter % 5 == 0 and not ai_running:
-                        ai_running = True
-                        t = threading.Thread(target=ai_worker, args=(frame.copy(),))
-                        t.daemon = True
-                        t.start()
+                    if frame_counter % 7 == 0 and not ai_running:
+                        if is_frame_usable(frame) and has_motion(frame):
+                            ai_running = True
+                            t = threading.Thread(target=ai_worker, args=(frame.copy(),))
+                            t.daemon = True
+                            t.start()
                         frame_counter = 0
 
                     with ai_result_lock:
@@ -386,13 +499,18 @@ def stream_manager_server():
 
                     for box in boxes_to_draw:
                         x1, y1, x2, y2, conf, cls = box
-                        class_name = model.names[int(cls)]
+                        class_name = COCO_CLASSES.get(int(cls), f"Unknown_{int(cls)}")
+                        #ข้ามถ้า class ไม่ได้อยู่ใน detection_classes
+                        with detection_lock:
+                            classes_to_show = list(detection_classes)
+                        if class_name not in classes_to_show:
+                            continue
 
-                        # ✅ เช็คเงื่อนไข alert
+                        # เช็คเงื่อนไข alert
                         if should_alert(class_name):
                             color = (0, 0, 255)     # แดง — alert
                             thickness = 3
-                            label = f"⚠ {class_name} {conf:.2f}"
+                            label = f"! {class_name} {conf:.2f}"
                             publish_alert(class_name, conf) 
                         else:
                             color = (0, 255, 0)     # เขียว — ปกติ
