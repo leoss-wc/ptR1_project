@@ -1,6 +1,5 @@
-/** * main.js - Electron Main Process
- * Refactored for ptR1 Project
- */
+//main.js - Electron Main Process
+
 
 const { app, BrowserWindow, ipcMain, dialog, protocol } = require('electron');
 app.commandLine.appendSwitch('lang', 'en-GB');
@@ -11,12 +10,14 @@ const fsPromises = require('fs').promises;
 const { spawn, exec } = require('child_process');
 const yaml = require('js-yaml');
 const { EventEmitter } = require('events'); 
+const { initCaptureModule } = require('./captureModule');
 
 // --- Global Variables ---
 let rosWorker;
 let mainWindow;
 let pythonProcess = null;
 const internalEvents = new EventEmitter();
+let captureHandlers = null; // ← ประกาศ module scope เพื่อให้ createRosWorker() เข้าถึงได้
 
 // --- Paths & Constants ---
 const userDataPath = app.getPath('userData');
@@ -136,6 +137,9 @@ function createRosWorker() {
         case 'home-result': 
             mainWindow.webContents.send('nav:home-result', message.data); 
             internalEvents.emit('home-result', message.data); 
+            return;
+        case 'capture-result':                          // ← ย้ายมาอยู่ใน switch แรก
+            captureHandlers?.handleWorkerMessage(message);
             return;
       }
 
@@ -630,6 +634,13 @@ app.whenReady().then(() => {
   startPythonBackend();
   createRosWorker();
   createWindow();
+  captureHandlers = initCaptureModule(
+    ipcMain,
+    app,
+    () => rosWorker,
+    () => mainWindow
+  );
+
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -637,16 +648,15 @@ app.whenReady().then(() => {
 });
 
 app.on('before-quit', async () => {
-  window.electronAPI.stopNavigation(true);
-  window.electronAPI.stopFFmpegStream();
-  if (pythonProcess) {
-    console.log('[Main] Killing Python backend...');
-    pythonProcess.kill();
-  }
   if (rosWorker) {
+    rosWorker.postMessage({ type: 'stopNavigation', data: { savePose: true } });
     rosWorker.postMessage({ type: 'stopStream' });
     await new Promise(r => setTimeout(r, 500));
     rosWorker.terminate();
+  }
+  if (pythonProcess) {
+    console.log('[Main] Killing Python backend...');
+    pythonProcess.kill();
   }
 });
 

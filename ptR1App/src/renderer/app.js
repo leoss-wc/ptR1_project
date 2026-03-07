@@ -24,6 +24,7 @@ import { initSlamControl } from './modules/slamControl.js';
 import { RobotStatusRenderer, PidTuner,PiSystemRenderer} from './modules/robotStatusView.js';
 import { OverlayCanvas } from './modules/OverlayCanvas.js';
 import { initDetectionSettings } from './modules/detectionSettings.js';
+import { initCaptureControl } from './modules/captureControl.js';
 
 
 let recorder = null;
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', async() => {
   setupGlobalCallbacks();
   setupVideoPlayer();
   initDetectionSettings();
+  initCaptureControl();
   //ตั้งค่าการสลับ View ผ่าน Sidebar
   document.querySelectorAll('.sidebar-item').forEach(item => {
     item.addEventListener('click', () => switchView(item.dataset.view));

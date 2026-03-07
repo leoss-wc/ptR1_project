@@ -113,9 +113,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadSettings: () => ipcRenderer.invoke('settings:load'),
 
   // Detection settings related api
-updateDetection: (settings) => ipcRenderer.invoke('detection:update', settings),
-onDetectionStatus: (callback) => ipcRenderer.on('detection-status', (_, data) => callback(data)),
-onDetectionAlert: (callback) => ipcRenderer.on('detection-alert', (_, data) => callback(data)),
+  updateDetection: (settings) => ipcRenderer.invoke('detection:update', settings),
+  onDetectionStatus: (callback) => ipcRenderer.on('detection-status', (_, data) => callback(data)),
+  onDetectionAlert: (callback) => ipcRenderer.on('detection-alert', (_, data) => callback(data)),
+  captureSnapshot:    (label)            => ipcRenderer.invoke('capture:single', label),
+  captureStartBurst:  ({ label, interval }) => ipcRenderer.invoke('capture:startBurst', { label, interval }),
+  captureStopBurst:   ()                 => ipcRenderer.invoke('capture:stopBurst'),
+  captureOpenFolder:  (label)            => ipcRenderer.invoke('capture:openFolder', label),
+  captureGetStats:    ()                 => ipcRenderer.invoke('capture:getStats'),
+  onCaptureResult:    (callback)         => ipcRenderer.on('capture:result', (_, data) => callback(data)),
+
+
 });
 
 

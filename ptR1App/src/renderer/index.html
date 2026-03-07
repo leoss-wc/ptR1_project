@@ -53,6 +53,39 @@
               <button class="btn btn-dark btn-small" id="start-record">Start Recording</button>
               <button class="btn btn-dark btn-small" id="stop-record" disabled>Stop Recording</button>
             </div>
+                                  <!-- Dataset Capture Panel — วางไว้ข้างๆ #stream video element -->
+            <div id="capture-panel" class="capture-panel">
+              <div class="capture-header">
+                <span id="capture-indicator" class="capture-indicator"></span>
+                <span class="capture-title">Dataset Capture</span>
+                <span id="capture-count" class="capture-count">0 images</span>
+              </div>
+
+              <div class="capture-row">
+                <label>Label</label>
+                <input id="capture-label" type="text" value="object" placeholder="e.g. fire, knife" />
+              </div>
+
+              <div class="capture-row">
+                <label>Interval (sec)</label>
+                <input id="capture-interval" type="number" value="2" min="0.5" step="0.5" />
+              </div>
+
+              <div class="capture-actions">
+                <button id="capture-single"      class="btn btn-sm btn-dark">📷 Single</button>
+                <button id="capture-burst"       class="btn btn-sm btn-dark">▶ Burst</button>
+                <button id="capture-stop"        class="btn btn-sm btn-dark" disabled>■ Stop</button>
+                <button id="capture-open-folder" class="btn btn-sm btn-dark">📁 Folder</button>
+              </div>
+
+              <p id="capture-status" class="capture-status capture-status--idle">Ready</p>
+
+              <div class="capture-last">
+                Last: <span id="capture-last-label">—</span>
+              </div>
+
+              <img id="capture-preview" class="capture-preview hidden" alt="Last captured" />
+            </div>
           </div>
         </div>
 
@@ -87,6 +120,7 @@
               <button class="btn btn-dark" id="relayButton1">RELAY: OFF</button>
               <label style="font-size: smaller;">Spot light 2</label>
               <button class="btn btn-dark" id="relayButton2">RELAY: OFF</button>
+              
             </div>
           </div>
         </div>

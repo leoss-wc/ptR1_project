@@ -1,6 +1,7 @@
 const { parentPort } = require('worker_threads');
 const ROSLIB = require('roslib');
 const { CMD } = require('../main/constants.js');
+const { handleCaptureMessage, initCaptureSubscriber } = require('./captureServer');
 
 let ros;
 let reconnectInterval = 5000; // ระยะเวลาในการลองเชื่อมต่อใหม่ (ms)
@@ -127,6 +128,11 @@ parentPort.on('message', (message) => {
       case 'updateDetection':
         callUpdateDetectionService(message.data);
         break;
+      case 'captureSnapshot':
+      case 'captureBurstStart':
+      case 'captureBurstStop':
+        handleCaptureMessage(message, ros, parentPort);
+        break;
       default:
         console.warn(`Server worker  Unknown command: ${message.type}`);
     }
@@ -172,6 +178,7 @@ function connectROSBridge(url) {
     subscribeTF();
     subscribeSystemProfile();
     subscribeDetectionAlert();
+    initCaptureSubscriber(ros, parentPort);
     if (reconnectTimer) {20
       clearInterval(reconnectTimer);
       reconnectTimer = null;
