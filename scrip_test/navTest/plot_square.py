@@ -1,107 +1,44 @@
-#!/usr/bin/env python3
-import rosbag
-import os
-import glob
-import math
 import matplotlib.pyplot as plt
+import numpy as np
 
-def closest_distance_to_path(px, py, path_coords):
-    min_dist = float('inf')
-    for i in range(len(path_coords) - 1):
-        x1, y1 = path_coords[i]
-        x2, y2 = path_coords[i+1]
-        dx, dy = x2 - x1, y2 - y1
-        ab2 = dx*dx + dy*dy
-        if ab2 == 0:
-            dist = math.hypot(px - x1, py - y1)
-        else:
-            t = max(0, min(1, ((px - x1)*dx + (py - y1)*dy) / ab2))
-            proj_x = x1 + t * dx
-            proj_y = y1 + t * dy
-            dist = math.hypot(px - proj_x, py - proj_y)
-        if dist < min_dist: min_dist = dist
-    return min_dist
+# ข้อมูลจาก analyze_tracking2.py
+data = {
+    'RMSE':       [0.0669, 0.0527, 0.0606, 0.0535, 0.0682, 0.0480, 0.0570, 0.0703, 0.0611, 0.0576],
+    'Max Error':  [0.1391, 0.1393, 0.1863, 0.1707, 0.1866, 0.1111, 0.1877, 0.1837, 0.1634, 0.1590],
+    'Mean Error': [0.0555, 0.0415, 0.0453, 0.0427, 0.0511, 0.0387, 0.0439, 0.0563, 0.0470, 0.0440],
+}
 
-def plot_square_test(bag_folder):
-    # หาไฟล์ท่าสี่เหลี่ยมล่าสุด
-    list_of_files = glob.glob(os.path.join(bag_folder, '*Square_Path*.bag'))
-    if not list_of_files:
-        print("❌ ไม่พบไฟล์ทดสอบท่า Square_Path")
-        return
-    latest_file = max(list_of_files, key=os.path.getctime)
-    print(f"กำลังวาดกราฟจากไฟล์: {os.path.basename(latest_file)}")
+labels = list(data.keys())
+values = list(data.values())
 
-    bag = rosbag.Bag(latest_file)
-    
-    actual_x, actual_y = [], []
-    time_sec, tracking_errors = [], []
-    start_time = None
-    
-    # 1. สร้างเส้นทางสี่เหลี่ยมอุดมคติ (Theoretical Path) ขนาด 1x1 เมตร
-    # เริ่มจาก (0,0) -> เดินหน้า (1,0) -> เลี้ยวซ้ายเดินหน้า (1,1) -> เลี้ยวซ้ายเดินหน้า (0,1) -> กลับมา (0,0)
-    ideal_square_x = [0.0, 1.0, 1.0, 0.0, 0.0]
-    ideal_square_y = [0.0, 0.0, 1.0, 1.0, 0.0]
-    ideal_coords = list(zip(ideal_square_x, ideal_square_y))
+fig, ax = plt.subplots(figsize=(8, 5))
 
-    start_pose = None
+bp = ax.boxplot(values, labels=labels, patch_artist=True,
+                medianprops=dict(color='black', linewidth=2),
+                whiskerprops=dict(linestyle='--'),
+                flierprops=dict(marker='o', markersize=5))
 
-    # 2. อ่านข้อมูล Odom ที่เดินจริง
-    for topic, msg, t in bag.read_messages(topics=['/odom']):
-        if start_pose is None:
-            start_pose = msg.pose.pose.position
-            start_time = t.to_sec()
-            
-        current_time = t.to_sec() - start_time
-        
-        # Shift พิกัดเริ่มต้นให้เริ่มที่ (0,0) เสมอ เพื่อเทียบกับกราฟอุดมคติได้ง่าย
-        ax = msg.pose.pose.position.x - start_pose.x
-        ay = msg.pose.pose.position.y - start_pose.y
-        
-        actual_x.append(ax)
-        actual_y.append(ay)
-        time_sec.append(current_time)
-        
-        # คำนวณ Error เทียบกับเส้นสี่เหลี่ยมอุดมคติ
-        cte = closest_distance_to_path(ax, ay, ideal_coords)
-        tracking_errors.append(cte)
+colors = ['#AED6F1', '#F1948A', '#A9DFBF']
+for patch, color in zip(bp['boxes'], colors):
+    patch.set_facecolor(color)
+    patch.set_alpha(0.7)
 
-    bag.close()
+# เส้น threshold
+ax.axhline(y=0.10, color='red', linestyle=':', linewidth=1.2, label='Threshold (0.10 m)')
 
-    # ================= วาดกราฟ =================
-    plt.style.use('seaborn-v0_8-whitegrid')
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("Square Path Performance (1x1 m)", fontsize=14, fontweight='bold')
+# jitter dots
+np.random.seed(42)
+for i, vals in enumerate(values, start=1):
+    jitter = np.random.uniform(-0.08, 0.08, len(vals))
+    ax.plot(np.full(len(vals), i) + jitter, vals,
+            'k.', alpha=0.5, markersize=5)
 
-    # กราฟ 1: X-Y Trajectory
-    ax1.plot(ideal_square_x, ideal_square_y, 'g--', linewidth=2, label='Ideal Square Path')
-    ax1.plot(actual_x, actual_y, 'b-', linewidth=2, label='Actual Robot Path (Odom)')
-    ax1.scatter(0, 0, color='black', marker='o', s=100, label='Start / End Goal')
-    
-    ax1.set_title('Robot Trajectory Tracking', fontsize=12)
-    ax1.set_xlabel('X Position (m)')
-    ax1.set_ylabel('Y Position (m)')
-    ax1.axis('equal') # ล็อกสเกลให้เป็นสี่เหลี่ยมจัตุรัส ไม่เบี้ยวเป็นผืนผ้า
-    ax1.set_xlim(-0.2, 1.2)
-    ax1.set_ylim(-0.2, 1.2)
-    ax1.legend()
+ax.set_ylabel('Error (m)')
+ax.set_title('Path Tracking Error Distribution\nSquare Path 2.0 m  (n = 10 runs)', fontsize=11)
+ax.legend(fontsize=9)
+ax.grid(axis='y', linestyle='--', alpha=0.4)
 
-    # กราฟ 2: Error
-    ax2.plot(time_sec, tracking_errors, 'r-', linewidth=2, label='Cross-Track Error')
-    mean_error = sum(tracking_errors)/len(tracking_errors)
-    ax2.axhline(y=mean_error, color='orange', linestyle='--', label=f'Mean Error ({mean_error:.3f} m)')
-    
-    ax2.set_title('Deviation from Ideal Path', fontsize=12)
-    ax2.set_xlabel('Time (seconds)')
-    ax2.set_ylabel('Error Distance (m)')
-    ax2.set_ylim(bottom=0)
-    ax2.legend()
-
-    plt.tight_layout()
-    save_path = latest_file.replace('.bag', '_square_plot.png')
-    plt.savefig(save_path, dpi=300)
-    print(f"✅ บันทึกรูปกราฟเรียบร้อยแล้วที่: {save_path}")
-    plt.show()
-
-if __name__ == '__main__':
-    data_folder = os.path.expanduser('~/ptr1_test_data')
-    plot_square_test(data_folder)
+plt.tight_layout()
+plt.savefig('path_tracking_boxplot.png', dpi=150)
+plt.show()
+print("บันทึกกราฟเป็น path_tracking_boxplot.png")

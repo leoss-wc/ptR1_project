@@ -20,7 +20,7 @@ CATEGORIES = [
     ('mediamtx',    ['mediamtx', 'rtsp-simple-server']),
     ('rosserial',   ['rosserial']),
     ('tailscale',   ['tailscale', 'tailscaled']),
-    ('stream_mgr',  ['stream_manager']),  # ✅ เพิ่ม stream_manager
+    ('stream_mgr',  ['stream_manager']),  #เพิ่ม stream_manager
 ]
 
 def categorize_process(name, cmdline):

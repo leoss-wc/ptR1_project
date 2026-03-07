@@ -10,6 +10,7 @@ let latestRobotPose = null;
 let currentMapInfo = null;
 let isLiveMapReady = false;
 let isLiveMapInitialized = false;
+let previousRawData = null;
 
 // เตรียมค่าสีไว้ล่วงหน้า (ABGR Format สำหรับ Little Endian Systems)
 // 0xFF = 255
@@ -22,37 +23,80 @@ export function processLiveMapData(mapData) {
     if (!mapData || !mapData.info || !mapData.data) return;
 
     currentMapInfo = mapData.info;
-
-    const hasMeaningfulData = mapData.data.some(value => value !== -1);
-    if (hasMeaningfulData) isLiveMapReady = true;
+    const rawData = mapData.data; 
 
     const width = mapData.info.width;
     const height = mapData.info.height;
 
-    if (offscreenCanvas.width !== width || offscreenCanvas.height !== height) {
+    // เช็คว่าต้องรีเซ็ตแผนที่ใหม่ทั้งหมดไหม (เช่น เปิดครั้งแรก หรือขนาดแผนที่เปลี่ยน)
+    let isFullUpdate = !previousRawData || 
+                       previousRawData.length !== rawData.length || 
+                       offscreenCanvas.width !== width || 
+                       offscreenCanvas.height !== height;
+
+    if (isFullUpdate) {
         offscreenCanvas.width = width;
         offscreenCanvas.height = height;
+        isLiveMapReady = rawData.some(value => value !== -1);
     }
 
     const imageData = offscreenCtx.createImageData(width, height);
     const buf32 = new Uint32Array(imageData.data.buffer);
-    for (let y = 0; y < height; y++) {
-        for (let x = 0; x < width; x++) {
-            const rosIdx = x + (y * width);
-            const canvasIdx = x + ((height - 1 - y) * width);
 
-            const val = mapData.data[rosIdx];
-            if (val === -1) {
-                buf32[canvasIdx] = COLOR_UNKNOWN;
-            } else if (val === 0) {
-                buf32[canvasIdx] = COLOR_FREE;
-            } else {
-                buf32[canvasIdx] = COLOR_OCCUPIED;
+    // ตัวแปรสำหรับหากรอบ "Dirty Bounding Box"
+    let minX = width, minY = height, maxX = -1, maxY = -1;
+    let hasChanges = false;
+
+    for (let y = 0; y < height; y++) {
+        const rosRowStart = y * width;
+        const canvasRowStart = (height - 1 - y) * width;
+        const canvasY = height - 1 - y; // แกน Y ของ Canvas
+
+        for (let x = 0; x < width; x++) {
+            const idx = rosRowStart + x;
+            const val = rawData[idx];
+
+            // เช็คว่าจุดนี้เปลี่ยนไปจากเดิมไหม หรือเป็นการบังคับวาดใหม่ทั้งหมด
+            if (isFullUpdate || val !== previousRawData[idx]) {
+                hasChanges = true;
+                
+                // ลงสีใหม่เฉพาะจุดที่เปลี่ยน
+                buf32[canvasRowStart + x] = val === -1 ? COLOR_UNKNOWN : (val === 0 ? COLOR_FREE : COLOR_OCCUPIED);
+
+                // ขยายกรอบ Bounding Box ให้ครอบคลุมจุดนี้
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (canvasY < minY) minY = canvasY;
+                if (canvasY > maxY) maxY = canvasY;
+            } else if (!isFullUpdate) {
+                // ถ้าไม่เปลี่ยน และไม่ใช่ Full Update ให้ดึงสีเดิมมาใส่ไว้ด้วย
+                // (เพราะ createImageData สร้างพื้นใสเปล่าๆ ขึ้นมาใหม่)
+                buf32[canvasRowStart + x] = val === -1 ? COLOR_UNKNOWN : (val === 0 ? COLOR_FREE : COLOR_OCCUPIED);
             }
         }
     }
-    offscreenCtx.putImageData(imageData, 0, 0);
+
+    // เก็บข้อมูลรอบนี้ไว้เป็น "ข้อมูลเก่า" สำหรับเทียบในรอบหน้า
+    previousRawData = rawData; 
+
+    // วาดลง Canvas เฉพาะส่วนที่มีการเปลี่ยนแปลง
+    if (hasChanges) {
+        if (isFullUpdate) {
+            // วาดใหม่ทั้งแผ่น
+            offscreenCtx.putImageData(imageData, 0, 0);
+        } else {
+            // ส่งไปให้ GPU เฉพาะ "กรอบสี่เหลี่ยม" ที่มีการเปลี่ยนแปลง
+            const dirtyWidth = maxX - minX + 1;
+            const dirtyHeight = maxY - minY + 1;
+            
+            // putImageData(imageData, dx, dy, dirtyX, dirtyY, dirtyWidth, dirtyHeight)
+            offscreenCtx.putImageData(imageData, 0, 0, minX, minY, dirtyWidth, dirtyHeight);
+            
+            // console.log(`Updated region: X:${minX} Y:${minY} W:${dirtyWidth} H:${dirtyHeight}`);
+        }
+    }
 }
+
 
 function quaternionToYaw(q) {
   return Math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z));

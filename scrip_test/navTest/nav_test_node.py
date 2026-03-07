@@ -38,9 +38,9 @@ class NavTester:
         topics_to_record = [
             "/odom", "/cmd_vel", "/amcl_pose", "/tf", "/tf_static",
             "/move_base/TebLocalPlannerROS/global_plan",
-            "/move_base/TebLocalPlannerROS/local_plan"
+            "/move_base/TebLocalPlannerROS/local_plan","/pi/system_profile"
         ]
-        rospy.loginfo(f"🎥 กำลังเริ่มบันทึกข้อมูลลงไฟล์: {bag_filename}")
+        rospy.loginfo(f"กำลังเริ่มบันทึกข้อมูลลงไฟล์: {bag_filename}")
         rosbag_cmd = ["rosbag", "record", "-O", bag_filename] + topics_to_record
         process = subprocess.Popen(rosbag_cmd)
         rospy.sleep(0.5) # รอให้ rosbag เริ่มทำงาน
@@ -115,10 +115,10 @@ def main():
     
     while not rospy.is_shutdown():
         print("\n=== ptR1 Navigation & Data Collection ===")
-        print("1. Forward 2 m (X+)")
-        print("2. Backward 2 m (X-)")
-        print("3. Left 2 m (Y+)")
-        print("4. Right 2 m (Y-)")
+        print("1. Forward 3 m (X+)")
+        print("2. Backward 3 m (X-)")
+        print("3. Left 3 m (Y+)")
+        print("4. Right 3 m (Y-)")
         print("5. Rotate 180")
         print("6. Rotate 90 (Left)")
         print("7. Rotate -90 (Right)")
@@ -128,10 +128,10 @@ def main():
         
         choice = input("(0-9): ")
         
-        if choice == '1': tester.send_test_goal(2.0, 0.0, 0.0, 1.0, "Forward_2m")
-        elif choice == '2': tester.send_test_goal(-2.0, 0.0, 0.0, 1.0, "Backward_2m")
-        elif choice == '3': tester.send_test_goal(0.0, 1.0, 0.0, 1.0, "Slide_Left_2m")
-        elif choice == '4': tester.send_test_goal(0.0, -2.0, 0.0, 1.0, "Slide_Right_2m")
+        if choice == '1': tester.send_test_goal(3.0, 0.0, 0.0, 1.0, "Forward_3m")
+        elif choice == '2': tester.send_test_goal(-3.0, 0.0, 0.0, 1.0, "Backward_3m")
+        elif choice == '3': tester.send_test_goal(0.0, 3.0, 0.0, 1.0, "Slide_Left_3m")
+        elif choice == '4': tester.send_test_goal(0.0, -3.0, 0.0, 1.0, "Slide_Right_3m")
         elif choice == '5': tester.send_test_goal(0.0, 0.0, 1.0, 0.0, "Rotate_180")
         elif choice == '6': tester.send_test_goal(0.0, 0.0, 0.707, 0.707, "Rotate_90")
         elif choice == '7': tester.send_test_goal(0.0, 0.0, -0.707, 0.707, "Rotate_minus90")

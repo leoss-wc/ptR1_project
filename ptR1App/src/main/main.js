@@ -255,7 +255,7 @@ ipcMain.handle('nav-init-home', async (event, mapName) => {
 });
 
 ipcMain.handle('nav-stop', async (event, savePose) => {
-    rosWorker?.postMessage({ type: 'stop-navigation', data: { savePose } });
+    rosWorker?.postMessage({ type: 'stopNavigation', data: { savePose } });
     return { success: true, message: "Stop command sent." };
 });
 

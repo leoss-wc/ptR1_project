@@ -37,6 +37,8 @@ export class WebRTCPlayer {
             }
             this.videoElement.srcObject.addTrack(event.track);
             this.videoElement.play().catch(e => console.warn("Auto-play blocked:", e));
+            // เริ่มตรวจสอบ delay ของสตรีม
+            this._startDelayMonitor();
         };
         
         // 3. Define the media we want to receive
@@ -98,6 +100,14 @@ export class WebRTCPlayer {
 
         this._updateStatus('Disconnected.');
         console.log('WebRTC connection closed and cleaned up.');
+
+        // ล้าง interval การตรวจสอบ delay
+        if (this._delayInterval) clearInterval(this._delayInterval);
+        this._tmpCanvas = null; 
+        this._tmpCtx = null;
+        if (window.Tesseract) {
+            Tesseract.terminate();
+        }
     }
 
     /**
@@ -109,4 +119,23 @@ export class WebRTCPlayer {
             this.statusElement.innerText = message;
         }
     }
+
+    //ฟังก์ชันสำหรับตรวจสอบความล่าช้า (delay) ของสตรีม
+    _startDelayMonitor() {
+    if (this._delayInterval) clearInterval(this._delayInterval);
+
+    this._delayInterval = setInterval(() => {
+        const now = new Date().toLocaleTimeString('th-TH', { 
+            hour12: false, 
+            hour: '2-digit', 
+            minute: '2-digit', 
+            second: '2-digit' 
+        });
+        if (this.statusElement) {
+            this.statusElement.innerText = `Streaming | Now: ${now}`;
+        }
+    }, 100);
 }
+    
+}
+

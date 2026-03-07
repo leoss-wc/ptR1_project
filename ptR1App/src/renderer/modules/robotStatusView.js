@@ -65,43 +65,71 @@ export class PiSystemRenderer {
     constructor() {
         // System Summary
         this.elCpuTotal = document.getElementById('sys-cpu-total');
-        this.elRam = document.getElementById('sys-ram');
-        this.elTemp = document.getElementById('sys-temp');
+        this.elRam     = document.getElementById('sys-ram');
+        this.elRamMb   = document.getElementById('sys-ram-mb');
+        this.elTemp    = document.getElementById('sys-temp');
 
         // CPU Services
-        this.elSvcMoveBase = document.getElementById('sys-svc-movebase');
-        this.elSvcGmapping = document.getElementById('sys-svc-gmapping');
-        this.elSvcRosserial = document.getElementById('sys-svc-rosserial');
-        this.elSvcYdlidar = document.getElementById('sys-svc-ydlidar');
+        this.elSvcStreamMgr = document.getElementById('sys-svc-streammgr');
+        this.elSvcFfmpeg    = document.getElementById('sys-svc-ffmpeg');
+        this.elSvcMoveBase  = document.getElementById('sys-svc-movebase');
+        this.elSvcAmcl      = document.getElementById('sys-svc-amcl');
+        this.elSvcGmapping  = document.getElementById('sys-svc-gmapping');
+        this.elSvcMapServer = document.getElementById('sys-svc-mapserver');
         this.elSvcRosbridge = document.getElementById('sys-svc-rosbridge');
-        this.elSvcOthers = document.getElementById('sys-svc-others');
+        this.elSvcYdlidar   = document.getElementById('sys-svc-ydlidar');
+        this.elSvcRosserial = document.getElementById('sys-svc-rosserial');
+        this.elSvcOthers    = document.getElementById('sys-svc-others');
+
+        // AI Section
+        this.elAiEnabled = document.getElementById('sys-ai-enabled');
+        this.elAiMode    = document.getElementById('sys-ai-mode');
+        this.elAiMs      = document.getElementById('sys-ai-ms');
 
         console.log("PiSystemRenderer initialized.");
     }
+
     update(data) {
         if (!data) return;
 
-        // 1. Update System Summary
+        // 1. System Summary
         const sys = data.system || {};
-        if (this.elCpuTotal) this.elCpuTotal.innerText = `${sys.cpu_total}%`;
-        if (this.elRam) this.elRam.innerText = `${sys.ram_percent}%`;
-        
+        if (this.elCpuTotal) this.elCpuTotal.innerText = `${sys.cpu_total ?? '--'}%`;
+        if (this.elRam)      this.elRam.innerText      = `${sys.ram_percent ?? '--'}%`;
+        if (this.elRamMb)    this.elRamMb.innerText    = `(${sys.ram_used_mb ?? '--'} MB)`;
+
         if (this.elTemp) {
-            this.elTemp.innerText = `${sys.temperature}°C`;
-            // เปลี่ยนสีตามความร้อน: เย็น(เขียว) > เริ่มร้อน(ส้ม) > อันตราย(แดง)
-            if (sys.temperature > 70) this.elTemp.style.color = '#ff4444';
-            else if (sys.temperature > 55) this.elTemp.style.color = '#ffbb33';
-            else this.elTemp.style.color = '#00C851';
+            const t = sys.temperature ?? 0;
+            this.elTemp.innerText   = `${t}°C`;
+            this.elTemp.style.color = t > 70 ? '#ff4444' : t > 55 ? '#ffbb33' : '#00C851';
         }
 
-        // 2. Update CPU Services
+        // 2. CPU Services
         const svc = data.cpu_services || {};
-        if (this.elSvcMoveBase) this.elSvcMoveBase.innerText = `${svc.move_base}%`;
-        if (this.elSvcGmapping) this.elSvcGmapping.innerText = `${svc.gmapping}%`;
-        if (this.elSvcRosserial) this.elSvcRosserial.innerText = `${svc.rosserial}%`;
-        if (this.elSvcYdlidar) this.elSvcYdlidar.innerText = `${svc.ydlidar}%`;
-        if (this.elSvcRosbridge) this.elSvcRosbridge.innerText = `${svc.rosbridge}%`;
-        if (this.elSvcOthers) this.elSvcOthers.innerText = `${svc.others}%`;
+        if (this.elSvcStreamMgr) this.elSvcStreamMgr.innerText = `${svc.stream_mgr  ?? 0}%`;
+        if (this.elSvcFfmpeg)    this.elSvcFfmpeg.innerText    = `${svc.ffmpeg      ?? 0}%`;
+        if (this.elSvcMoveBase)  this.elSvcMoveBase.innerText  = `${svc.move_base   ?? 0}%`;
+        if (this.elSvcAmcl)      this.elSvcAmcl.innerText      = `${svc.amcl        ?? 0}%`;
+        if (this.elSvcGmapping)  this.elSvcGmapping.innerText  = `${svc.gmapping    ?? 0}%`;
+        if (this.elSvcMapServer) this.elSvcMapServer.innerText = `${svc.map_server  ?? 0}%`;
+        if (this.elSvcRosbridge) this.elSvcRosbridge.innerText = `${svc.rosbridge   ?? 0}%`;
+        if (this.elSvcYdlidar)   this.elSvcYdlidar.innerText   = `${svc.ydlidar     ?? 0}%`;
+        if (this.elSvcRosserial) this.elSvcRosserial.innerText = `${svc.rosserial   ?? 0}%`;
+        if (this.elSvcOthers)    this.elSvcOthers.innerText    = `${svc.others      ?? 0}%`;
+
+        // 3. AI Section
+        const ai = data.ai || {};
+        if (this.elAiEnabled) {
+            const enabled = ai.enabled ?? false;
+            this.elAiEnabled.innerText    = enabled ? 'ON' : 'OFF';
+            this.elAiEnabled.style.color  = enabled ? '#00C851' : '#ff4444';
+        }
+        if (this.elAiMode) this.elAiMode.innerText = ai.mode ?? '--';
+        if (this.elAiMs) {
+            const ms = ai.inference_ms ?? null;
+            this.elAiMs.innerText    = ms !== null ? `${ms} ms` : '-- ms';
+            this.elAiMs.style.color  = ms > 200 ? '#ff4444' : ms > 150 ? '#ffbb33' : '#00C851';
+        }
     }
 }
 

@@ -70,6 +70,7 @@
             <p><strong>Address:</strong> <span id="home-profile-address">N/A</span></p>
             <p><strong>ROS Bridge:</strong> <span id="home-ros-status" class="status-disconnected">Disconnected</span></p>
             <p><strong>RTC:</strong> <span id="rtc_status">Ready to connect</span></p>
+            
             <div style="display: flex; gap: 10px; margin-top: 10px;">
               <button class="btn btn-dark btn-small" id="connectButton" style="flex: 1;">Connect ROS</button>
             </div>
@@ -92,7 +93,7 @@
       </div>
     </div>
     
-    <div id="view-commd" class="view hidden">
+<div id="view-commd" class="view hidden">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
         <h2 style="margin:0;"><i class="fa-solid fa-sliders"></i> Command Center</h2>
       </div>
@@ -129,6 +130,8 @@
                     <span style="color: #aaa;">Relay:</span> 
                     <span id="mon-relay">--</span>
                 </div>
+            </div>
+
             <h4 style="margin: 10px 0 8px 0;"><i class="fa-solid fa-microchip"></i> Pi System Monitor</h4>
 
             <!-- System Overview -->
@@ -185,26 +188,6 @@
                 </div>
             </div>
 
-            <!-- AI Section -->
-            <div style="border-top: 1px solid #444; padding-top: 8px; margin-top: 8px; font-size: 11px;">
-                <span style="color: #aaa; display: block; margin-bottom: 6px;"><i class="fa-solid fa-brain"></i> AI Detection:</span>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
-                    <div>
-                        <span style="color: #888;">Status:</span>
-                        <span id="sys-ai-enabled" style="font-weight: bold;">--</span>
-                    </div>
-                    <div>
-                        <span style="color: #888;">Mode:</span>
-                        <span id="sys-ai-mode" style="color: #ccc;">--</span>
-                    </div>
-                    <div>
-                        <span style="color: #888;">Infer:</span>
-                        <span id="sys-ai-ms" style="color: #ccc;">-- ms</span>
-                    </div>
-                </div>
-            </div>
-
-            </div>
             <div style="margin-top: 10px; padding-top: 5px; border-top: 1px solid #444;">
                 <span style="color: #aaa;">PID:</span> 
                 <span id="mon-pid" style="font-family: monospace; color: #33b5e5;">P:0.0 I:0.0 D:0.0</span>
@@ -231,96 +214,121 @@
           </div>
         </div>
 
+        <!-- RIGHT COLUMN -->
         <div class="commd-col">
-                      <!-- Detection Settings Section -->
-            <div class="settings-section" id="detection-settings-section">
-              <h3> Detection Settings</h3>
 
-              <!-- Enable toggle -->
-              <div class="form-group" style="display:flex; align-items:center; gap:12px;">
-                <label for="det-enabled"><strong>Enable Detection:</strong></label>
-                <label class="switch">
-                  <input type="checkbox" id="det-enabled">
-                  <span class="slider"></span>
+          <!-- AI Section (ย้ายมาไว้ด้านบนฝั่งขวา) -->
+          <div class="panel" style="margin-bottom: 10px;">
+            <div style="border-bottom: 1px solid #444; padding-bottom: 8px; margin-bottom: 8px; font-size: 11px;">
+                <span style="color: #aaa; display: block; margin-bottom: 6px; font-size: 13px; font-weight: bold;">
+                    <i class="fa-solid fa-brain"></i> AI Detection Status
+                </span>
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
+                    <div>
+                        <span style="color: #888;">Status:</span>
+                        <span id="sys-ai-enabled" style="font-weight: bold;">--</span>
+                    </div>
+                    <div>
+                        <span style="color: #888;">Mode:</span>
+                        <span id="sys-ai-mode" style="color: #ccc;">--</span>
+                    </div>
+                    <div>
+                        <span style="color: #888;">Infer:</span>
+                        <span id="sys-ai-ms" style="color: #ccc;">-- ms</span>
+                    </div>
+                </div>
+            </div>
+          </div>
+
+          <!-- Detection Settings Section -->
+          <div class="settings-section" id="detection-settings-section">
+            <h3> Detection Settings</h3>
+
+            <!-- Enable toggle -->
+            <div class="form-group" style="display:flex; align-items:center; gap:12px;">
+              <label for="det-enabled"><strong>Enable Detection:</strong></label>
+              <label class="switch">
+                <input type="checkbox" id="det-enabled">
+                <span class="slider"></span>
+              </label>
+              <span id="det-enabled-label" style="color:#aaa; font-size:13px;">Disabled</span>
+            </div>
+
+            <!-- Mode selector -->
+            <div class="form-group" style="margin-top:12px;">
+              <label><strong>Mode:</strong></label>
+              <div style="display:flex; gap:10px; margin-top:6px;">
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+                  <input type="radio" name="det-mode" value="time" checked> Time-based
                 </label>
-                <span id="det-enabled-label" style="color:#aaa; font-size:13px;">Disabled</span>
+                <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
+                  <input type="radio" name="det-mode" value="manual"> Manual (always on)
+                </label>
               </div>
+            </div>
 
-              <!-- Mode selector -->
-              <div class="form-group" style="margin-top:12px;">
-                <label><strong>Mode:</strong></label>
-                <div style="display:flex; gap:10px; margin-top:6px;">
-                  <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                    <input type="radio" name="det-mode" value="time" checked> Time-based
-                  </label>
-                  <label style="display:flex; align-items:center; gap:5px; cursor:pointer;">
-                    <input type="radio" name="det-mode" value="manual"> Manual (always on)
-                  </label>
+            <!-- Time range -->
+            <div id="det-time-section" class="form-group" style="margin-top:12px;">
+              <label><strong>Active Time Range:</strong></label>
+              <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <label for="det-time-start" style="font-size:13px; color:#aaa;">From</label>
+                  <input type="number" id="det-time-start" min="0" max="23" value="22"
+                    style="width:60px; background:#222; color:white; border:1px solid #555;
+                          border-radius:4px; padding:4px 6px; text-align:center;">
+                  <span style="color:#aaa; font-size:13px;">:00</span>
                 </div>
-              </div>
-
-              <!-- Time range -->
-              <div id="det-time-section" class="form-group" style="margin-top:12px;">
-                <label><strong>Active Time Range:</strong></label>
-                <div style="display:flex; align-items:center; gap:10px; margin-top:6px; flex-wrap:wrap;">
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <label for="det-time-start" style="font-size:13px; color:#aaa;">From</label>
-                    <input type="number" id="det-time-start" min="0" max="23" value="22"
-                      style="width:60px; background:#222; color:white; border:1px solid #555;
-                            border-radius:4px; padding:4px 6px; text-align:center;">
-                    <span style="color:#aaa; font-size:13px;">:00</span>
-                  </div>
-                  <div style="display:flex; align-items:center; gap:6px;">
-                    <label for="det-time-end" style="font-size:13px; color:#aaa;">To</label>
-                    <input type="number" id="det-time-end" min="0" max="23" value="6"
-                      style="width:60px; background:#222; color:white; border:1px solid #555;
-                            border-radius:4px; padding:4px 6px; text-align:center;">
-                    <span style="color:#aaa; font-size:13px;">:00</span>
-                  </div>
-                  <span id="det-time-preview"
-                    style="font-size:12px; color:#f0a500; background:#333; padding:3px 8px; border-radius:4px;">
-                    22:00 → 06:00
-                  </span>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <label for="det-time-end" style="font-size:13px; color:#aaa;">To</label>
+                  <input type="number" id="det-time-end" min="0" max="23" value="6"
+                    style="width:60px; background:#222; color:white; border:1px solid #555;
+                          border-radius:4px; padding:4px 6px; text-align:center;">
+                  <span style="color:#aaa; font-size:13px;">:00</span>
                 </div>
-              </div>
-
-              <!-- Class selector -->
-              <div class="form-group" style="margin-top:14px;">
-                <label><strong>Alert Classes:</strong></label>
-                <div id="det-class-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="person" checked> <i class="fa-solid fa-person"></i> Person
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="car"> <i class="fa-solid fa-car"></i> Car
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="motorcycle"> <i class="fa-solid fa-motorcycle"></i> Motorcycle
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="bicycle"> <i class="fa-solid fa-bicycle"></i> Bicycle
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="dog"> <i class="fa-solid fa-dog"></i> Dog
-                  </label>
-                  <label class="det-chip">
-                    <input type="checkbox" data-class="backpack"> <i class="fa-solid fa-bag-shopping"></i> Backpack
-                  </label>
-                </div>
-              </div>
-
-              <!-- Update button -->
-              <div style="display:flex; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap;">
-                <button id="det-update-btn" class="btn btn-blue btn-small" style="padding:6px 18px;">
-                  <i class="fa-solid fa-floppy-disk"></i> Update Detection
-                </button>
-                <span id="det-status-label"
-                  style="font-size:12px; color:#aaa; background:#2a2a2a;
-                        padding:4px 10px; border-radius:4px; min-width:160px; text-align:center;">
-                  Not saved yet
+                <span id="det-time-preview"
+                  style="font-size:12px; color:#f0a500; background:#333; padding:3px 8px; border-radius:4px;">
+                  22:00 → 06:00
                 </span>
               </div>
             </div>
+
+            <!-- Class selector -->
+            <div class="form-group" style="margin-top:14px;">
+              <label><strong>Alert Classes:</strong></label>
+              <div id="det-class-grid" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;">
+                <label class="det-chip">
+                  <input type="checkbox" data-class="person" checked> <i class="fa-solid fa-person"></i> Person
+                </label>
+                <label class="det-chip">
+                  <input type="checkbox" data-class="car"> <i class="fa-solid fa-car"></i> Car
+                </label>
+                <label class="det-chip">
+                  <input type="checkbox" data-class="motorcycle"> <i class="fa-solid fa-motorcycle"></i> Motorcycle
+                </label>
+                <label class="det-chip">
+                  <input type="checkbox" data-class="bicycle"> <i class="fa-solid fa-bicycle"></i> Bicycle
+                </label>
+                <label class="det-chip">
+                  <input type="checkbox" data-class="dog"> <i class="fa-solid fa-dog"></i> Dog
+                </label>
+                <label class="det-chip">
+                  <input type="checkbox" data-class="backpack"> <i class="fa-solid fa-bag-shopping"></i> Backpack
+                </label>
+              </div>
+            </div>
+
+            <!-- Update button -->
+            <div style="display:flex; align-items:center; gap:12px; margin-top:16px; flex-wrap:wrap;">
+              <button id="det-update-btn" class="btn btn-blue btn-small" style="padding:6px 18px;">
+                <i class="fa-solid fa-floppy-disk"></i> Update Detection
+              </button>
+              <span id="det-status-label"
+                style="font-size:12px; color:#aaa; background:#2a2a2a;
+                      padding:4px 10px; border-radius:4px; min-width:160px; text-align:center;">
+                Not saved yet
+              </span>
+            </div>
+          </div>
 
         </div>
       </div>
@@ -490,8 +498,8 @@
       </div>
       <p id="settings-status" style="margin-top: 15px;"></p>
     </div>
-  </div> 
-  
+  </div><!-- main-content -->
+
   <script type="module" src="app.js"></script>
 
   <div id="custom-prompt-modal" class="modal-overlay hidden">

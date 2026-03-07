@@ -79,9 +79,6 @@ parentPort.on('message', (message) => {
       case 'startNavigation':
         callStartNavService(message.data.restorePose);
         break;
-      case 'stopNavigation':
-        callStopNavigationService();
-        break;
       case 'resetSLAM':
         callResetSLAMService();
         break;
@@ -346,7 +343,7 @@ function subscribeLaserScanData() {
     ros: ros,
     name: '/scan', // ชื่อ Topic ของ Laser Scan โดยทั่วไป
     messageType: 'sensor_msgs/LaserScan',
-    throttle_rate : 2000 // ลดความถี่การส่งข้อมูลเหลือ 1 ครั้งต่อวินาที
+    throttle_rate : 1000 // ลดความถี่การส่งข้อมูลเหลือ 1 ครั้งต่อวินาที
     
   });
 
@@ -949,22 +946,6 @@ function callStopPatrolService() {
   const service = new ROSLIB.Service({ ros, name: '/nav/stop_patrol', serviceType: 'ptR1_navigation/StopPatrol' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'patrol-stop-result', data: result });
-  });
-}
-
-function callStopNavigationService() {
-  if (!ros || !ros.isConnected) return;
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/nav/stop',
-    serviceType: 'ptR1_navigation/StopAMCL'
-  });
-
-  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
-    console.log('Server: Stop Navigation Result:', result);
-  }, (err) => {
-    console.error('Server: Stop Navigation Failed:', err);
   });
 }
 

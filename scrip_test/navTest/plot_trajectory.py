@@ -104,14 +104,9 @@ def plot_latest_bag(bag_folder):
 
     plt.tight_layout()
     
-    # บันทึกรูปภาพอัตโนมัติ (เป็นไฟล์ PNG ความละเอียดสูง)
-    save_path = latest_file.replace('.bag', '_plot.png')
-    plt.savefig(save_path, dpi=300)
-    print(f"บันทึกรูปกราฟเรียบร้อยแล้วที่: {save_path}")
-    
     # แสดงหน้าต่างกราฟ
     plt.show()
 
 if __name__ == '__main__':
-    data_folder = os.path.expanduser('~/ptr1_test_data')
+    data_folder = os.path.expanduser('/home/leoss/ptR1Project/scrip_test/navTest/rosbagForward')
     plot_latest_bag(data_folder)

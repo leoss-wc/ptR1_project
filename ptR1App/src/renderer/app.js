@@ -362,9 +362,17 @@ function setupGlobalCallbacks() {
 
     // SLAM / Map Updates
     window.electronAPI.onLiveMap((mapData) => {
+        const liveCanvas = document.getElementById('liveMapCanvas');
+        const isLiveMapVisible = liveCanvas && !liveCanvas.classList.contains('hidden');
+        // ถ้าหน้า Live Map ไม่ได้แสดงอยู่ ให้ข้ามการประมวลผลไปเลย (Save CPU)
+        if (!isLiveMapVisible) return;
+        
         processLiveMapData(mapData);
-        if (!isFirstMapReceived) { 
-          resetLiveMapView(); isFirstMapReceived = true; 
+        if (liveCanvas && !liveCanvas.classList.contains('hidden')) {
+            if (!isFirstMapReceived) { 
+                resetLiveMapView(); 
+                isFirstMapReceived = true; 
+            }
         }
     });
     window.electronAPI.onTfUpdate((tfData) => {

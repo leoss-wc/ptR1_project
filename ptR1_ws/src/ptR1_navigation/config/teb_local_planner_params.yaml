@@ -23,7 +23,7 @@ TebLocalPlannerROS:
   
   # --- 4. Goal Tolerance ---
   xy_goal_tolerance: 0.10 # ระยะห่างที่ยอมรับได้เมื่อถึงเป้า (เมตร)
-  yaw_goal_tolerance: 0.2 # มุมที่ยอมรับได้เมื่อถึงเป้า (เรเดียน)
+  yaw_goal_tolerance: 0.1 # มุมที่ยอมรับได้เมื่อถึงเป้า (เรเดียน)
   free_goal_vel: false # ยอมให้หุ่นพุ่งผ่านจุดเป้าหมายหรือไม่?
 
   # --- 5. Obstacle Avoidance---

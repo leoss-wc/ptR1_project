@@ -1,37 +1,65 @@
-# --- Frames & Topics ---
-odom_frame: odom
-base_frame: base_link
-map_frame: map
-scan_topic: /scan
+# ============================================================
+#  SLAM Toolbox - Online Async Mapping
+#  ROS1 Noetic | Mecanum Wheel Robot | Raspberry Pi 4
+# ============================================================
 
-# --- Map Configuration ---
-map_update_interval: 1.0  # อัปเดตแผนที่ทุก 1 วินาที
-delta: 0.05               # ความละเอียด 5cm (มาตรฐาน)
+slam_toolbox:
+  ros__parameters:
 
-# --- Laser Parameters ---
-maxRange: 12.0            # ระยะไกลสุดที่ LiDAR ยิงถึง 
-maxUrange: 10.0           # ระยะที่นำมาใช้สร้างแผนที่จริง
-sigma: 0.05
-kernelSize: 1
-lstep: 0.05
-astep: 0.05
-iterations: 5
-lsigma: 0.075
-ogain: 3.0
-lskip: 0
+    # --- Frames & Topics ---
+    odom_frame: odom
+    base_frame: base_link
+    map_frame: map
+    scan_topic: /scan
+    mode: mapping
 
-# --- Motion Update (หุ่นขยับแค่ไหนถึงจะอัปเดตแผนที่) ---
-linearUpdate: 0.2         # เดิน 20cm อัปเดตที
-angularUpdate: 0.2        # หมุน ~11 องศา อัปเดตที (ชื่อมาตรฐานคือ angularUpdate)
-temporalUpdate: 3.0       # ถ้าหุ่นไม่ขยับเลย ให้บังคับอัปเดตทุก 3 วิ (กัน Map ค้าง)
-resampleThreshold: 0.5
+    # --- Map Resolution & Update ---
+    resolution: 0.05                    # ความละเอียด 5cm (เหมือนเดิม)
+    map_update_interval: 2.0            # RPi4 → เพิ่มเป็น 2.0 วิ ประหยัด CPU
+    max_laser_range: 10.0               # ใช้ระยะ 10m (maxUrange เดิม)
 
-# --- Particle Filter (หัวใจหลักของความแม่นยำ) ---
-particles: 80             # เพิ่มจาก 30 -> 80 (ช่วยแก้ปัญหา Odom เพี้ยนได้ดีมาก)
+    # --- Motion Update ---
+    # หุ่นต้องขยับเกินนี้ถึงจะ update map
+    minimum_travel_distance: 0.2        # เดิน 20cm
+    minimum_travel_heading: 0.2         # หมุน ~11 องศา
+    minimum_time_interval: 0.3          # อัปเดตบ่อยสุดทุก 0.3 วิ (กัน CPU spike)
 
-# --- Odometry Error (Mecanum ต้องจูนตรงนี้!) ---
-# ค่าความผิดพลาดของ Odom: Mecanum ลื่นกว่าล้อปกติ ให้ใส่ค่าเยอะหน่อย (0.2 - 0.3)
-srr: 0.25  # Translation error from translation (เดินหน้าแล้วระยะเพี้ยน)
-srt: 0.25  # Translation error from rotation (หมุนแล้วตำแหน่งเคลื่อน)
-str: 0.25  # Rotation error from translation (เดินหน้าแล้วตัวหมุนเอง)
-stt: 0.25  # Rotation error from rotation (หมุนแล้วมุมเพี้ยน)
+    # --- Scan Matching (หัวใจของ SLAM Toolbox) ---
+    # ยิ่งมาก = แม่นขึ้น แต่กิน CPU มากขึ้น
+    scan_buffer_size: 15                # จำ scan ย้อนหลัง 15 เฟรม
+    scan_buffer_maximum_scan_distance: 10.0
+
+    # Linear search window (ชดเชย Odom drift แกน X=3%, Y=6%)
+    use_scan_matching: true
+    use_scan_barycenter: true
+
+    link_match_minimum_response_fine: 0.1
+    link_scan_maximum_distance: 2.0     # ระยะห่างสูงสุดที่จะลอง match scan
+
+    # --- Odom ที่เชื่อถือได้แค่ไหน ---
+    # Mecanum: X=3%, Y=6%, Angle=1%
+    # ค่าต่ำ = เชื่อ Odom มาก / ค่าสูง = เชื่อ LiDAR มาก
+    distance_variance_penalty: 0.4      # Y error 6% → ไม่เชื่อ odom ด้านข้างมาก
+    angle_variance_penalty: 0.05        # Angle 1% → เชื่อ odom หมุนได้มาก
+
+    # --- Loop Closure (ข้อได้เปรียบเหนือ GMapping) ---
+    do_loop_closing: true
+    loop_search_maximum_distance: 3.0   # หารัศมี loop closure 4m
+    loop_match_minimum_response_coarse: 0.35
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_fine: 0.45
+    loop_match_maximum_variance_fine: 0.2
+
+    # --- RPi4 Performance Tuning ---
+    # ลด CPU load ให้รันได้ลื่นบน RPi4
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: None
+
+    throttle_scans: 1                   # ใช้ทุก scan (ถ้า CPU หนักเปลี่ยนเป็น 2)
+    transform_publish_period: 0.05      # publish tf ทุก 50ms
+    transform_timeout: 0.2
+    tf_buffer_duration: 30.0

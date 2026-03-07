@@ -41,6 +41,12 @@ class NavigationManager:
         self.is_patrolling = False # ตัวแปรบอกสถานะว่ากำลังอยู่ในโหมด Patrol หรือเปล่า
         self.is_paused = False # ตัวแปรบอกสถานะว่ากำลังหยุดชั่วคราวอยู่หรือเปล่า
         self.should_loop = False # ตัวแปรบอกว่าหมดลิสต์แล้วจะวนใหม่หรือเปล่า
+
+        self.person_detected = False
+        self.lidar_clear     = True
+        WAIT_TIME_SEC        = 10.0   # รอคงที่ก่อน
+        RECHECK_SEC          = 5.0    # เช็คซ้ำถ้ายังไม่ปลอดภัย
+        LIDAR_CLEAR_DIST     = 0.8    # เมตร (80cm)
         
         # --- ROS Comms ---
         self.status_pub = rospy.Publisher('/nav/status', String, queue_size=10)
@@ -49,6 +55,8 @@ class NavigationManager:
         rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.amcl_pose_callback)
         rospy.Subscriber('/robot/cmd', String, self.cmd_callback)
         rospy.Subscriber('/map_manager/current_map_name', String, self.map_name_callback)
+        rospy.Subscriber('/stream_manager/alert', String,self.alert_callback)
+        #rospy.Subscriber('/scan', LaserScan, self.scan_callback)
         # --- Services ---
         # Navigation (AMCL + MoveBase)
         rospy.Service('/nav/start', StartAMCL, self.handle_start_nav) 
@@ -133,7 +141,7 @@ class NavigationManager:
 
     def restore_pose(self):
         if self.current_map_name == "unknown":
-        rospy.logwarn("⚠️ restore_pose: map name still unknown, proceeding with caution.")   
+            rospy.logwarn("⚠️ restore_pose: map name still unknown, proceeding with caution.")   
         """อ่านไฟล์ JSON และ Publish ไปยัง /initialpose"""
         if not os.path.exists(POSE_FILE):
             rospy.logwarn("⚠️ No saved pose file found.")
