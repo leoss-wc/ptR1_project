@@ -1,7 +1,7 @@
 //toggleRelay(), updateButton(), state cache
 
-const relayStates = { relay1: false, relay2: false };
-const relayIdMap = { relayButton1: 'relay1', relayButton2: 'relay2' };
+const relayStates = { relay2: false };
+const relayIdMap = {  relayButton2: 'relay2' };
 
 function updateButton(buttonId) {
   const relayId = relayIdMap[buttonId];
