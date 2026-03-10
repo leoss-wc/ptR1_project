@@ -39,7 +39,6 @@ let isStaticMapInitialized = false;
 
 const mapDependentButtons = [
     'toggle-draw-mode',
-    'save-path-btn',
     'toggle-wall-btn',
     'toggle-eraser-btn',
     'save-edit-btn'
@@ -629,6 +628,10 @@ function setupCanvasEvents() {
         return; 
         
     }
+  if (e.button === 2) {
+        mapView.handleMouseDown(e);
+        return;
+    }
   if (mode === 'draw' || mode === 'goal' || mode === 'pose') {
     const worldPoint = getWorldCoordsFromEvent(e);
     if (!isClickInsideBounds(worldPoint)) return;
@@ -734,6 +737,11 @@ function setupCanvasEvents() {
   currentMousePos.x = e.clientX - rect.left;
   currentMousePos.y = e.clientY - rect.top;
 
+  if (e.buttons === 2) {
+    mapView.handleMouseMove(e);
+    return;
+  }
+
   if ((mode === 'wall' || mode === 'eraser') && isDrawing) {
          addEditPoint(e);
          renderObjects();
@@ -790,7 +798,6 @@ function setupCanvasEvents() {
   canvas.addEventListener('contextmenu', (e) => {
     if (mode !== 'none') {
       e.preventDefault();
-      cancelMode();
     }
   });
 }

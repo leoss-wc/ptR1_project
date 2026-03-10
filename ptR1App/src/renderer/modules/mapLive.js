@@ -158,6 +158,11 @@ function setupLiveCanvasEvents() {
   canvas.addEventListener('mousemove', (e) => mapView.handleMouseMove(e));
   canvas.addEventListener('mouseup', (e) => mapView.handleMouseUp(e));
   canvas.addEventListener('mouseleave', (e) => mapView.handleMouseUp(e));
+  canvas.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    mapView.handleWheel(e);
+  }, { passive: false });
 }
 
 export function drawLiveMap() {

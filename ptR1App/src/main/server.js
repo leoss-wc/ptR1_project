@@ -22,7 +22,7 @@ parentPort.on('message', (message) => {
         connectROSBridge(message.url);
         break;
       case 'sendRelay':
-        sendRelayViaCommand(message.relayId, message.command);
+        sendRelayViaCommand(message.command);
         break;
       case 'listMaps':
         callListMapsService();
@@ -220,28 +220,21 @@ function startReconnect() {
   }
 }
 
-function sendRelayViaCommand(relayId, command) {
+function sendRelayViaCommand(command) {
   const relayCommandMap = {
-    relay1: {
-      on:  CMD.RELAY1_ON,
-      off: CMD.RELAY1_OFF
-    },
-    relay2: {
-      on:  CMD.RELAY2_ON,
-      off: CMD.RELAY2_OFF
-    }
+    on:  CMD.RELAY_ON,
+    off: CMD.RELAY_OFF
   };
 
-  const cmdValue = relayCommandMap[relayId]?.[command];
+  const cmdValue = relayCommandMap[command];
   if (cmdValue === undefined) {
-    console.error(`Server : ❌ Unknown relay command: ${relayId}, ${command}`);
+    console.error(`Server : ❌ Unknown relay command: ${command}`);
     return;
   }
 
-  console.log(`Server : 📤 Relay ${relayId} ${command.toUpperCase()} → HEX: ${cmdValue.toString(16)} → DEC: ${cmdValue}`);
+  console.log(`Server : 📤 Relay ${command.toUpperCase()} → HEX: ${cmdValue.toString(16)} → DEC: ${cmdValue}`);
   sendCommand(cmdValue);
 }
-
 // ส่งคำสั่ง String Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
 function sendCommand(command) {
   if (!ros || !ros.isConnected) {

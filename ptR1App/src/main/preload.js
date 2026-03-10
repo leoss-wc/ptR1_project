@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   //ROSBridge related api
   connectROSBridge: (ip) => ipcRenderer.send('connect-rosbridge', ip),
 
-  sendRelayCommand: (relayId, command) => ipcRenderer.send('relay-command', { relayId, command }),
+  sendRelayCommand: (command) => ipcRenderer.send('relay-command', { command }),
   setManualMode: (state) => ipcRenderer.send('set-manual-mode', { state }),
   
   loadVideosFromFolder: (customPath) => ipcRenderer.invoke('load:videos', customPath),

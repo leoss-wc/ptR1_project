@@ -1,27 +1,21 @@
-//toggleRelay(), updateButton(), state cache
+// toggleRelay(), updateButton(), state cache
+let relayState = false;
 
-const relayStates = { relay2: false };
-const relayIdMap = {  relayButton2: 'relay2' };
-
-function updateButton(buttonId) {
-  const relayId = relayIdMap[buttonId];
-  const btn = document.getElementById(buttonId);
-  btn.textContent = `${relayId.toUpperCase()}: ${relayStates[relayId] ? "ON" : "OFF"}`;
-  btn.classList.toggle("on",  relayStates[relayId]);
-  btn.classList.toggle("off", !relayStates[relayId]);
+function updateButton() {
+  const btn = document.getElementById("relayButton");
+  btn.textContent = `RELAY: ${relayState ? "ON" : "OFF"}`;
+  btn.classList.toggle("on",  relayState);
+  btn.classList.toggle("off", !relayState);
 }
 
-function toggleRelay(buttonId) {
-  const relayId = relayIdMap[buttonId];
-  relayStates[relayId] = !relayStates[relayId];
-  updateButton(buttonId);
-  window.electronAPI.sendRelayCommand(relayId, relayStates[relayId] ? "on" : "off");
+function toggleRelay() {
+  relayState = !relayState;
+  updateButton();
+  window.electronAPI.sendRelayCommand(relayState ? "on" : "off");
 }
 
 export function initRelayButtons() {
-  Object.keys(relayIdMap).forEach((id) => {
-    document.getElementById(id).addEventListener("click", () => toggleRelay(id));
-    updateButton(id);
-  });
-  console.log('Relay Control: Initialized relay buttons.');
+  document.getElementById("relayButton").addEventListener("click", toggleRelay);
+  updateButton();
+  console.log("Relay Control: Initialized relay button.");
 }

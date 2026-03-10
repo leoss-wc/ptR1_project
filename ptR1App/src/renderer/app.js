@@ -283,7 +283,6 @@ function toggleMapLayers(isStatic) {
     document.querySelector('.canvas-controls').classList.toggle('hidden', !isStatic);
 }
 function setupPatrolEvents() {
-    document.getElementById('save-path-btn').addEventListener('click', patrol.saveDrawnPath);
     document.getElementById('start-patrol-btn').addEventListener('click', patrol.startPatrol);
     document.getElementById('pause-patrol-btn').addEventListener('click', patrol.pausePatrol);
     document.getElementById('resume-patrol-btn').addEventListener('click', patrol.resumePatrol);
