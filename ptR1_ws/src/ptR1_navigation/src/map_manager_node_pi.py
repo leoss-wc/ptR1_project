@@ -1,504 +1,280 @@
 #!/usr/bin/env python3
-from std_msgs.msg import String
 import rospy
 import os
 import subprocess
-import json
 import actionlib
-from geometry_msgs.msg import PoseWithCovarianceStamped
+import base64
+import signal
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal
-from std_srvs.srv import Trigger, TriggerResponse 
+from geometry_msgs.msg import PoseStamped
+from std_msgs.msg import String
+from std_srvs.srv import Empty
+import json
+from geometry_msgs.msg import PoseWithCovarianceStamped #สำหรับรับ/ส่ง pose
 import math
-import copy
+import cv2
+import numpy as np
+import shutil # ไว้ copy file
+# Import services
+from ptR1_navigation.srv import (ListMaps, ListMapsResponse, SelectNavMap, SelectNavMapResponse,
+                                 GetMapFile, GetMapFileResponse, SaveMap, SaveMapResponse,
+                                 StartSLAM, StartSLAMResponse, StopSLAM, StopSLAMResponse,
+                                 DeleteMap, DeleteMapResponse, ResetSLAM, ResetSLAMResponse,                                            
+                                 ClearCostmaps, ClearCostmapsResponse,SaveEditedMap, SaveEditedMapResponse)
 
-# Import Service ที่จำเป็น
-from ptR1_navigation.srv import (StartAMCL, StartAMCLResponse, StopAMCL, StopAMCLResponse,
-                                 StartPatrol, StartPatrolResponse, PausePatrol, PausePatrolResponse,
-                                 ResumePatrol, ResumePatrolResponse, StopPatrol, StopPatrolResponse,
-                                 SaveMap, SaveMapResponse)
-#raspi directory
-HOMES_FILE = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/config/map_homes.json')
-POSE_FILE = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/config/last_pose.json')
+MAP_FOLDER = os.path.expanduser('~/ptR1_ws/src/ptR1_navigation/maps')
+#MAP_FOLDER = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/maps')
 
-#local directory
-#POSE_FILE = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/config/last_pose.json')
-#HOMES_FILE = os.path.expanduser('~/ptR1Project/ptR1_ws/src/ptR1_navigation/config/map_homes.json')
 
-class NavigationManager:
+class MapManager:
     def __init__(self):
-        rospy.init_node('navigation_manager')
-        rospy.loginfo("Navigation Manager Started")
+        rospy.init_node('map_manager_pro')
+        rospy.loginfo("Starting Map Manager Pro Node...")
 
-        # --- State ---
-        self.nav_process = None
-        self.latest_pose = None
-        self.auto_resume = False
-        self.current_map_name = "unknown"
-        
-        # Patrol State
-        self.goal_list = [] # ลิสต์เก็บ Goal ที่จะส่งไปในโหมด Patrol
-        self.current_goal_index = 0 # ตัวแปรเก็บ index ของ Goal ที่กำลังจะส่งไป
-        self.is_patrolling = False # ตัวแปรบอกสถานะว่ากำลังอยู่ในโหมด Patrol หรือเปล่า
-        self.is_paused = False # ตัวแปรบอกสถานะว่ากำลังหยุดชั่วคราวอยู่หรือเปล่า
-        self.should_loop = False # ตัวแปรบอกว่าหมดลิสต์แล้วจะวนใหม่หรือเปล่า
-        
-        # --- ROS Comms ---
-        self.status_pub = rospy.Publisher('/nav/status', String, queue_size=10)
+        if not os.path.exists(MAP_FOLDER):
+            os.makedirs(MAP_FOLDER)
+            rospy.loginfo(f"Created map folder at {MAP_FOLDER}")
+
+        # --- State Variables ---
+        self.running_processes = []
+        self.navigation_process = None
+        self.is_saving = False
+
+        # --- Action Client ---
         self.move_base_client = actionlib.SimpleActionClient('move_base', MoveBaseAction)
-        self.initial_pose_pub = rospy.Publisher('/initialpose', PoseWithCovarianceStamped, queue_size=1)
-        rospy.Subscriber('/amcl_pose', PoseWithCovarianceStamped, self.amcl_pose_callback)
-        rospy.Subscriber('/robot/cmd', String, self.cmd_callback)
-        rospy.Subscriber('/map_manager/current_map_name', String, self.map_name_callback)
+        self.current_map_pub = rospy.Publisher('/map_manager/current_map_name', String, queue_size=1, latch=True)
         # --- Services ---
-        # Navigation (AMCL + MoveBase)
-        rospy.Service('/nav/start', StartAMCL, self.handle_start_nav) 
-        rospy.Service('/nav/stop', StopAMCL, self.handle_stop_nav)
+        # Map/SLAM Management
+        rospy.Service('/map_manager/list_maps', ListMaps, self.handle_list_maps)
+        rospy.Service('/map_manager/select_nav_map', SelectNavMap, self.handle_select_nav_map)
+        rospy.Service('/map_manager/save_map', SaveMap, self.handle_save_map)
+        rospy.Service('/map_manager/delete_map', DeleteMap, self.handle_delete_map)
+        rospy.Service('/map_manager/start_slam', StartSLAM, self.handle_start_slam)
+        rospy.Service('/map_manager/stop_processes', StopSLAM, self.handle_stop_processes)
+        rospy.Service('/map_manager/reset_slam', ResetSLAM, self.handle_reset_slam)
+        rospy.Service('/map_manager/get_map_file', GetMapFile, self.handle_get_map_file)
+        rospy.Service('/map_manager/clear_costmaps', ClearCostmaps, self.handle_clear_costmaps)
+        rospy.Service('/map_manager/save_edited_map', SaveEditedMap, self.handle_save_edited_map)
         
-        #Patrol
-        rospy.Service('/nav/start_patrol', StartPatrol, self.handle_start_patrol)
-        rospy.Service('/nav/stop_patrol', StopPatrol, self.handle_stop_patrol)
-        rospy.Service('/nav/pause_patrol', PausePatrol, self.handle_pause_patrol)
-        rospy.Service('/nav/resume_patrol', ResumePatrol, self.handle_resume_patrol)
+        rospy.on_shutdown(self.shutdown_hook)
+        rospy.loginfo("All Map Manager services are ready.")
 
-        rospy.Service('/nav/set_home', SaveMap, self.handle_set_home) 
-        rospy.Service('/nav/go_home', SaveMap, self.handle_go_home)
-        rospy.Service('/nav/init_home', SaveMap, self.handle_init_home)
-        
-        rospy.on_shutdown(self.cleanup)
-        rospy.loginfo("Navigation Services Ready.")
-    
-    def cmd_callback(self, msg):
-        """จัดการคำสั่งจาก /robot/cmd"""
-        if not self.is_patrolling:
-            return
-        command = msg.data
-        # กรณีได้รับ manual_on -> ให้ Pause Patrol (ถ้ากำลังเดินอยู่)
-        if command == 'manual_on':
-            if self.is_patrolling and not self.is_paused:
-                rospy.loginfo("Manual Mode ON: Pausing patrol...")
-                self.is_paused = True
-                self.move_base_client.cancel_goal() # สั่งหยุดหุ่นยนต์
-                self.update_status("paused")
-        
-        # กรณีได้รับ manual_off -> ให้ Resume Patrol (ถ้าต้องการ)
-        if self.auto_resume and command == 'manual_off':
-            if self.is_patrolling and self.is_paused:
-                rospy.loginfo("Manual Mode OFF: AUTO Resuming patrol...")
-                self.is_paused = False
-                self.send_next_goal() # ส่ง Goal เดิมให้เดินต่อ
-    def map_name_callback(self, msg):
-        """อัปเดตชื่อแผนที่เมื่อ MapManager แจ้งมา"""
-        self.current_map_name = msg.data
-        rospy.loginfo(f"Nav node: Current map updated to: {self.current_map_name}")
-
-    def update_status(self, status_text):
-        self.status_pub.publish(status_text)
-    # Pose Management ---
-    def amcl_pose_callback(self, msg):
-        self.latest_pose = msg
-
-    def save_pose_to_file(self):
-        """บันทึกตำแหน่งปัจจุบันลงไฟล์ JSON"""
-        if self.latest_pose is None:
-            rospy.logwarn("⚠️ No AMCL pose received yet. Cannot save.")
-            return False
-            
+    def handle_save_edited_map(self, req):
         try:
-            pose_data = {
-                "map_name": self.current_map_name,
-                "position": {
-                    "x": self.latest_pose.pose.pose.position.x,
-                    "y": self.latest_pose.pose.pose.position.y,
-                    "z": self.latest_pose.pose.pose.position.z
-                },
-                "orientation": {
-                    "x": self.latest_pose.pose.pose.orientation.x,
-                    "y": self.latest_pose.pose.pose.orientation.y,
-                    "z": self.latest_pose.pose.pose.orientation.z,
-                    "w": self.latest_pose.pose.pose.orientation.w
-                },
-                "covariance": list(self.latest_pose.pose.covariance),
-                "frame_id": self.latest_pose.header.frame_id
-            }
+            map_name = req.map_name
+            base64_str = req.base64_image
+            yaml_content = req.yaml_content #รับเนื้อหา YAML มาจาก JS
             
-            os.makedirs(os.path.dirname(POSE_FILE), exist_ok=True)
-            with open(POSE_FILE, 'w') as f:
-                json.dump(pose_data, f, indent=4)
-                
-            rospy.loginfo(f"Saved last pose to {POSE_FILE}")
-            return True
-        except Exception as e:
-            rospy.logerr(f"❌ Failed to save pose: {e}")
-            return False
-
-    def restore_pose(self):
-        if self.current_map_name == "unknown":
-            rospy.logwarn("⚠️ restore_pose: map name still unknown, proceeding with caution.")   
-        """อ่านไฟล์ JSON และ Publish ไปยัง /initialpose"""
-        if not os.path.exists(POSE_FILE):
-            rospy.logwarn("⚠️ No saved pose file found.")
-            return False
+            maps_dir = MAP_FOLDER
+            # Save PNG & PGM (Logic เดิม)
+            if "," in base64_str:
+                base64_str = base64_str.split(",")[1]
+            img_data = base64.b64decode(base64_str)
+            np_arr = np.frombuffer(img_data, np.uint8)
+            image = cv2.imdecode(np_arr, cv2.IMREAD_UNCHANGED)
             
-        try:
-            with open(POSE_FILE, 'r') as f:
-                data = json.load(f)
-
-            saved_map = data.get("map_name", "unknown")
-            # ถ้าเรารู้ชื่อแผนที่ปัจจุบัน (ไม่ใช่ unknown) และมันไม่ตรงกับที่เซฟไว้
-            if self.current_map_name != "unknown" and saved_map != self.current_map_name:
-                rospy.logerr(f"Nav node: Map Mismatch Current: {self.current_map_name}, Saved: {saved_map}")
-                rospy.logerr("Nav node: Aborting restore_pose to prevent localization errors.")
-                return False
-                
-            msg = PoseWithCovarianceStamped()
-            msg.header.stamp = rospy.Time.now()
-            msg.header.frame_id = data.get("frame_id", "map")
+            # Save PNG
+            cv2.imwrite(os.path.join(maps_dir, f"{map_name}.png"), image)
             
-            msg.pose.pose.position.x = data["position"]["x"]
-            msg.pose.pose.position.y = data["position"]["y"]
-            msg.pose.pose.position.z = data["position"]["z"]
-            
-            msg.pose.pose.orientation.x = data["orientation"]["x"]
-            msg.pose.pose.orientation.y = data["orientation"]["y"]
-            msg.pose.pose.orientation.z = data["orientation"]["z"]
-            msg.pose.pose.orientation.w = data["orientation"]["w"]
-            msg.pose.covariance = data["covariance"]
-            
-            # Publish ย้ำๆ เพื่อความชัวร์
-            for _ in range(3):
-                self.initial_pose_pub.publish(msg)
-                rospy.sleep(0.2)
-                
-            rospy.loginfo("📍 Restored initial pose from file.")
-            return True
-        except Exception as e:
-            rospy.logerr(f"❌ Failed to load pose: {e}")
-            return False
-
-    # Process Management ---
-    def handle_start_nav(self, req):
-        if self.nav_process:
-            return StartAMCLResponse(True, "Navigation already running.")
-        
-        # รียกไฟล์ launch ที่รวม AMCL และ MoveBase ไว้
-        cmd = ['roslaunch', 'ptR1_navigation', 'navigation_core.launch']
-        self.nav_process = subprocess.Popen(cmd)
-        
-        if req.restore_pose:
-
-            # รอระบบขึ้นสักครู่แล้วค่อย Restore Pose
-            rospy.Timer(rospy.Duration(5.0), lambda e: self.restore_pose(), oneshot=True)
-
-        return StartAMCLResponse(True, "Navigation System Started.")
-
-    def handle_stop_nav(self, req):
-        rospy.loginfo("Stopping Navigation Stack...")
-
-        # บันทึกตำแหน่งล่าสุดก่อนปิด
-        if req.save_pose:
-            self.save_pose_to_file()
-            
-        # ปิด Process หลัก (ที่รัน launch file)
-        if self.nav_process:
-            self.nav_process.terminate()
-            try:
-                self.nav_process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                self.nav_process.kill()
-            self.nav_process = None
-            rospy.loginfo("Navigation launch process terminated.")
-
-        # สั่ง Kill Nodes ที่อาจจะค้างอยู่แบบเจาะจง (Force Kill)
-        # เพื่อเคลียร์ Topic /map และ /tf ให้ว่างสำหรับ SLAM
-        try:
-            # ใช้ os.system เพื่อเรียกคำสั่ง rosnode kill
-            os.system("rosnode kill /amcl /move_base /map_server")
-            rospy.loginfo("Force killed: amcl, move_base, map_server")
-        except Exception as e:
-            rospy.logwarn(f"⚠️ Failed to force kill nodes: {e}")
-
-        return StopAMCLResponse(True, "Navigation and Map Server Stopped.")
-
-    # Patrol Logic ---
-    def handle_start_patrol(self, req):
-        if not req.goals:
-            return StartPatrolResponse(False, "Goal list cannot be empty.")
-        
-        self.handle_stop_patrol(None)
-        self.goal_list = req.goals
-        self.should_loop = req.loop
-        self.current_goal_index = 0
-        self.is_patrolling = True
-        self.is_paused = False
-        self.update_status("active")
-        rospy.loginfo(f"Starting patrol with {len(self.goal_list)} goals. Loop: {self.should_loop}")
-        self.send_next_goal()
-        return StartPatrolResponse(True, "Patrol started.")
-    
-    def handle_pause_patrol(self, req):
-        if not self.is_patrolling:
-            return PausePatrolResponse(False, "Not currently patrolling.")
-            
-        self.is_paused = True
-        self.move_base_client.cancel_goal()
-        self.update_status("paused")
-        rospy.loginfo("Patrol paused.")
-        return PausePatrolResponse(True, "Patrol paused.")
-
-    def handle_resume_patrol(self, req):
-        if not self.is_patrolling:
-            return ResumePatrolResponse(False, "Not currently patrolling.")
-        if not self.is_paused:
-            return ResumePatrolResponse(False, "Patrol is not paused.")
-
-        self.is_paused = False
-        rospy.loginfo("Resuming patrol.")
-        self.send_next_goal()
-        return ResumePatrolResponse(True, "Patrol resumed.")
-
-    def handle_stop_patrol(self, req):
-        self.is_patrolling = False
-        self.is_paused = False
-        self.goal_list = []
-        self.current_goal_index = 0
-        self.move_base_client.cancel_all_goals()
-        self.update_status("idle")
-        if req is not None:
-             rospy.loginfo("Patrol stopped.")
-        return StopPatrolResponse(True, "Patrol stopped.")
-
-    def get_quaternion_from_yaw(self, yaw):
-        """แปลงมุม Yaw (radians) เป็น Quaternion (x, y, z, w)"""
-        return {
-            'x': 0.0,
-            'y': 0.0,
-            'z': math.sin(yaw / 2.0),
-            'w': math.cos(yaw / 2.0)
-        }
-    
-    def get_yaw_from_quaternion(self,q):
-        """แปลง Quaternion เป็นมุม Yaw"""
-        return math.atan2(2.0 * (q.w * q.z + q.x * q.y), 1.0 - 2.0 * (q.y * q.y + q.z * q.z))
-    def send_next_goal(self):
-        # ตรวจสอบความพร้อม
-        if not self.is_patrolling or self.is_paused or not self.goal_list:
-            return
-            
-        # ตรวจสอบว่าจบ Loop หรือยัง
-        if self.current_goal_index >= len(self.goal_list):
-            rospy.logwarn("send_next_goal: index out of range, stopping.")
-            self.is_patrolling = False
-            self.update_status("idle")
-            return
-
-        # ใช้ deepcopy เพื่อหลีกเลี่ยงการเขียนทับข้อมูลเป้าหมายเดิม เผื่อต้องการใช้มุมเดิมในอนาคต
-        target_pose_msg = copy.deepcopy(self.goal_list[self.current_goal_index])
-        # LOOK-AHEAD HEADING LOGIC (วิเคราะห์จุดถัดไป)
-
-        next_index = self.current_goal_index + 1
-        has_next_goal = False
-        
-        # เช็คว่ามีเป้าหมายถัดไปใน Array หรือไม่
-        if next_index < len(self.goal_list):
-            next_pose_msg = self.goal_list[next_index]
-            has_next_goal = True
-        # ถ้าไม่มีจุดถัดไป แต่เปิดโหมด Loop ไว้ จุดถัดไปก็คือจุดที่ 0
-        elif self.should_loop and len(self.goal_list) > 1:
-            next_pose_msg = self.goal_list[0]
-            has_next_goal = True
-            
-        if has_next_goal:
-            current_goal_x = target_pose_msg.pose.position.x
-            current_goal_y = target_pose_msg.pose.position.y
-            next_goal_x = next_pose_msg.pose.position.x
-            next_goal_y = next_pose_msg.pose.position.y
-            
-            # คำนวณระยะห่างระหว่างจุด (เผื่อกรณีคนเซฟจุดซ้อนกัน ป้องกัน error หารด้วย 0)
-            dist = math.hypot(next_goal_x - current_goal_x, next_goal_y - current_goal_y)
-            
-            if dist > 0.05:  # ถ้าระยะห่างมากกว่า 5 เซนติเมตร ถึงจะยอมคำนวณมุม
-                # คำนวณมุม (Yaw) จากจุดปัจจุบัน ชี้ไปยังจุดถัดไป
-                lookahead_yaw = math.atan2(next_goal_y - current_goal_y, next_goal_x - current_goal_x)
-                q = self.get_quaternion_from_yaw(lookahead_yaw)
-                
-                # เขียนทับ Orientation (การหันหน้า) ของจุดเป้าหมายนี้
-                target_pose_msg.pose.orientation.x = q['x']
-                target_pose_msg.pose.orientation.y = q['y']
-                target_pose_msg.pose.orientation.z = q['z']
-                target_pose_msg.pose.orientation.w = q['w']
-                
-                next_id = next_index if next_index < len(self.goal_list) else 0
-                rospy.loginfo(f"🧭 Look-ahead Active: Pre-aligning heading towards Goal #{next_id + 1}")
-        # ==========================================
-        
-        # --- ส่ง Goal ไปให้ MoveBase ---
-        rospy.loginfo(f"Moving to Goal #{self.current_goal_index + 1}")
-        
-        # สร้าง Goal Object
-        goal = MoveBaseGoal()
-        goal.target_pose = target_pose_msg 
-        
-        # ตรวจสอบ Header
-        if not goal.target_pose.header.frame_id:
-            goal.target_pose.header.frame_id = "map"
-        goal.target_pose.header.stamp = rospy.Time.now()
-
-        # เช็คว่า move_base พร้อมไหม
-        if not self.move_base_client.wait_for_server(rospy.Duration(1.0)):
-            rospy.logwarn("move_base server not available.")
-            self.is_paused = True
-            return
-        
-        self.update_status("active")
-        
-        # ส่งคำสั่งเดินทันที! 
-        self.move_base_client.send_goal(goal, done_cb=self.goal_done_callback)
-
-    def goal_done_callback(self, status, result):
-        if not self.is_patrolling: return
-        
-        if status == actionlib.GoalStatus.SUCCEEDED:
-            rospy.loginfo(f"Goal #{self.current_goal_index + 1} reached.")
-            self.current_goal_index += 1
-
-            if self.current_goal_index >= len(self.goal_list):
-                if self.should_loop:
-                    rospy.loginfo("Looping patrol...")
-                    self.current_goal_index = 0
-                    rospy.Timer(rospy.Duration(0.1), lambda e: self.send_next_goal(), oneshot=True)
-                else:
-                    self.is_patrolling = False
-                    self.update_status("idle")
-                    rospy.loginfo("Patrol finished.")
+            # Save PGM (Convert to Gray)
+            if len(image.shape) > 2:
+                gray_image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
             else:
-                rospy.Timer(rospy.Duration(0.1), lambda e: self.send_next_goal(), oneshot=True)
-        elif status == actionlib.GoalStatus.PREEMPTED and self.is_paused:
-            rospy.loginfo("Goal cancelled due to pause. Waiting for resume...")
-        else:
-            rospy.logerr(f"Goal #{self.current_goal_index + 1} failed/aborted. Status: {status}")
-            self.update_status("idle")
-            self.is_patrolling = False
+                gray_image = image
+            cv2.imwrite(os.path.join(maps_dir, f"{map_name}.pgm"), gray_image)
 
-# --- 4. Home Management (Per Map) ---
-    def _load_homes_data(self):
-        """Helper อ่านไฟล์ JSON"""
-        if os.path.exists(HOMES_FILE):
-            try:
-                with open(HOMES_FILE, 'r') as f:
-                    return json.load(f)
-            except:
-                return {}
-        return {}
+            # Save YAML (เขียนไฟล์ใหม่จาก Content ที่ส่งมาเลย)
+            yaml_path = os.path.join(maps_dir, f"{map_name}.yaml")
+            with open(yaml_path, 'w') as f:
+                f.write(yaml_content)
 
-    def handle_set_home(self, req):
-        """บันทึกตำแหน่งปัจจุบันเป็น Home ของแผนที่ที่ระบุ"""
-        map_name = req.name
-        if not map_name:
-            return SaveMapResponse(False, "Map name is required.")
-        if self.latest_pose is None:
-            return SaveMapResponse(False, "No pose received yet.")
+            return {"success": True, "message": f"Saved {map_name} (PGM, PNG, YAML)"}
+
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+# ------ Map/SLAM Handlers------
+    def handle_list_maps(self, req):
+        rospy.loginfo("Listing maps...")
+        try:
+            names = [os.path.splitext(f)[0] for f in os.listdir(MAP_FOLDER) if f.endswith(".yaml")]
+            rospy.loginfo(f"Found {len(names)} maps: {names}")
+            return ListMapsResponse(names)
+        except Exception as e:
+            rospy.logerr(f"Could not list maps: {e}")
+            return ListMapsResponse([])
+
+    def handle_select_nav_map(self, req):
+        map_to_load = req.name
+        rospy.loginfo(f"Loading map '{map_to_load}' and starting navigation nodes...")
+
+        # 1. เช็คไฟล์ก่อนเลย ถ้าไม่มีจะได้ไม่ต้องไปสั่งหยุด process ให้เสียเวลา
+        map_yaml_path = os.path.join(MAP_FOLDER, f"{map_to_load}.yaml")
+        if not os.path.exists(map_yaml_path):
+            return SelectNavMapResponse(False, f"Map '{map_to_load}' not found.")
+
+        # 2. เคลียร์ process เก่า (Nav หรือ SLAM)
+        self.handle_stop_processes(None)
 
         try:
-            # 1. อ่านข้อมูลเก่า
-            homes_data = self._load_homes_data()
+            command = ['roslaunch', 'ptR1_navigation', 'active_map_server.launch', f'map_name:={map_to_load}']
+            rospy.loginfo(f"Executing: {' '.join(command)}")
+            self.navigation_process = subprocess.Popen(command)
+            self.running_processes.append(self.navigation_process)
+            rospy.Timer(rospy.Duration(3.0), 
+                lambda e: self.current_map_pub.publish(map_to_load), 
+                oneshot=True)
 
-            # 2. เตรียมข้อมูล Pose ปัจจุบัน
-            pose_data = {
-                "x": self.latest_pose.pose.pose.position.x,
-                "y": self.latest_pose.pose.pose.position.y,
-                "z": self.latest_pose.pose.pose.position.z,
-                "ox": self.latest_pose.pose.pose.orientation.x,
-                "oy": self.latest_pose.pose.pose.orientation.y,
-                "oz": self.latest_pose.pose.pose.orientation.z,
-                "ow": self.latest_pose.pose.pose.orientation.w,
-                "frame_id": self.latest_pose.header.frame_id
-            }
-
-            # 3. บันทึกลง Key ชื่อแผนที่
-            homes_data[map_name] = pose_data
-
-            # 4. เขียนไฟล์กลับ
-            os.makedirs(os.path.dirname(HOMES_FILE), exist_ok=True)
-            with open(HOMES_FILE, 'w') as f:
-                json.dump(homes_data, f, indent=4)
-
-            rospy.loginfo(f"🏠 Home set for map '{map_name}'")
-            return SaveMapResponse(True, f"Home set for {map_name}")
+            rospy.loginfo(f"Navigation started with map '{map_to_load}'.")
+            return SelectNavMapResponse(True, f"Navigation started with map '{map_to_load}'.")
         except Exception as e:
-            rospy.logerr(f"Failed to set home: {e}")
+            return SelectNavMapResponse(False, f"Error starting navigation: {str(e)}")
+        
+    def handle_stop_processes(self, req):
+        if not self.running_processes:
+            if req is not None: rospy.loginfo("No managed processes were running.")
+            return StopSLAMResponse(True, "No managed processes were running.")
+        rospy.loginfo(f"Stopping {len(self.running_processes)} managed processes...")
+        try:
+            for process in self.running_processes[:]:
+                if process.poll() is None: # ถ้ายังไม่ตาย
+                    process.terminate() # ส่ง SIGTERM
+                    try:
+                        process.wait(timeout=3) # รอ 3 วิ
+                    except subprocess.TimeoutExpired:
+                        rospy.logwarn("Process did not stop, killing it.")
+                        process.kill() # ส่ง SIGKILL
+                self.running_processes.remove(process)
+            
+            self.navigation_process = None
+            return StopSLAMResponse(True, "All processes stopped.")
+        except Exception as e:
+            return StopSLAMResponse(False, f"Failed to stop processes: {str(e)}")
+        
+    def handle_start_slam(self, req):
+        rospy.loginfo("Starting SLAM...")
+        self.handle_stop_processes(None) 
+        try:
+            slam_launch_command = ['roslaunch', 'ptR1_navigation', 'slam.launch']
+            process = subprocess.Popen(slam_launch_command)
+            self.running_processes.append(process)
+            return StartSLAMResponse(True, "SLAM started successfully.")
+        except Exception as e:
+            self.handle_stop_processes(None)
+            return StartSLAMResponse(False, str(e))
+
+    def handle_reset_slam(self, req):
+        rospy.loginfo("Resetting SLAM.")
+        slam_reset_service_name = '/slam_toolbox/reset'
+        try:
+            # รอ Service นานหน่อยเผื่อ SLAM เพิ่งเริ่ม (5 วินาที)
+            rospy.wait_for_service(slam_reset_service_name, timeout=5.0) 
+            reset_slam_service = rospy.ServiceProxy(slam_reset_service_name, Empty)
+            reset_slam_service()
+            return ResetSLAMResponse(True, "SLAM reset successful.")
+        except rospy.ROSException:
+             return ResetSLAMResponse(False, "SLAM service not available (Timeout).")
+        except Exception as e:
+            return ResetSLAMResponse(False, f"Failed to reset SLAM: {e}")
+        
+    def handle_clear_costmaps(self, req):
+        rospy.loginfo("Received request to clear costmaps.")
+        service_name = '/move_base/clear_costmaps'
+        try:
+            rospy.wait_for_service(service_name, timeout=2.0)
+            clear_costmaps_service = rospy.ServiceProxy(service_name, Empty)
+            clear_costmaps_service()
+            return ClearCostmapsResponse(True, "Costmaps cleared successfully.")
+        except Exception as e:
+            return ClearCostmapsResponse(False, f"Failed to clear costmaps: {e}")
+
+    def handle_save_map(self, req):
+        if self.is_saving:
+            msg = "Save operation already in progress. Request ignored."
+            rospy.logwarn(msg)
+            return SaveMapResponse(False, msg)
+        self.is_saving = True
+        name = req.name
+        rospy.loginfo(f"Saving map to {name}")
+        try:
+            map_filepath = os.path.join(MAP_FOLDER, name)
+
+            subprocess.check_call(['rosrun', 'map_server', 'map_saver', '-f', map_filepath, 'map:=/map'])
+
+            if os.path.exists(f"{map_filepath}.pgm"):
+                img = cv2.imread(f"{map_filepath}.pgm", cv2.IMREAD_GRAYSCALE)
+                if img is not None:
+                    cv2.imwrite(f"{map_filepath}.png", img)
+                    return SaveMapResponse(True, f"Map saved as {name}.pgm and {name}.png")
+                else:
+                    return SaveMapResponse(False, "Failed to convert PGM to PNG.")
+            else:
+                return SaveMapResponse(False, "Map saver failed to create PGM file.")
+
+        except Exception as e:
+            rospy.logerr(f"Save map error: {e}")
             return SaveMapResponse(False, str(e))
+        finally:
+            self.is_saving = False  # ✅ คืนค่าเสมอไม่ว่าจะ return ทางไหน
 
-    def handle_go_home(self, req):
-        """สั่งหุ่นยนต์เดินกลับ Home ของแผนที่นั้น (Navigation)"""
-        map_name = req.name
-        homes_data = self._load_homes_data()
-
-        if map_name not in homes_data:
-            return SaveMapResponse(False, f"No home defined for map '{map_name}'")
-
-        # ดึงข้อมูลมาสร้าง Goal
-        home = homes_data[map_name]
-        goal = MoveBaseGoal()
-        goal.target_pose.header.frame_id = home.get("frame_id", "map")
-        goal.target_pose.header.stamp = rospy.Time.now()
-        goal.target_pose.pose.position.x = home["x"]
-        goal.target_pose.pose.position.y = home["y"]
-        goal.target_pose.pose.position.z = home["z"]
-        goal.target_pose.pose.orientation.x = home["ox"]
-        goal.target_pose.pose.orientation.y = home["oy"]
-        goal.target_pose.pose.orientation.z = home["oz"]
-        goal.target_pose.pose.orientation.w = home["ow"]
-
-        # สั่งเดิน
-        if not self.move_base_client.wait_for_server(rospy.Duration(1.0)):
-             return SaveMapResponse(False, "MoveBase not ready.")
         
-        self.move_base_client.send_goal(goal)
-        return SaveMapResponse(True, f"Going to home of {map_name}...")
-
-    def handle_init_home(self, req):
-        """ตั้งค่า Initial Pose ไปที่จุด Home (Teleport ใน AMCL)"""
+              
+    def handle_delete_map(self, req):
         map_name = req.name
-        homes_data = self._load_homes_data()
+        rospy.loginfo(f"Received request to delete map: {map_name}")
+        files_to_check = [os.path.join(MAP_FOLDER, f"{map_name}{ext}") for ext in ['.yaml', '.pgm', '.png']]
+        deleted_count = 0
+        try:
+            for file_path in files_to_check:
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    deleted_count += 1
+            if deleted_count > 0:
+                return DeleteMapResponse(True, f"Map '{map_name}' and associated files deleted.")
+            else:
+                return DeleteMapResponse(True, f"Map '{map_name}' not found.")
+        except OSError as e:
+            return DeleteMapResponse(False, f"Error deleting map '{map_name}': {str(e)}")
+    
+    def handle_get_map_file(self,req):
+        rospy.loginfo(f"Getting map file: {req.name}")
+        map_name = req.name
+        image_path = os.path.join(MAP_FOLDER, f"{map_name}.png")
+        yaml_path = os.path.join(MAP_FOLDER, f"{map_name}.yaml")
 
-        if map_name not in homes_data:
-            return SaveMapResponse(False, f"No home defined for map '{map_name}'")
+        if not os.path.exists(image_path) or not os.path.exists(yaml_path):
+            return GetMapFileResponse(
+                success=False,
+                message=f"Map files for {map_name} not found",
+                image_data_base64="",
+                yaml_data=""
+            )
+        try:
+            with open(image_path, 'rb') as f:
+                encoded_image = base64.b64encode(f.read()).decode('utf-8')
+            
+            with open(yaml_path, 'r') as f:
+                yaml_content = f.read()
 
-        home = homes_data[map_name]
-        msg = PoseWithCovarianceStamped()
-        msg.header.stamp = rospy.Time.now()
-        msg.header.frame_id = home.get("frame_id", "map")
-        msg.pose.pose.position.x = home["x"]
-        msg.pose.pose.position.y = home["y"]
-        msg.pose.pose.position.z = home["z"]
-        msg.pose.pose.orientation.x = home["ox"]
-        msg.pose.pose.orientation.y = home["oy"]
-        msg.pose.pose.orientation.z = home["oz"]
-        msg.pose.pose.orientation.w = home["ow"]
-        # ใส่ covariance มาตรฐาน
-        msg.pose.covariance = [0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                               0.0, 0.25, 0.0, 0.0, 0.0, 0.0, 
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-                               0.0, 0.0, 0.0, 0.0, 0.0, 0.068]
+            return GetMapFileResponse(
+                success=True,
+                message=f"Loaded {map_name}",
+                image_data_base64=encoded_image,
+                yaml_data=yaml_content
+            )
+        except Exception as e:
+            return GetMapFileResponse(False, str(e), "", "")
 
-        self.initial_pose_pub.publish(msg)
-        # ส่งซ้ำเพื่อความชัวร์
-        rospy.sleep(0.1)
-        self.initial_pose_pub.publish(msg)
+
+    def shutdown_hook(self):
+        rospy.loginfo("Shutdown request received...")
+        self.handle_stop_processes(None) 
+        rospy.loginfo("Map Manager shutdown complete.")        
         
-        return SaveMapResponse(True, f"Initial pose set to home of {map_name}")
-    def cleanup(self):
-        # สร้าง Dummy class ง่ายๆ เพื่อส่งค่า save_pose=True
-        self.save_pose_to_file()
-        class DummyReq:
-            save_pose = False
-        self.handle_stop_nav(DummyReq())
 
 if __name__ == '__main__':
     try:
-        NavigationManager()
+        MapManager()
         rospy.spin()
     except rospy.ROSInterruptException:
         pass

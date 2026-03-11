@@ -97,6 +97,10 @@ export class WebRTCPlayer {
         if (this.overlayElement) {
             this.overlayElement.classList.remove('hidden');
         }
+        if (this._frameCallbackId) {
+        this.videoElement.cancelVideoFrameCallback(this._frameCallbackId);
+        this._frameCallbackId = null;
+}
 
         this._updateStatus('Disconnected.');
         console.log('WebRTC connection closed and cleaned up.');
@@ -121,20 +125,39 @@ export class WebRTCPlayer {
     }
 
     //ฟังก์ชันสำหรับตรวจสอบความล่าช้า (delay) ของสตรีม
-    _startDelayMonitor() {
+_startDelayMonitor() {
     if (this._delayInterval) clearInterval(this._delayInterval);
 
+    // ── FPS counter ──────────────────────────────────────────────
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let currentFps = 0;
+
+    const countFrame = (now, metadata) => {
+        frameCount++;
+        const elapsed = now - lastFpsTime;
+
+        if (elapsed >= 1000) { // คำนวณทุก 1 วินาที
+            currentFps = Math.round((frameCount * 1000) / elapsed);
+            frameCount = 0;
+            lastFpsTime = now;
+        }
+
+        // วนนับ frame ต่อไปเรื่อยๆ
+        this._frameCallbackId = this.videoElement.requestVideoFrameCallback(countFrame);
+    };
+
+    this._frameCallbackId = this.videoElement.requestVideoFrameCallback(countFrame);
+
+    // ── UI update ────────────────────────────────────────────────
     this._delayInterval = setInterval(() => {
-        const now = new Date().toLocaleTimeString('th-TH', { 
-            hour12: false, 
-            hour: '2-digit', 
-            minute: '2-digit', 
-            second: '2-digit' 
+        const now = new Date().toLocaleTimeString('th-TH', {
+            hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
         if (this.statusElement) {
-            this.statusElement.innerText = `Streaming | Now: ${now}`;
+            this.statusElement.innerText = `Streaming | ${now} | ${currentFps} FPS`;
         }
-    }, 100);
+    }, 500);
 }
     
 }

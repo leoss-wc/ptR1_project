@@ -12,6 +12,7 @@ from ptR1_navigation.srv import UpdateDetection, UpdateDetectionResponse
 from datetime import datetime
 from std_msgs.msg import String
 import json
+import os
 
 import onnxruntime as ort
 import numpy as np
@@ -36,8 +37,8 @@ COCO_CLASSES = {
 }
 
 DOOR_CLASSES = {
-    0: 'door_open',
-    1: 'door_close'
+    0: 'door_close',
+    1: 'door_open'
 }
 
 alert_pub = None
@@ -84,6 +85,91 @@ detection_end     = 6
 detection_classes = ['person']
 detection_lock    = threading.Lock()
 
+capture_burst_timer = None
+capture_label = "object"
+capture_save_dir = os.path.expanduser('~/dataset/raw')
+capture_count = 0
+capture_pub = None  # publisher แจ้งกลับว่าถ่ายสำเร็จ
+os.makedirs(capture_save_dir, exist_ok=True)
+
+
+def _do_capture():
+    """ถ่ายภาพ RAW จาก latest_frame แล้ว publish แจ้งกลับ"""
+    global capture_count
+    with frame_lock:
+        if latest_frame is None:
+            rospy.logwarn("Capture: No frame available")
+            return
+        frame = latest_frame.copy()  # ภาพดิบ ไม่มี bounding box
+
+    timestamp = int(time.time() * 1000)
+    filename  = f"{capture_label}_{timestamp}.jpg"
+    filepath  = os.path.join(capture_save_dir, filename)
+
+    cv2.imwrite(filepath, frame)
+    capture_count += 1
+
+    rospy.loginfo(f"Captured [{capture_count}]: {filename}")
+
+    if capture_pub:
+        capture_pub.publish(json.dumps({
+            'filename': filename,
+            'count':    capture_count,
+            'label':    capture_label,
+        }))
+
+def handle_capture_single(req):
+    """Service: ถ่ายภาพครั้งเดียว"""
+    if not is_stream_enabled:
+        return TriggerResponse(success=False, message="Stream not running")
+    _do_capture()
+    return TriggerResponse(success=True, message=f"Captured as '{capture_label}'")
+
+def handle_capture_start(req):
+    """Service: เริ่ม burst capture — req เป็น String เช่น 'fire:2.0' (label:interval_sec)"""
+    global capture_burst_timer, capture_label
+    if not is_stream_enabled:
+        return TriggerResponse(success=False, message="Stream not running")
+
+    # parse payload จาก topic แยกต่างหาก (ดูข้อ 4)
+    return TriggerResponse(success=True, message=f"Burst started: {capture_label}")
+
+def handle_capture_stop(req):
+    """Service: หยุด burst capture"""
+    global capture_burst_timer
+    if capture_burst_timer:
+        capture_burst_timer.shutdown()
+        capture_burst_timer = None
+    rospy.loginfo("Burst capture stopped")
+    return TriggerResponse(success=True, message=f"Stopped. Total: {capture_count} images")
+
+def handle_capture_config(msg):
+    """รับ config burst เช่น 'fire:2.0' หรือ 'stop'"""
+    global capture_burst_timer, capture_label
+    data = msg.data.strip()
+
+    if data == 'stop':
+        if capture_burst_timer:
+            capture_burst_timer.shutdown()
+            capture_burst_timer = None
+        rospy.loginfo("Burst stopped via topic")
+        return
+
+    if ':' in data:
+        label, interval = data.split(':', 1)
+        capture_label = label.strip()
+        interval_sec  = float(interval.strip())
+
+        if capture_burst_timer:
+            capture_burst_timer.shutdown()
+
+        capture_burst_timer = rospy.Timer(
+            rospy.Duration(interval_sec),
+            lambda event: _do_capture()
+        )
+        rospy.loginfo(f"Burst started: label={capture_label}, interval={interval_sec}s")
+
+
 def has_motion(frame, threshold=1000):
     global prev_frame_gray
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -105,9 +191,10 @@ def is_frame_usable(frame):
     return 20 < mean_brightness < 240
 
 def init_alert_publisher():
-    global alert_pub, ai_stats_pub
+    global alert_pub, ai_stats_pub, capture_pub
     alert_pub = rospy.Publisher('/stream_manager/alert', String, queue_size=10)
     ai_stats_pub = rospy.Publisher('/stream_manager/ai_stats', String, queue_size=5)
+    capture_pub   = rospy.Publisher('/stream_manager/captured', String, queue_size=10)
 
 def publish_alert(class_name, conf):
     global last_alert_time
@@ -205,11 +292,12 @@ def launch_ffmpeg_pipe():
     """ตั้งค่า FFmpeg ให้รอรับภาพจากท่อ (stdin) ของ Python"""
     rtsp_url = rospy.get_param('~rtsp_url', 'rtsp://localhost:8554/mystream')
     bitrate = str(rospy.get_param('~bitrate', '600k'))
+    fps      = rospy.get_param('~camera_fps', 12)
 
     ffmpeg_command = [
     'ffmpeg', '-y',
     '-f', 'rawvideo', '-vcodec', 'rawvideo',
-    '-s', '640x480', '-pix_fmt', 'bgr24', '-r', '10',
+    '-s', '640x480', '-pix_fmt', 'bgr24', '-r', str(fps),
     '-i', '-',
     '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
     '-profile:v', 'baseline', '-pix_fmt', 'yuv420p',
@@ -315,6 +403,7 @@ def handle_start_stream(req):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, 500)
+    cap.set(cv2.CAP_PROP_FPS, 12)
 
     if not cap.isOpened():
         return TriggerResponse(success=False, message="Camera failed")
@@ -330,7 +419,7 @@ def handle_start_stream(req):
 
     if model2 is None:
         rospy.loginfo("Loading Door Detection Model (ONNX Runtime) — Model 2 (door_open/door_close)...")
-        model2_path = '/home/patrolR1/ptR1_ws/src/ptR1_navigation/model/yolo11n.onnx'
+        model2_path = '/home/patrolR1/ptR1_ws/src/ptR1_navigation/model/door_detector_best.onnx'
         sess_options2 = ort.SessionOptions()
         sess_options2.intra_op_num_threads = 1
         sess_options2.inter_op_num_threads = 1
@@ -544,7 +633,6 @@ def cleanup():
     ai_running2.clear()
     cached_boxes = []
     cached_boxes2 = []
-    door_frame_counter = 0
     latest_frame = None
 
     if ffmpeg_process and ffmpeg_process.stdin:
@@ -558,6 +646,15 @@ def cleanup():
 def stream_manager_server():
     global is_stream_enabled, cap, ffmpeg_process, cached_boxes, ai_running, latest_frame
 
+    camera_fps          = rospy.get_param('~camera_fps', 12)
+    person_interval_sec = rospy.get_param('~person_interval_sec', 2.5)
+    door_interval_sec   = rospy.get_param('~door_interval_sec', 6.0)
+
+    PERSON_SKIP = int(camera_fps * person_interval_sec)  # 30
+    DOOR_SKIP   = int(camera_fps * door_interval_sec)    # 72
+
+    rospy.loginfo(f"PERSON_SKIP={PERSON_SKIP}, DOOR_SKIP={DOOR_SKIP}")
+
     rospy.init_node('stream_manager_server')
     init_alert_publisher()
     rospy.on_shutdown(cleanup)
@@ -565,13 +662,16 @@ def stream_manager_server():
     rospy.Service('/stream_manager/stop', Trigger, handle_stop_stream)
     rospy.Service('/stream_manager/toggle_ai', Trigger, handle_toggle_ai)
     rospy.Service('/stream_manager/update_detection', UpdateDetection, handle_update_detection)
+    rospy.Service('/stream_manager/capture',       Trigger, handle_capture_single)
+    rospy.Service('/stream_manager/capture_stop',  Trigger, handle_capture_stop)
+    rospy.Subscriber('/stream_manager/capture_config', String, handle_capture_config)
     rospy.loginfo("Stream Manager Ready")
 
     writer = threading.Thread(target=ffmpeg_writer_thread)
     writer.daemon = True
     writer.start()
 
-    rate = rospy.Rate(10)
+    rate = rospy.Rate(camera_fps)
     frame_counter = 0
     ai_stats_counter = 0
     door_frame_counter = 0  # นับเฟรมสำหรับโมเดล 2 (skip ทุก 10 เฟรม)
@@ -587,13 +687,13 @@ def stream_manager_server():
                         rate.sleep()
                         continue
                     frame = latest_frame.copy()
-                # โมเดล 1: COCO (person, ฯลฯ) — รันทุก 10 เฟรม
+                # โมเดล 1: COCO (person)
                 if detection_enabled and model:
                     frame_counter += 1
                     ai_stats_counter += 1
-                    if frame_counter % 10 == 0 and not ai_running.is_set():
+                    if frame_counter % PERSON_SKIP == 0 and not ai_running.is_set():
                         frame_counter = 0
-                        if is_frame_usable(frame) and has_motion(frame):
+                        if is_frame_usable(frame):#if is_frame_usable(frame) and has_motion(frame):
                             ai_running.set()
                             t = threading.Thread(target=ai_worker, args=(frame.copy(),))
                             t.daemon = True
@@ -642,9 +742,10 @@ def stream_manager_server():
                 else:
                     with ai_result_lock:
                         cached_boxes = []
-                if model2:
+                # โมเดล 2: Door Detection 
+                if model2 and detection_enabled:
                     door_frame_counter += 1
-                    if door_frame_counter %  30 == 0 and not ai_running2.is_set():
+                    if door_frame_counter % DOOR_SKIP == 0 and not ai_running2.is_set():
                         door_frame_counter = 0
                         if is_frame_usable(frame):
                             ai_running2.set()
@@ -669,7 +770,8 @@ def stream_manager_server():
                         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
                         cv2.putText(frame, label, (int(x1), int(y1) - 10),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                        publish_alert(door_class, conf)
+                        if detection_enabled:
+                            publish_alert(door_class, conf)
 
                 # --- ส่งเฟรมล่าสุดไป ffmpeg_writer_thread ---
                 try:

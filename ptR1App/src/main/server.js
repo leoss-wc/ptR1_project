@@ -4,17 +4,55 @@ const { CMD } = require('../main/constants.js');
 const { handleCaptureMessage, initCaptureSubscriber } = require('./captureServer');
 
 let ros;
-let reconnectInterval = 5000; // ระยะเวลาในการลองเชื่อมต่อใหม่ (ms)
+let reconnectInterval = 5000;
 let rosbridgeURL = '';
 let reconnectTimer = null;
 
 let slamPoseSubscriber = null;
 let amclPoseSubscriber = null;
-let isSlamPoseInitialized = false; 
+let isSlamPoseInitialized = false;
 
 let tfClient = null;
 
+// ── Cached publish topics  ──────────────────────────────────
+let _cmdTopic        = null;
+let _twistTopic      = null;
+let _servoTiltTopic  = null;
+let _servoPanTopic   = null;
+let _goalTopic       = null;
+let _initialPoseTopic = null;
 
+// ── Pose dedup state ──────────────────────────────────────────────────────────
+const POSE_MIN_DIST  = 0.01;   // เมตร  (~1 cm)
+const POSE_MIN_ANGLE = 0.01;   // เรเดียน
+let lastSlamPos   = null;
+let lastSlamYaw   = null;
+let lastAmclPos   = null;
+let lastAmclYaw   = null;
+
+// ── Map dedup state ───────────────────────────────────────────────────────────
+let lastMapSeq = null;
+
+// ── Laser downsample ──────────────────────────────────────────────────────────
+const LASER_STEP = 3; // เก็บทุก 3 ค่า → ลด payload ~67%
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Helper: ดึง yaw จาก quaternion
+function quatToYaw(o) {
+  return Math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z));
+}
+
+// Helper: เช็คว่า pose เปลี่ยนพอจะส่งหรือเปล่า
+function poseChanged(pos, yaw, lastPos, lastYaw) {
+  if (!lastPos) return true;
+  const dx = pos.x - lastPos.x;
+  const dy = pos.y - lastPos.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const dYaw = Math.abs(yaw - (lastYaw ?? 0));
+  return dist >= POSE_MIN_DIST || dYaw >= POSE_MIN_ANGLE;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 parentPort.on('message', (message) => {
   try {
     switch (message.type) {
@@ -40,7 +78,7 @@ parentPort.on('message', (message) => {
         callSaveEditedMapService(message.data.name, message.data.base64, message.data.yamlContent);
         break;
       case 'sendSingleGoal':
-        sendSingleGoalToMoveBase(message.data); 
+        sendSingleGoalToMoveBase(message.data);
         break;
       case 'startSLAM':
         callStartSLAMService();
@@ -59,15 +97,8 @@ parentPort.on('message', (message) => {
         break;
       case 'switchPoseSubscriber':
         console.log(`Server: Switching pose subscriber to mode: ${message.mode}`);
-        
-        if (amclPoseSubscriber) {
-          amclPoseSubscriber.unsubscribe();
-          amclPoseSubscriber = null;
-        }
-        if (slamPoseSubscriber) {
-          slamPoseSubscriber.unsubscribe();
-          slamPoseSubscriber = null;
-        }
+        if (amclPoseSubscriber) { amclPoseSubscriber.unsubscribe(); amclPoseSubscriber = null; }
+        if (slamPoseSubscriber) { slamPoseSubscriber.unsubscribe(); slamPoseSubscriber = null; }
         if (message.mode === 'amcl') {
           subscribeAmclPose();
         } else if (message.mode === 'slam') {
@@ -107,11 +138,11 @@ parentPort.on('message', (message) => {
       case 'initHome':
         callHomeService('/nav/init_home', message.mapName, 'Init Home');
         break;
-      case 'getParam': 
-        getRosParam(message.name); 
+      case 'getParam':
+        getRosParam(message.name);
         break;
-      case 'setParam': 
-        setRosParam(message.name, message.value); 
+      case 'setParam':
+        setRosParam(message.name, message.value);
         break;
       case 'sendCmd':
         sendCommand(message.command);
@@ -134,19 +165,32 @@ parentPort.on('message', (message) => {
         handleCaptureMessage(message, ros, parentPort);
         break;
       default:
-        console.warn(`Server worker  Unknown command: ${message.type}`);
+        console.warn(`Server worker Unknown command: ${message.type}`);
     }
   } catch (err) {
     console.error(`Server: Worker Error while processing message [${message.type}]:`, err.message);
   }
 });
 
-// ฟังก์ชันเชื่อมต่อ ROSBridge
+// ─────────────────────────────────────────────────────────────────────────────
+// เคลียร์ cached topics เมื่อ disconnect (เพื่อสร้างใหม่หลัง reconnect)
+function clearCachedTopics() {
+  _cmdTopic         = null;
+  _twistTopic       = null;
+  _servoTiltTopic   = null;
+  _servoPanTopic    = null;
+  _goalTopic        = null;
+  _initialPoseTopic = null;
+
+  lastSlamPos  = null; lastSlamYaw  = null;
+  lastAmclPos  = null; lastAmclYaw  = null;
+  lastMapSeq   = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 function connectROSBridge(url) {
   console.log('Server : Connecting to ROSBridge at ', url);
-  rosAutoConnected = true;
-  
-  
+
   if (ros && ros.isConnected && rosbridgeURL === url) {
     console.log('Server : Already connected to ROSBridge at ', url);
     return;
@@ -156,19 +200,15 @@ function connectROSBridge(url) {
     console.log('Server : Closing previous ROSBridge connection before reconnecting...');
     ros.close();
   }
+
+  clearCachedTopics();
   rosbridgeURL = url;
-  ros = new ROSLIB.Ros({ 
-    url: url,
-    encoding: 'ascii'
-  });
+  ros = new ROSLIB.Ros({ url, encoding: 'ascii' });
 
   ros.on('connection', () => {
-    console.log('Serverosbridger : Connected to ROSBridge at', url);
-    parentPort.postMessage({ 
-        type: 'connection', 
-        data: { isConnected: true } 
-    });
-    //subscribe function
+    console.log('Server : Connected to ROSBridge at', url);
+    parentPort.postMessage({ type: 'connection', data: { isConnected: true } });
+
     subscribeMapData();
     subscribePlannedPath();
     subscribeMoveBaseResult();
@@ -179,39 +219,35 @@ function connectROSBridge(url) {
     subscribeSystemProfile();
     subscribeDetectionAlert();
     initCaptureSubscriber(ros, parentPort);
-    if (reconnectTimer) {20
+
+    if (reconnectTimer) {
       clearInterval(reconnectTimer);
       reconnectTimer = null;
       console.log('Server : Reconnect attempts stopped after successful connection at', url);
     }
   });
 
-  ros.on('error', (error) => {
-    console.log('Server : Error connecting to ROSBridge:');
-    parentPort.postMessage({ 
-        type: 'connection', 
-        data: { isConnected: false } 
-    });
+  ros.on('error', () => {
+    console.log('Server : Error connecting to ROSBridge');
+    parentPort.postMessage({ type: 'connection', data: { isConnected: false } });
     startReconnect();
   });
 
   ros.on('close', () => {
-    console.log('Server :  Connection to ROSBridge closed url : ',url);
-    parentPort.postMessage({ 
-        type: 'connection', 
-        data: { isConnected: false } 
-    });
+    console.log('Server : Connection to ROSBridge closed url :', url);
+    clearCachedTopics();
+    parentPort.postMessage({ type: 'connection', data: { isConnected: false } });
     startReconnect();
   });
 }
 
 function startReconnect() {
   if (!reconnectTimer) {
-    console.log(`Server : 🔄 Attempting to reconnect to ROSBridge every ${reconnectInterval / 1000} seconds...`);
+    console.log(`Server : 🔄 Attempting to reconnect every ${reconnectInterval / 1000}s...`);
     reconnectTimer = setInterval(() => {
       if (!ros.isConnected) {
         console.log('Server : 🔗 Reconnecting to ROSBridge at', rosbridgeURL);
-        connectROSBridge(rosbridgeURL); // ✅ ใช้ IP ล่าสุดที่รับเข้ามา
+        connectROSBridge(rosbridgeURL);
       } else {
         clearInterval(reconnectTimer);
         reconnectTimer = null;
@@ -220,22 +256,20 @@ function startReconnect() {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Relay
 function sendRelayViaCommand(command) {
-  const relayCommandMap = {
-    on:  CMD.RELAY_ON,
-    off: CMD.RELAY_OFF
-  };
-
+  const relayCommandMap = { on: CMD.RELAY_ON, off: CMD.RELAY_OFF };
   const cmdValue = relayCommandMap[command];
   if (cmdValue === undefined) {
     console.error(`Server : ❌ Unknown relay command: ${command}`);
     return;
   }
-
-  console.log(`Server : 📤 Relay ${command.toUpperCase()} → HEX: ${cmdValue.toString(16)} → DEC: ${cmdValue}`);
+  console.log(`Server : 📤 Relay ${command.toUpperCase()} → HEX: ${cmdValue.toString(16)}`);
   sendCommand(cmdValue);
 }
-// ส่งคำสั่ง String Command ไปยัง ROSBridge สำหรับคำสั่งต่างๆ
+
+// ── Cached publish: /robot/cmd ────────────────────────────────────────────────
 function sendCommand(command) {
   if (!ros || !ros.isConnected) {
     console.error('Server : Cannot send command: ROSBridge is not connected.');
@@ -245,24 +279,18 @@ function sendCommand(command) {
     console.error('Server : Error: Command is undefined or null');
     return;
   }
-  const cmdEditTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/robot/cmd',
-    messageType: 'std_msgs/String',
-  });
-
-  const message = new ROSLIB.Message({
-    data: String(command)
-  });
+  if (!_cmdTopic) {
+    _cmdTopic = new ROSLIB.Topic({ ros, name: '/robot/cmd', messageType: 'std_msgs/String' });
+  }
   console.log('Server : Publishing command to /robot/cmd:', command);
-
-  cmdEditTopic.publish(message);
+  _cmdTopic.publish(new ROSLIB.Message({ data: String(command) }));
 }
 
-//Subscribe ข้อมูลแผนที่จาก ROS
+// ─────────────────────────────────────────────────────────────────────────────
+// Map — ส่งเฉพาะเมื่อ sequence เปลี่ยน (map ใหม่จริงๆ)
 function subscribeMapData() {
   const mapTopic = new ROSLIB.Topic({
-    ros: ros,
+    ros,
     name: '/map',
     messageType: 'nav_msgs/OccupancyGrid',
     throttle_rate: 1000
@@ -271,33 +299,29 @@ function subscribeMapData() {
   mapTopic.subscribe((msg) => {
     if (!isSlamPoseInitialized) {
       console.log('Server: First map message received, initializing SLAM pose subscription.');
-      isSlamPoseInitialized = true; // ตั้งค่า flag เป็น true เพื่อไม่ให้ทำงานซ้ำ
-      
-      // หน่วงเวลาเล็กน้อยเพื่อให้แน่ใจว่าระบบพร้อมก่อน subscribe
-      setTimeout(() => {
-        subscribeRobotPoseSlam();
-      }, 200);
+      isSlamPoseInitialized = true;
+      setTimeout(() => subscribeRobotPoseSlam(), 200);
     }
-    parentPort.postMessage({
-      type: 'live-map',
-      data: msg
-    });
+
+    // ── dedup: ข้ามถ้า map seq ยังไม่เปลี่ยน ──
+    const seq = msg.header?.seq;
+    if (seq !== undefined && seq === lastMapSeq) return;
+    lastMapSeq = seq;
+
+    parentPort.postMessage({ type: 'live-map', data: msg });
   });
 }
 
-
+// ─────────────────────────────────────────────────────────────────────────────
+// SLAM Pose — ส่งเฉพาะเมื่อหุ่นขยับจริง
 function subscribeRobotPoseSlam() {
   if (!ros || !ros.isConnected) return;
-  console.log('Server: Subscribing to SLAM pose topic /robot_pose_sample...');
+  console.log('Server: Subscribing to SLAM pose /robot_pose_sample...');
 
-  // ตรวจสอบและยกเลิก subscriber เก่า ถ้ามี
-  if (slamPoseSubscriber) {
-    slamPoseSubscriber.unsubscribe();
-  }
+  if (slamPoseSubscriber) slamPoseSubscriber.unsubscribe();
 
-  // สร้าง Topic object ใหม่และ "เก็บค่า" ไว้ในตัวแปร slamPoseSubscriber
   slamPoseSubscriber = new ROSLIB.Topic({
-    ros: ros,
+    ros,
     name: '/robot_pose_sample',
     messageType: 'geometry_msgs/PoseStamped'
   });
@@ -305,24 +329,26 @@ function subscribeRobotPoseSlam() {
   slamPoseSubscriber.subscribe((msg) => {
     const pos = msg.pose.position;
     const ori = msg.pose.orientation;
-    
-    parentPort.postMessage({
-      type: 'robot-pose-slam',
-      data: { position: pos, orientation: ori }
-    });
+    const yaw = quatToYaw(ori);
+
+    if (!poseChanged(pos, yaw, lastSlamPos, lastSlamYaw)) return;
+    lastSlamPos = { x: pos.x, y: pos.y };
+    lastSlamYaw = yaw;
+
+    parentPort.postMessage({ type: 'robot-pose-slam', data: { position: pos, orientation: ori } });
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AMCL Pose — ส่งเฉพาะเมื่อหุ่นขยับจริง
 function subscribeAmclPose() {
   if (!ros || !ros.isConnected) return;
-  console.log('Server: Subscribing to AMCL pose topic /amcl_pose...');
+  console.log('Server: Subscribing to AMCL pose /amcl_pose...');
 
-  // ถ้ามี subscriber เก่าอยู่ ให้ยกเลิกก่อน
-  if (amclPoseSubscriber) {
-    amclPoseSubscriber.unsubscribe();
-  }
+  if (amclPoseSubscriber) amclPoseSubscriber.unsubscribe();
 
   amclPoseSubscriber = new ROSLIB.Topic({
-    ros: ros,
+    ros,
     name: '/amcl_pose',
     messageType: 'geometry_msgs/PoseWithCovarianceStamped'
   });
@@ -330,257 +356,157 @@ function subscribeAmclPose() {
   amclPoseSubscriber.subscribe((msg) => {
     const pos = msg.pose.pose.position;
     const ori = msg.pose.pose.orientation;
-    parentPort.postMessage({
-      type: 'robot-pose-amcl',
-      data: { position: pos, orientation: ori }
-    });
+    const yaw = quatToYaw(ori);
+
+    if (!poseChanged(pos, yaw, lastAmclPos, lastAmclYaw)) return;
+    lastAmclPos = { x: pos.x, y: pos.y };
+    lastAmclYaw = yaw;
+
+    parentPort.postMessage({ type: 'robot-pose-amcl', data: { position: pos, orientation: ori } });
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Laser Scan — downsample ก่อนส่ง
 function subscribeLaserScanData() {
   if (!ros || !ros.isConnected) return;
 
   const scanTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/scan', // ชื่อ Topic ของ Laser Scan โดยทั่วไป
+    ros,
+    name: '/scan',
     messageType: 'sensor_msgs/LaserScan',
-    throttle_rate : 1000 // ลดความถี่การส่งข้อมูลเหลือ 1 ครั้งต่อวินาที
-    
+    throttle_rate: 1000
   });
 
-  console.log('[Server] Subscribing to LaserScan topic: /scan');
+  console.log('[Server] Subscribing to LaserScan: /scan');
 
-  scanTopic.subscribe((message) => {
-    // ส่งข้อมูลที่จำเป็นกลับไปเท่านั้น เพื่อลดขนาดข้อมูล
+  scanTopic.subscribe((msg) => {
+    // เก็บทุก LASER_STEP ค่า → ลด payload ~67%
+    const sampledRanges = msg.ranges.filter((_, i) => i % LASER_STEP === 0);
+
     parentPort.postMessage({
       type: 'laser-scan-update',
       data: {
-        angle_min: message.angle_min,
-        angle_increment: message.angle_increment,
-        ranges: message.ranges
+        angle_min:       msg.angle_min,
+        angle_increment: msg.angle_increment * LASER_STEP, // ปรับ increment ตาม step
+        ranges:          sampledRanges
       }
     });
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
 function subscribePlannedPath() {
   const planTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/move_base/NavfnROS/plan', 
+    ros,
+    name: '/move_base/NavfnROS/plan',
     messageType: 'nav_msgs/Path'
   });
 
   planTopic.subscribe((message) => {
-    // แปลงข้อมูล poses ให้เป็น array ของ {x, y}
     const pathPoints = message.poses.map(p => ({
       x: p.pose.position.x,
       y: p.pose.position.y
     }));
-
-    parentPort.postMessage({
-      type: 'planned-path',
-      data: pathPoints
-    });
+    parentPort.postMessage({ type: 'planned-path', data: pathPoints });
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 function subscribeMoveBaseResult() {
   if (!ros || !ros.isConnected) return;
 
   const resultTopic = new ROSLIB.Topic({
-    ros: ros,
+    ros,
     name: '/move_base/result',
     messageType: 'move_base_msgs/MoveBaseActionResult'
   });
 
+  const STATUS_MAP = {
+    0: 'PENDING',
+    1: 'ACTIVE',
+    2: 'PREEMPTED',
+    3: 'SUCCEEDED',
+    4: 'ABORTED',
+    5: 'REJECTED',
+    6: 'PREEMPTING',
+    7: 'RECALLING',
+    8: 'RECALLED',
+    9: 'LOST'
+  };
+
   resultTopic.subscribe((msg) => {
     if (!msg.status) return;
+    const status = STATUS_MAP[msg.status.status] ?? 'UNKNOWN';
+    const result = { status, text: msg.status.text || '' };
 
-    let result = { status: 'UNKNOWN', text: msg.status.text || '' };
-
-    switch (msg.status.status) {
-      case 0: // PENDING
-        console.log('Server: Goal is PENDING.');
-        // สถานะนี้ไม่ปรากฏใน /result topic แต่ใส่ไว้เพื่อความสมบูรณ์
-        result.status = 'PENDING';
-        break;
-      case 1: // ACTIVE
-        console.log('Server: Goal is ACTIVE.');
-        // สถานะนี้ไม่ปรากฏใน /result topic
-        result.status = 'ACTIVE';
-        break;
-      case 2: // PREEMPTED
-        //ถูกยกเลิก (โดย Goal ใหม่): Goal ปัจจุบันถูกยกเลิก เพราะมี Goal ใหม่ถูกส่งเข้ามาแทนที่
-        console.warn('Server: Goal PREEMPTED (cancelled by a new goal).');
-        result.status = 'PREEMPTED';
-        break;
-      case 3: // SUCCEEDED
-        // สำเร็จ: หุ่นยนต์ไปถึงเป้าหมายที่กำหนดไว้
-        console.log('Server: Goal SUCCEEDED.');
-        result.status = 'SUCCEEDED';
-        break;
-      case 4: // ABORTED
-        // ล้มเหลว: หุ่นยนต์ไม่สามารถไปถึงเป้าหมายได้ (เช่น มีสิ่งกีดขวาง)
-        console.error('Server: Goal ABORTED (failed to reach).');
-        result.status = 'ABORTED';
-        break;
-      case 5: // REJECTED
-        // ถูกปฏิเสธ: เป้าหมายถูกปฏิเสธโดย action server (เช่น เป้าหมายอยู่นอกขอบเขตที่กำหนด)
-        console.error('Server: Goal REJECTED (invalid goal).');
-        result.status = 'REJECTED';
-        break;
-      case 6: // PREEMPTING
-        // กำลังถูกยกเลิก: อยู่ในระหว่างกระบวนการยกเลิกเป้าหมาย
-        console.log('Server: Goal is PREEMPTING (cancellation in progress).');
-        result.status = 'PREEMPTING';
-        break;
-      case 7: // RECALLING
-        //  กำลังร้องขอยกเลิก: มีการส่งคำขอยกเลิก Goal ไปแล้ว แต่ Server ยังไม่ตอบรับ
-        console.log('Server: Goal is RECALLING (cancellation requested).');
-        result.status = 'RECALLING';
-        break;
-      case 8: // RECALLED
-        //ยกเลิกสำเร็จ: Server ยืนยันว่า Goal นี้ถูกยกเลิกเรียบร้อยแล้ว
-        console.warn('Server: Goal RECALLED (cancelled successfully).');
-        result.status = 'RECALLED';
-        break;
-      case 9: // LOST
-        //การเชื่อมต่อขาดหาย: การสื่อสารกับ Action Server ที่ทำงานนี้อยู่ขาดหายไป
-        console.error('Server: Goal LOST (action server disappeared).');
-        result.status = 'LOST';
-        break;
-      default:
-        console.warn(`Server: Goal finished with unhandled status: ${msg.status.status}`);
-        break;
-    }
-
-    // ส่งผลลัพธ์ทั้งหมดกลับไปที่ Main Process ผ่าน Event เดียว
-    if (result.status !== 'UNKNOWN' && result.status !== 'ACTIVE' && result.status !== 'PENDING') {
+    if (!['UNKNOWN', 'ACTIVE', 'PENDING'].includes(status)) {
       parentPort.postMessage({ type: 'goal-result', data: result });
     }
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 function subscribeRobotStatus() {
   if (!ros || !ros.isConnected) return;
 
   const statusTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/robot/status', 
+    ros,
+    name: '/robot/status',
     messageType: 'std_msgs/String',
-    throttle_rate: 500 // รับข้อมูลทุกๆ 500ms
+    throttle_rate: 500
   });
 
   console.log('[Server] Subscribing to Robot Status: /robot/status');
-
-  statusTopic.subscribe((message) => {
-    // ส่งข้อมูล String ดิบๆ กลับไปให้ Main Process
-    parentPort.postMessage({
-      type: 'robot-status-update',
-      data: message.data
-    });
+  statusTopic.subscribe((msg) => {
+    parentPort.postMessage({ type: 'robot-status-update', data: msg.data });
   });
 }
-// service call สำหรับ list_maps
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Service calls
 function callListMapsService() {
   if (!ros || !ros.isConnected) {
     parentPort.postMessage({ type: 'map-list', data: [], error: 'ROSBridge not connected' });
     return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/list_maps',
-    serviceType: 'ptR1_navigation/ListMaps'
-  });
-
-  const request = new ROSLIB.ServiceRequest({});
-  service.callService(request, (result) => {
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/list_maps', serviceType: 'ptR1_navigation/ListMaps' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'map-list', data: result.names });
   }, (err) => {
-    console.error('❌ list_maps service failed:', err);
+    console.error('❌ list_maps failed:', err);
     parentPort.postMessage({ type: 'map-list', data: [], error: err.toString() });
   });
 }
-// service call สำหรับ load_map ให้เป็น active map
+
 function callSelectNavMapService(mapName) {
   if (!ros || !ros.isConnected) {
     parentPort.postMessage({ type: 'select-map-response', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/select_nav_map',
-    serviceType: 'ptR1_navigation/SelectNavMap'
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/select_nav_map', serviceType: 'ptR1_navigation/SelectNavMap' });
+  service.callService(new ROSLIB.ServiceRequest({ name: mapName }), (result) => {
+    parentPort.postMessage({ type: 'select-map-response', data: { ...result, name: mapName } });
+  }, (err) => {
+    console.error('❌ select_nav_map failed:', err);
+    parentPort.postMessage({ type: 'select-map-response', data: { success: false, message: err.toString(), name: mapName } });
   });
-
-  const request = new ROSLIB.ServiceRequest({ name: mapName });
-
-  service.callService(request, (result) => {
-  parentPort.postMessage({
-    type: 'select-map-response',
-    data: {
-      ...result,
-      name: mapName
-    }
-  });
-}, (err) => {
-  console.error('❌ select_nav_map service failed:', err);
-  parentPort.postMessage({
-    type: 'select-map-response',
-    data: {
-      success: false,
-      message: err.toString(),
-      name: mapName
-    }
-  });
-});
-
 }
+
 function callStopNavService(shouldSavePose) {
-    if (!ros || !ros.isConnected) {
-        console.log("❌ ROS not connected. Cannot stop navigation.");
-        return;
-    }
-    const stopNavClient = new ROSLIB.Service({
-        ros: ros,
-        name: '/nav/stop',          
-        serviceType: 'ptR1_navigation/StopAMCL'
-    });
-    const request = new ROSLIB.ServiceRequest({
-        save_pose: shouldSavePose || true
-    });
-    console.log("Calling /nav/stop service...");
-    stopNavClient.callService(request, (result) => {
-        console.log("Navigation Stopped. Result:", result);
-        parentPort.postMessage({
-            type: 'operation-result',
-            data: { success: result.success, message: result.message }
-        });
-    }, (error) => {
-        console.error("❌ Failed to call /nav/stop:", error);
-    });
+  if (!ros || !ros.isConnected) { console.log('❌ ROS not connected.'); return; }
+  const service = new ROSLIB.Service({ ros, name: '/nav/stop', serviceType: 'ptR1_navigation/StopAMCL' });
+  service.callService(new ROSLIB.ServiceRequest({ save_pose: shouldSavePose || true }), (result) => {
+    console.log('Navigation Stopped. Result:', result);
+    parentPort.postMessage({ type: 'operation-result', data: { success: result.success, message: result.message } });
+  }, (err) => { console.error('❌ /nav/stop failed:', err); });
 }
 
-// service call สำหรับ map_file จากชื่อ
 function requestMapFileAsBase64(mapName) {
-  const service = new ROSLIB.Service({
-    ros,
-    name: '/map_manager/get_map_file',
-    serviceType: 'ptR1_navigation/GetMapFile'
-  });
-
-  const request = new ROSLIB.ServiceRequest({ name: mapName });
-
-  service.callService(request, (res) => {
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/get_map_file', serviceType: 'ptR1_navigation/GetMapFile' });
+  service.callService(new ROSLIB.ServiceRequest({ name: mapName }), (res) => {
     if (res.success) {
-      parentPort.postMessage({
-        type: 'map-data',
-        data: {
-          name: mapName,
-          base64: res.image_data_base64,
-          yaml: res.yaml_data 
-        }
-      });
+      parentPort.postMessage({ type: 'map-data', data: { name: mapName, base64: res.image_data_base64, yaml: res.yaml_data } });
     } else {
       console.warn(`❌ Map fetch failed: ${res.message}`);
     }
@@ -588,301 +514,142 @@ function requestMapFileAsBase64(mapName) {
 }
 
 function callSaveEditedMapService(newName, base64Data, yamlContent) {
-  // เช็ค connection
   if (!ros || !ros.isConnected) {
-     parentPort.postMessage({
-        type: 'map-save-edited',
-        data: { success: false, message: 'ROS disconnected', name: newName }
-     });
-     return;
+    parentPort.postMessage({ type: 'map-save-edited', data: { success: false, message: 'ROS disconnected', name: newName } });
+    return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/save_edited_map',
-    serviceType: 'ptR1_navigation/SaveEditedMap'
-  });
-
-  const request = new ROSLIB.ServiceRequest({
-    map_name: newName,     // <--- ต้องใช้ newName (ตามที่คุณส่งจาก main.js)
-    base64_image: base64Data,
-    yaml_content: yamlContent
-    });
-
-  service.callService(request, (result) => {
-    parentPort.postMessage({
-      type: 'map-save-edited',
-      data: {
-        success: result.success,
-        message: result.message,
-        name: newName
-      }
-    });
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/save_edited_map', serviceType: 'ptR1_navigation/SaveEditedMap' });
+  service.callService(new ROSLIB.ServiceRequest({ map_name: newName, base64_image: base64Data, yaml_content: yamlContent }), (result) => {
+    parentPort.postMessage({ type: 'map-save-edited', data: { success: result.success, message: result.message, name: newName } });
   }, (err) => {
-    parentPort.postMessage({
-      type: 'map-save-edited',
-      data: {
-        success: false,
-        message: 'Service Error: ' + err.toString(),
-        name: newName
-      }
-    });
+    parentPort.postMessage({ type: 'map-save-edited', data: { success: false, message: 'Service Error: ' + err.toString(), name: newName } });
   });
 }
 
 function callSaveMapService(mapName) {
   if (!ros || !ros.isConnected) {
-    parentPort.postMessage({
-      type: 'map-save',
-      data: { success: false, message: 'ROSBridge not connected', name: mapName }
-    });
+    parentPort.postMessage({ type: 'map-save', data: { success: false, message: 'ROSBridge not connected', name: mapName } });
     return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/save_map',
-    serviceType: 'ptR1_navigation/SaveMap'
-  });
-
-  const request = new ROSLIB.ServiceRequest({ name: mapName });
-
-  service.callService(request, (result) => {
-    parentPort.postMessage({
-      type: 'map-save',
-      data: {
-        ...result,
-        name: mapName
-      }
-    });
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/save_map', serviceType: 'ptR1_navigation/SaveMap' });
+  service.callService(new ROSLIB.ServiceRequest({ name: mapName }), (result) => {
+    parentPort.postMessage({ type: 'map-save', data: { ...result, name: mapName } });
   }, (err) => {
-    console.error('❌ save_map service failed:', err);
-    parentPort.postMessage({
-      type: 'map-save',
-      data: {
-        success: false,
-        message: err.toString(),
-        name: mapName
-      }
-    });
+    console.error('❌ save_map failed:', err);
+    parentPort.postMessage({ type: 'map-save', data: { success: false, message: err.toString(), name: mapName } });
   });
 }
 
 function callStopSLAMService() {
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/nav/stop',
-    serviceType: 'ptR1_navigation/StopAMCL'
-  });
-
-  const req = new ROSLIB.ServiceRequest({});
-  service.callService(req, (res) => {
-    parentPort.postMessage({
-      type: 'slam-stop-result',
-      data: { success: res.success, message: res.message }
-    });
+  const service = new ROSLIB.Service({ ros, name: '/nav/stop', serviceType: 'ptR1_navigation/StopAMCL' });
+  service.callService(new ROSLIB.ServiceRequest({}), (res) => {
+    parentPort.postMessage({ type: 'slam-stop-result', data: { success: res.success, message: res.message } });
   }, (err) => {
-    parentPort.postMessage({
-      type: 'slam-stop-result',
-      data: { success: false, message: err.toString() }
-    });
+    parentPort.postMessage({ type: 'slam-stop-result', data: { success: false, message: err.toString() } });
   });
 }
 
 function callStartSLAMService() {
   if (!ros || !ros.isConnected) {
-    parentPort.postMessage({
-      type: 'slam-result',
-      data: { success: false, message: 'ROSBridge not connected' }
-    });
+    parentPort.postMessage({ type: 'slam-result', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
-
-  console.log("Server: Attempting to STOP Navigation before Starting SLAM...");
-
-  // 1. สร้าง Service Client สำหรับสั่งหยุด Navigation
-  const stopNavService = new ROSLIB.Service({
-    ros: ros,
-    name: '/nav/stop', 
-    serviceType: 'ptR1_navigation/StopAMCL' 
-  });
-
-  const request = new ROSLIB.ServiceRequest({});
-
-  // 2. เรียก Service หยุดก่อน
-  stopNavService.callService(request, (result) => {
-    console.log('Server: Navigation stopped successfully. Now starting SLAM...');
-    // ถ้าหยุดสำเร็จ -> ให้เริ่ม SLAM ต่อเลย
-    executeStartSLAM(); 
-  }, (err) => {
-    console.warn('Server: Could not stop navigation (Service might not exist). Trying to start SLAM anyway...', err);
-    // ถ้าหยุดไม่สำเร็จ (เช่น Service ไม่มี) -> ก็ให้ลองเริ่ม SLAM ดูเผื่อ ROS จัดการเอง
-    executeStartSLAM(); 
-  });
+  console.log('Server: Stopping Navigation before Starting SLAM...');
+  const stopNavService = new ROSLIB.Service({ ros, name: '/nav/stop', serviceType: 'ptR1_navigation/StopAMCL' });
+  stopNavService.callService(new ROSLIB.ServiceRequest({}),
+    ()    => { console.log('Server: Navigation stopped. Starting SLAM...'); executeStartSLAM(); },
+    (err) => { console.warn('Server: Could not stop navigation, trying SLAM anyway...', err); executeStartSLAM(); }
+  );
 }
-// ฟังก์ชันตัวจริงสำหรับเริ่ม SLAM 
+
 function executeStartSLAM() {
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/start_slam',
-    serviceType: 'ptR1_navigation/StartSLAM' 
-  });
-
-  const request = new ROSLIB.ServiceRequest({});
-
-  service.callService(request, (res) => {
-    parentPort.postMessage({
-      type: 'slam-result',
-      data: { success: res.success, message: res.message }
-    });
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/start_slam', serviceType: 'ptR1_navigation/StartSLAM' });
+  service.callService(new ROSLIB.ServiceRequest({}), (res) => {
+    parentPort.postMessage({ type: 'slam-result', data: { success: res.success, message: res.message } });
   }, (err) => {
-    parentPort.postMessage({
-      type: 'slam-result',
-      data: { success: false, message: err.toString() }
-    });
+    parentPort.postMessage({ type: 'slam-result', data: { success: false, message: err.toString() } });
   });
 }
 
+// ── Cached publish: /move_base_simple/goal ────────────────────────────────────
 function sendSingleGoalToMoveBase(data) {
   if (!ros || !ros.isConnected) return;
-
-  const goalTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/move_base_simple/goal',
-    messageType: 'geometry_msgs/PoseStamped',
-  });
-
+  if (!_goalTopic) {
+    _goalTopic = new ROSLIB.Topic({ ros, name: '/move_base_simple/goal', messageType: 'geometry_msgs/PoseStamped' });
+  }
   const msg = new ROSLIB.Message({
     header: { frame_id: 'map' },
-    pose: {
-      position: data.pose.position,
-      orientation: data.pose.orientation
-    }
+    pose: { position: data.pose.position, orientation: data.pose.orientation }
   });
-
-  console.log(`📍 ส่ง goal (พร้อมทิศทาง) ไปยัง (${data.pose.position.x.toFixed(2)}, ${data.pose.position.y.toFixed(2)})`);
-  goalTopic.publish(msg);
+  console.log(`📍 Sending goal to (${data.pose.position.x.toFixed(2)}, ${data.pose.position.y.toFixed(2)})`);
+  _goalTopic.publish(msg);
 }
 
+// ── Cached publish: /initialpose ─────────────────────────────────────────────
 function publishInitialPose(pose) {
   if (!ros || !ros.isConnected) {
     console.error('Server : Cannot send initial pose: ROSBridge is not connected.');
     return;
   }
-
-  const initialPoseTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/initialpose',
-    messageType: 'geometry_msgs/PoseWithCovarianceStamped'
-  });
-
+  if (!_initialPoseTopic) {
+    _initialPoseTopic = new ROSLIB.Topic({ ros, name: '/initialpose', messageType: 'geometry_msgs/PoseWithCovarianceStamped' });
+  }
   const message = new ROSLIB.Message({
-    header: {
-      frame_id: 'map'
-    },
+    header: { frame_id: 'map' },
     pose: {
       pose: {
-        position: {
-          x: pose.position.x,
-          y: pose.position.y,
-          z: 0
-        },
+        position:    { x: pose.position.x, y: pose.position.y, z: 0 },
         orientation: pose.orientation
       },
-      // Covariance บอกถึงความไม่แน่นอน (ค่ามาตรฐานที่ใช้กันทั่วไป)
       covariance: [
-        0.1, 0.0, 0.0, 0.0, 0.0, 0.0,  
-        0.0, 0.1, 0.0, 0.0, 0.0, 0.0,  
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.05  // Yaw (Rotation)
+        0.1, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.1, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.05
       ]
     }
   });
-
-  console.log('Server : Publishing to /initialpose:', message);
-  initialPoseTopic.publish(message);
+  console.log('Server : Publishing /initialpose');
+  _initialPoseTopic.publish(message);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 function callStartStreamService() {
-  // 1. เช็ค Connection ก่อน
   if (!ros || !ros.isConnected) {
-    console.log('Server : Start Stream Failed: ROS not connected.');
-    // ส่งกลับไปบอก Main Process ว่าพัง (Type ต้องตรงกับที่ Main รอรับ)
-    parentPort.postMessage({
-      type: 'startStreamResponse',
-      success: false,
-      message: 'ROS is not connected.'
-    });
+    parentPort.postMessage({ type: 'startStreamResponse', success: false, message: 'ROS is not connected.' });
     return;
   }
-
-  // 2. สร้าง Service Client
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/stream_manager/start',
-    serviceType: 'std_srvs/Trigger'
-  });
-
-  const request = new ROSLIB.ServiceRequest({});
-
-  // 3. เรียก Service
-  service.callService(request, (result) => {
-    console.log('Server : Start Stream Service Result:', result);
-    
-    // 4. ส่งคำตอบกลับไปหา Main Process
-    parentPort.postMessage({
-      type: 'startStreamResponse',
-      success: result.success,
-      message: result.message
-    });
-
-  }, (error) => {
-    console.error('Server : Start Stream Service Error:', error);
-    
-    // กรณี Error จากการเรียก Service (Timeout หรือ Service หาย)
-    parentPort.postMessage({
-      type: 'startStreamResponse',
-      success: false,
-      message: error.toString()
-    });
+  const service = new ROSLIB.Service({ ros, name: '/stream_manager/start', serviceType: 'std_srvs/Trigger' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
+    console.log('Server : Start Stream Result:', result);
+    parentPort.postMessage({ type: 'startStreamResponse', success: result.success, message: result.message });
+  }, (err) => {
+    console.error('Server : Start Stream Error:', err);
+    parentPort.postMessage({ type: 'startStreamResponse', success: false, message: err.toString() });
   });
 }
+
 function callStopStreamService() {
   if (!ros || !ros.isConnected) {
     parentPort.postMessage({ type: 'stopStreamResponse', success: true });
     return;
   }
-  
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/stream_manager/stop',
-    serviceType: 'std_srvs/Trigger'
-  });
-
+  const service = new ROSLIB.Service({ ros, name: '/stream_manager/stop', serviceType: 'std_srvs/Trigger' });
   service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     console.log('Server : Stop Stream Result:', result);
-    //ส่งกลับไปบอก Main ว่าหยุดเรียบร้อย
-    parentPort.postMessage({ 
-        type: 'stopStreamResponse', 
-        success: result.success 
-    });
+    parentPort.postMessage({ type: 'stopStreamResponse', success: result.success });
   });
 }
+
 function callDeleteMapService(mapName) {
   if (!ros || !ros.isConnected) {
-    // ส่งผลลัพธ์กลับไปที่ UI ผ่าน main process
     parentPort.postMessage({ type: 'map-delete-result', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/delete_map',
-    serviceType: 'ptR1_navigation/DeleteMap' 
-  });
-  const request = new ROSLIB.ServiceRequest({ name: mapName });
-  service.callService(request, (result) => {
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/delete_map', serviceType: 'ptR1_navigation/DeleteMap' });
+  service.callService(new ROSLIB.ServiceRequest({ name: mapName }), (result) => {
     parentPort.postMessage({ type: 'map-delete-result', data: result });
   }, (err) => {
     parentPort.postMessage({ type: 'map-delete-result', data: { success: false, message: err.toString() } });
@@ -894,13 +661,8 @@ function callResetSLAMService() {
     parentPort.postMessage({ type: 'slam-reset-result', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/map_manager/reset_slam',
-    serviceType: 'ptR1_navigation/ResetSLAM'
-  });
-  const request = new ROSLIB.ServiceRequest({});
-  service.callService(request, (result) => {
+  const service = new ROSLIB.Service({ ros, name: '/map_manager/reset_slam', serviceType: 'ptR1_navigation/ResetSLAM' });
+  service.callService(new ROSLIB.ServiceRequest({}), (result) => {
     parentPort.postMessage({ type: 'slam-reset-result', data: result });
   }, (err) => {
     parentPort.postMessage({ type: 'slam-reset-result', data: { success: false, message: err.toString() } });
@@ -912,13 +674,8 @@ function callStartPatrolService(goals, loop) {
     parentPort.postMessage({ type: 'patrol-start-result', data: { success: false, message: 'ROS is not connected.' } });
     return;
   }
-  const service = new ROSLIB.Service({
-    ros,
-    name: '/nav/start_patrol',
-    serviceType: 'ptR1_navigation/StartPatrol'
-  });
-  const request = new ROSLIB.ServiceRequest({ goals, loop });
-  service.callService(request, (result) => {
+  const service = new ROSLIB.Service({ ros, name: '/nav/start_patrol', serviceType: 'ptR1_navigation/StartPatrol' });
+  service.callService(new ROSLIB.ServiceRequest({ goals, loop }), (result) => {
     parentPort.postMessage({ type: 'patrol-start-result', data: result });
   }, (err) => {
     parentPort.postMessage({ type: 'patrol-start-result', data: { success: false, message: err.toString() } });
@@ -950,193 +707,105 @@ function callStopPatrolService() {
 }
 
 function callStartNavService(restorePose) {
-    if (!ros || !ros.isConnected) {
-        parentPort.postMessage({
-            type: 'nav-start-response',
-            data: { success: false, message: "ROS not connected" }
-        });
-        return;
-    }
-
-    const startNavClient = new ROSLIB.Service({
-        ros: ros,
-        name: '/nav/start',
-        serviceType: 'ptR1_navigation/StartAMCL' 
-    });
-
-    const request = new ROSLIB.ServiceRequest({
-        restore_pose: restorePose
-    });
-
-    console.log(`🚀 Calling /nav/start (restore=${restorePose})...`);
-
-    startNavClient.callService(request, (result) => {
-        parentPort.postMessage({
-            type: 'nav-start-response', 
-            data: { success: result.success, message: result.message }
-        });
-    }, (error) => {
-        parentPort.postMessage({
-            type: 'nav-start-response',
-            data: { success: false, message: `Service Error: ${error}` }
-        });
-    });
+  if (!ros || !ros.isConnected) {
+    parentPort.postMessage({ type: 'nav-start-response', data: { success: false, message: 'ROS not connected' } });
+    return;
+  }
+  const service = new ROSLIB.Service({ ros, name: '/nav/start', serviceType: 'ptR1_navigation/StartAMCL' });
+  console.log(`🚀 Calling /nav/start (restore=${restorePose})...`);
+  service.callService(new ROSLIB.ServiceRequest({ restore_pose: restorePose }), (result) => {
+    parentPort.postMessage({ type: 'nav-start-response', data: { success: result.success, message: result.message } });
+  }, (err) => {
+    parentPort.postMessage({ type: 'nav-start-response', data: { success: false, message: `Service Error: ${err}` } });
+  });
 }
 
 function subscribePatrolStatus() {
   if (!ros || !ros.isConnected) return;
-  const patrolStatusTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/nav/status', 
-    messageType: 'std_msgs/String'
-  });
-
+  const topic = new ROSLIB.Topic({ ros, name: '/nav/status', messageType: 'std_msgs/String' });
   console.log('[Server] Subscribing to Patrol Status: /nav/status');
-
-  patrolStatusTopic.subscribe((message) => {
-    // message.data จะเป็น string "IDLE", "PATROLLING", "PAUSED", "FINISHED"
-    parentPort.postMessage({
-      type: 'patrol-status', 
-      data: message.data
-    });
+  topic.subscribe((msg) => {
+    parentPort.postMessage({ type: 'patrol-status', data: msg.data });
   });
 }
-
 
 function callHomeService(serviceName, mapName, actionLabel) {
   if (!ros || !ros.isConnected) {
-    parentPort.postMessage({ 
-      type: 'home-result', 
-      data: { success: false, message: 'ROS not connected', action: actionLabel } 
-    });
+    parentPort.postMessage({ type: 'home-result', data: { success: false, message: 'ROS not connected', action: actionLabel } });
     return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: serviceName,
-    serviceType: 'ptR1_navigation/SaveMap'
-  });
-
-  const request = new ROSLIB.ServiceRequest({ name: mapName });
-
-  service.callService(request, (result) => {
+  const service = new ROSLIB.Service({ ros, name: serviceName, serviceType: 'ptR1_navigation/SaveMap' });
+  service.callService(new ROSLIB.ServiceRequest({ name: mapName }), (result) => {
     console.log(`Server: ${actionLabel} Success`);
-    
     if (actionLabel === 'Init Home') {
-        parentPort.postMessage({
-            type: 'nav-init-home-response',
-            data: { success: result.success, message: result.message }
-        });
+      parentPort.postMessage({ type: 'nav-init-home-response', data: { success: result.success, message: result.message } });
     }
-
-    // ส่ง home-result แบบเดิมด้วยก็ได้ เผื่อ UI ส่วนอื่นใช้
-    parentPort.postMessage({ 
-      type: 'home-result', 
-      data: { success: result.success, message: result.message, action: actionLabel } 
-    });
-
+    parentPort.postMessage({ type: 'home-result', data: { success: result.success, message: result.message, action: actionLabel } });
   }, (err) => {
     console.error(`Server: ${actionLabel} Failed`, err);
-    
-    // ✅ กรณี Error ก็ต้องส่งกลับ
     if (actionLabel === 'Init Home') {
-        parentPort.postMessage({
-            type: 'nav-init-home-response',
-            data: { success: false, message: err.toString() }
-        });
+      parentPort.postMessage({ type: 'nav-init-home-response', data: { success: false, message: err.toString() } });
     }
-
-    parentPort.postMessage({ 
-      type: 'home-result', 
-      data: { success: false, message: err.toString(), action: actionLabel } 
-    });
+    parentPort.postMessage({ type: 'home-result', data: { success: false, message: err.toString(), action: actionLabel } });
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// TF — ใช้ threshold เดียวกับ pose เพื่อลด message
 function subscribeTF() {
   if (!ros || !ros.isConnected) return;
-
   console.log('Server : Initializing TF Client...');
 
-  // สร้าง TF Client โดยระบุว่าเรายึด 'map' เป็นเฟรมหลัก
   tfClient = new ROSLIB.TFClient({
-    ros: ros,
+    ros,
     fixedFrame: 'map',
-    angularThres: 0.01, // อัปเดตเมื่อมุมเปลี่ยน 0.01 rad
-    transThres: 0.01,   // อัปเดตเมื่อระยะเปลี่ยน 0.01 เมตร
-    rate: 10.0          // ความถี่สูงสุด 10Hz
+    angularThres: POSE_MIN_ANGLE,
+    transThres:   POSE_MIN_DIST,
+    rate: 10.0
   });
 
-  // Subscribe หาตำแหน่งของ 'base_link' (ตัวหุ่น) เทียบกับ 'map'
   tfClient.subscribe('base_link', (tf) => {
-    // tf จะมีข้อมูล translation (x,y,z) และ rotation (x,y,z,w)
-    
-    // ส่งข้อมูลกลับไปที่ Main Process (เพื่อส่งต่อให้ Frontend วาด)
     parentPort.postMessage({
       type: 'tf-update',
-      data: {
-        translation: tf.translation,
-        rotation: tf.rotation
-      }
+      data: { translation: tf.translation, rotation: tf.rotation }
     });
   });
 }
 
-// ฟังก์ชัน Publish Twist
+// ── Cached publish: /robot/cmdvel_manual ─────────────────────────────────────
 function publishTwist(data) {
   if (!ros || !ros.isConnected) return;
-  const topic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/robot/cmdvel_manual',
-    messageType: 'geometry_msgs/Twist'
-  });
-  topic.publish(new ROSLIB.Message(data));
-  console.log('Published Twist:', data);
+  if (!_twistTopic) {
+    _twistTopic = new ROSLIB.Topic({ ros, name: '/robot/cmdvel_manual', messageType: 'geometry_msgs/Twist' });
+  }
+  _twistTopic.publish(new ROSLIB.Message(data));
 }
 
-// ฟังก์ชัน Publish ServoTilt (Int16)
+// ── Cached publish: /camera/tilt ─────────────────────────────────────────────
 function publishServoTiltAngle(angle) {
   if (!ros || !ros.isConnected) return;
-  const topic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/camera/tilt',
-    messageType: 'std_msgs/Int16'
-  });
-  topic.publish(new ROSLIB.Message({ data: angle }));
-  console.log('Published Servo Tilt Angle:', angle);
+  if (!_servoTiltTopic) {
+    _servoTiltTopic = new ROSLIB.Topic({ ros, name: '/camera/tilt', messageType: 'std_msgs/Int16' });
+  }
+  _servoTiltTopic.publish(new ROSLIB.Message({ data: angle }));
 }
+
+// ── Cached publish: /camera/pan ──────────────────────────────────────────────
 function publishServoPanAngle(angle) {
   if (!ros || !ros.isConnected) return;
-  const topic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/camera/pan',
-    messageType: 'std_msgs/Int16'
-  });
-  topic.publish(new ROSLIB.Message({ data: angle }));
-  console.log('Published Servo Pan Angle:', angle);
+  if (!_servoPanTopic) {
+    _servoPanTopic = new ROSLIB.Topic({ ros, name: '/camera/pan', messageType: 'std_msgs/Int16' });
+  }
+  _servoPanTopic.publish(new ROSLIB.Message({ data: angle }));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 function subscribeSystemProfile() {
   if (!ros || !ros.isConnected) return;
-
-  const profileTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/pi/system_profile',
-    messageType: 'std_msgs/String',
-    throttle_rate: 1000 // รับข้อมูลทุกๆ 1 วินาที
-  });
-
-  profileTopic.subscribe((message) => {
+  const topic = new ROSLIB.Topic({ ros, name: '/pi/system_profile', messageType: 'std_msgs/String', throttle_rate: 1000 });
+  topic.subscribe((msg) => {
     try {
-      // แปลง JSON String เป็น Object 
-      const profileData = JSON.parse(message.data);
-      
-      // ส่งข้อมูลที่ถูก Parse แล้วไปยัง Main Process
-      parentPort.postMessage({
-        type: 'system-profile-update',
-        data: profileData
-      });
+      parentPort.postMessage({ type: 'system-profile-update', data: JSON.parse(msg.data) });
     } catch (e) {
       console.error('Server: Error parsing system profile JSON', e);
     }
@@ -1145,59 +814,34 @@ function subscribeSystemProfile() {
 
 function callUpdateDetectionService(settings) {
   if (!ros || !ros.isConnected) {
-    parentPort.postMessage({
-      type: 'detection-update-result',
-      data: { success: false, message: 'ROSBridge not connected' }
-    });
+    parentPort.postMessage({ type: 'detection-update-result', data: { success: false, message: 'ROSBridge not connected' } });
     return;
   }
-
-  const service = new ROSLIB.Service({
-    ros: ros,
-    name: '/stream_manager/update_detection',
-    serviceType: 'ptR1_navigation/UpdateDetection'
-  });
-
-  const request = new ROSLIB.ServiceRequest({
+  const service = new ROSLIB.Service({ ros, name: '/stream_manager/update_detection', serviceType: 'ptR1_navigation/UpdateDetection' });
+  service.callService(new ROSLIB.ServiceRequest({
     mode:       settings.mode,
     time_start: settings.time_start,
     time_end:   settings.time_end,
     classes:    settings.classes,
     enabled:    settings.enabled
-  });
-
-  service.callService(request, (result) => {
-    parentPort.postMessage({
-      type: 'detection-update-result',
-      data: { success: result.success, message: result.message }
-    });
+  }), (result) => {
+    parentPort.postMessage({ type: 'detection-update-result', data: { success: result.success, message: result.message } });
   }, (err) => {
-    parentPort.postMessage({
-      type: 'detection-update-result',
-      data: { success: false, message: err.toString() }
-    });
+    parentPort.postMessage({ type: 'detection-update-result', data: { success: false, message: err.toString() } });
   });
 }
 
 function subscribeDetectionAlert() {
   if (!ros || !ros.isConnected) return;
-
-  const alertTopic = new ROSLIB.Topic({
-    ros: ros,
-    name: '/stream_manager/alert',
-    messageType: 'std_msgs/String'
-  });
-
-  alertTopic.subscribe((msg) => {
+  const topic = new ROSLIB.Topic({ ros, name: '/stream_manager/alert', messageType: 'std_msgs/String' });
+  topic.subscribe((msg) => {
     try {
-      const data = JSON.parse(msg.data);
-      parentPort.postMessage({ type: 'detection-alert', data });
+      parentPort.postMessage({ type: 'detection-alert', data: JSON.parse(msg.data) });
     } catch (e) {
       console.error('[Server] Failed to parse alert:', e);
     }
   });
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });
-
-
