@@ -79,7 +79,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   onHomeResult: (callback) => ipcRenderer.on('nav:home-result', (_, result) => callback(result)),
 
   // Patrol related api
-  resumePatrol: (path, index) => ipcRenderer.send('resume-patrol', { path, index }),
   cancelCurrentGoal: () => ipcRenderer.send('send-stop-patrol'),
   onGoalResult: (callback) => ipcRenderer.on('goal-result', (_, data) => callback(data)),
   startPatrol: (goals, loop) => ipcRenderer.send('start-patrol', { goals, loop }),

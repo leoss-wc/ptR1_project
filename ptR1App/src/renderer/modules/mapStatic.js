@@ -196,10 +196,8 @@ document.getElementById('start-nav-btn').addEventListener('click', async () => {
     try {
         console.log(`Selecting Map '${activeMap.name}'...`);
         await window.electronAPI.selectMap(activeMap.name);
-
         console.log("Starting Navigation...");
-        // ส่ง false ไปก่อน (ไม่เอา Last Pose) เพราะเราอยากลอง Init Home ดูก่อน
-        const navRes = await window.electronAPI.startNavigation(false); 
+        const navRes = await window.electronAPI.startNavigation(true); 
         
         if (!navRes.success) throw new Error(navRes.message);
 
@@ -207,18 +205,19 @@ document.getElementById('start-nav-btn').addEventListener('click', async () => {
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Initializing...`;
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // 4. ลองสั่ง Init Home (Best Effort)
-        console.log(`Step 3: Attempting Auto-Init Home for ${activeMap.name}...`);
+        console.log(`Attempting Restore for ${activeMap.name}...`);
+        /*
         const homeRes = await window.electronAPI.initHome(activeMap.name);
 
         if (homeRes.success) {
             console.log("Robot initialized at HOME position.");
-            alert(`System Started! Robot is at Home.`);
+            //alert(`System Started! Robot is at Home.`);
         } else {
             // กรณีล้มเหลว (เช่น ไม่เคยเซ็ต Home ไว้): ไม่เป็นไร แค่แจ้งเตือน
             console.warn(" Could not init home (Home not set?). User must set pose manually.");
             alert(`System Started. \n Warning: Home location not found.\nPlease set '2D Pose Estimate' manually.`);
         }
+            */
     } catch (error) {
         console.error("❌ Error sequence:", error);
         alert(`Error: ${error.message}`);
@@ -709,7 +708,8 @@ function setupCanvasEvents() {
         }
     };
           setGoalPoint(goalData.pose);
-          window.electronAPI.startPatrol([goalData], false); 
+          const shouldLoop = patrolState.isLooping;
+          window.electronAPI.startPatrol([goalData], shouldLoop); 
           console.log("New Goal Set via UI");
           
       }

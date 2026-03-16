@@ -37,7 +37,7 @@ if (isDev) {
   const serveStatic = require('serve-static');
   const appServer = express();
   // Quick Fix: Hardcoded path for dev
-  appServer.use('/videos', serveStatic('/home/leoss/Videos/ptR1'));
+  appServer.use('/videos', serveStatic(videoFolder));
   appServer.listen(3001, () => {
     console.log('🎥 Video static server running on http://localhost:3001/videos');
   });
@@ -46,23 +46,6 @@ if (isDev) {
 // ==========================================================
 // Helper Functions
 // ==========================================================
-
-function startPythonBackend() {
-  const isWin = process.platform === 'win32';
-  const pythonExecutable = path.join(__dirname, '../../python-backend/venv/' + (isWin ? 'Scripts/python.exe' : 'bin/python'));
-  const backendPath = path.join(__dirname, '../../python-backend/yolo_app.py');
-
-  console.log('[Main] 🐍 Starting Python Backend...');
-  if (fs.existsSync(pythonExecutable) && fs.existsSync(backendPath)) {
-    pythonProcess = spawn(pythonExecutable, [backendPath]);
-
-    pythonProcess.stdout.on('data', (data) => console.log(`[Python]: ${data.toString().trim()}`));
-    pythonProcess.stderr.on('data', (data) => console.error(`[Python Error]: ${data.toString().trim()}`));
-    pythonProcess.on('close', (code) => console.log(`[Python] Backend exited with code ${code}`));
-  } else {
-    console.error('[Main] ❌ Python executable or script not found!');
-  }
-}
 
 function loadRobotsFromFile() {
   try {
@@ -186,7 +169,6 @@ function createRosWorker() {
             console.log('[Main] Forwarding goal result:', message.data);
             mainWindow.webContents.send('goal-result', message.data); 
             break;
-        case 'home-result': mainWindow.webContents.send('nav:home-result', message.data); break;
 
         // --- Patrol Results ---
         case 'patrol-start-result': mainWindow.webContents.send('patrol-start-result', message.data); break;
@@ -503,6 +485,46 @@ ipcMain.on('save-dataset-image', (event, base64Data) => {
     });
 });
 
+ipcMain.handle('dialog:select-folder-map', async (_, defaultPath = null) => {
+    const result = await dialog.showOpenDialog({
+        properties: ['openDirectory'],
+        defaultPath: defaultPath || undefined
+    });
+    if (result.canceled) return null;
+    return result.filePaths[0];
+});
+
+// settings:save / settings:load
+const settingsPath = path.join(userDataPath, 'settings.json');
+ipcMain.handle('settings:save', async (_, settings) => {
+    try {
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+        return { success: true };
+    } catch (e) {
+        return { success: false, message: e.message };
+    }
+});
+ipcMain.handle('settings:load', async () => {
+    try {
+        if (!fs.existsSync(settingsPath)) return null;
+        return JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
+    } catch (e) {
+        return null;
+    }
+});
+
+ipcMain.handle('mapcache:delete', async (_, mapName) => {
+    try {
+        const cachePath = path.join(mapCacheDir, `${mapName}.json`);
+        if (fs.existsSync(cachePath)) fs.unlinkSync(cachePath);
+        return true;
+    } catch (e) {
+        console.error('[Main] mapcache:delete error:', e);
+        return false;
+    }
+});
+
+
 
 ipcMain.handle('nav:get-home', async (_, mapName) => {
   try {
@@ -561,12 +583,27 @@ ipcMain.handle('nav:set-home', async (_, mapName) => {
 });
 
 ipcMain.handle('nav:go-home', async (_, mapName) => {
-    // ส่งคำสั่งไปที่ ROS
     rosWorker?.postMessage({ type: 'goHome', mapName });
-    
-    // คืนค่าทันที เพื่อให้ UI ไม่ต้องรอ
-    return { success: true, message: "Go Home command sent." };
+
+    return new Promise((resolve) => {
+        const handler = (data) => {
+            if (data.action === 'Go Home') {
+                clearTimeout(timeoutTimer);
+                internalEvents.off('home-result', handler);
+                resolve(data);
+            }
+        };
+
+        const timeoutTimer = setTimeout(() => {
+            internalEvents.off('home-result', handler);
+            resolve({ success: false, message: "Timeout: No response from ROS" });
+        }, 600000); // 600s ตรงกับ HOME_TIMEOUT_MS ใน shutdownManager.js
+
+        internalEvents.on('home-result', handler);
+    });
 });
+
+
 //AI Detection Update
 ipcMain.handle('detection:update', async (_, settings) => {
   rosWorker?.postMessage({ type: 'updateDetection', data: settings });
@@ -631,7 +668,7 @@ app.whenReady().then(() => {
   if (!fs.existsSync(dataFolder)) {fs.mkdirSync(dataFolder, { recursive: true });}
 
   // Init Processes
-  startPythonBackend();
+  //startPythonBackend();
   createRosWorker();
   createWindow();
   captureHandlers = initCaptureModule(
@@ -653,10 +690,6 @@ app.on('before-quit', async () => {
     rosWorker.postMessage({ type: 'stopStream' });
     await new Promise(r => setTimeout(r, 500));
     rosWorker.terminate();
-  }
-  if (pythonProcess) {
-    console.log('[Main] Killing Python backend...');
-    pythonProcess.kill();
   }
 });
 

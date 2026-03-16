@@ -54,30 +54,32 @@ export class CanvasRecorder {
   }
 
   #handleSegmentComplete() {
+    const chunksToSave = this.#recordedChunks;  // ← snapshot ก่อน
+    this.#recordedChunks = [];                   // ← reset ให้ segment ใหม่
+
     if (this.#isRecording) {
-      this.start(); 
+        this.start();
     }
 
-    const blob = new Blob(this.#recordedChunks, { type: 'video/webm' });
-    this.#recordedChunks = []; // เคลียร์เมมโมรี่
+    const blob = new Blob(chunksToSave, { type: 'video/webm' });
 
     if (blob.size === 0) {
-      console.warn("⚠️ Skipped empty recording (0 byte)");
-      return;
+        console.warn("⚠️ Skipped empty recording (0 byte)");
+        return;
     }
 
     const now = new Date();
-    const dateStr = now.toISOString().split('T')[0]; // yyyy-mm-dd
-    const timeStr = now.toTimeString().slice(0, 5).replace(':', '-'); // hh-mm
-    
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().slice(0, 8).replace(/:/g, '-');
+
     console.log(`Saving video segment (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
 
     blob.arrayBuffer().then((buffer) => {
-      window.electronAPI.saveVideo({
-        buffer,
-        date: dateStr,
-        filename: `record-${timeStr}.webm`
-      });
+        window.electronAPI.saveVideo({
+            buffer,
+            date: dateStr,
+            filename: `record-${timeStr}.webm`
+        });
     });
   }
 }

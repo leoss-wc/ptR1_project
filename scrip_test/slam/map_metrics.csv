@@ -1,9 +1,0 @@
-Trial,MAE,RMSE,SSIM,Pixel_Accuracy(%),Coverage(%),Occupied_Cell_Diff(%)
-trial4,0.099227,0.315004,0.925780,90.08,9.25,21.48
-trial5,0.000894,0.029903,0.999369,99.91,11.11,1.27
-
---- Statistics ---
-MAE_mean,0.050061,MAE_std,0.049167,MAE_min,0.000894,MAE_max,0.099227
-RMSE_mean,0.172453,RMSE_std,0.142550,RMSE_min,0.029903,RMSE_max,0.315004
-SSIM_mean,0.962575,SSIM_std,0.036794,SSIM_min,0.925780,SSIM_max,0.999369
-Pixel_Accuracy(%)_mean,94.993930,Pixel_Accuracy(%)_std,4.916652,Pixel_Accuracy(%)_min,90.077277,Pixel_Accuracy(%)_max,99.910582

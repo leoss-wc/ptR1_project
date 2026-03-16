@@ -52,9 +52,6 @@ export function startPatrol() {
         return;
     }
     const shouldLoop = patrolState.isLooping;
-
-    // ✅ แก้ไข: ใช้โครงสร้าง PoseStamped (มี header และ pose)
-    // ระบบ Navigation ต้องการรู้ว่าจุดนี้อ้างอิงกับ map หรือ odom
     const goals = drawnPath.map(point => ({
         header: { 
             frame_id: 'map',  // ระบุว่าพิกัดนี้อยู่บนแผนที่

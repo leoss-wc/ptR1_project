@@ -4,7 +4,6 @@ import subprocess
 import time
 import socket
 import cv2
-#from ultralytics import YOLO
 from std_srvs.srv import Trigger, TriggerResponse
 import threading
 import queue
@@ -42,12 +41,12 @@ DOOR_CLASSES = {
 }
 
 alert_pub = None
-last_alert_time = {}  # ป้องกัน spam ต่อ class
+last_alert_time = {}
 
 # --- Model 1 (COCO / person detection) ---
 ai_result_lock = threading.Lock()
 cached_boxes = []
-frame_queue = queue.Queue(maxsize=1) 
+frame_queue = queue.Queue(maxsize=1)
 ai_running = threading.Event()
 last_inference_ms = 0.0
 
@@ -56,7 +55,6 @@ ai_result_lock2 = threading.Lock()
 cached_boxes2 = []
 ai_running2 = threading.Event()
 last_inference_ms2 = 0.0
-door_frame_counter = 0          # นับเฟรมสำหรับ skip ของโมเดล 2
 
 latest_frame = None
 frame_lock = threading.Lock()
@@ -79,7 +77,7 @@ model2_input_name = None
 prev_frame_gray = None
 
 detection_enabled = False
-detection_mode    = 'time'   # 'time' | 'manual'
+detection_mode    = 'time'
 detection_start   = 22
 detection_end     = 6
 detection_classes = ['person']
@@ -89,18 +87,17 @@ capture_burst_timer = None
 capture_label = "object"
 capture_save_dir = os.path.expanduser('~/dataset/raw')
 capture_count = 0
-capture_pub = None  # publisher แจ้งกลับว่าถ่ายสำเร็จ
+capture_pub = None
 os.makedirs(capture_save_dir, exist_ok=True)
 
 
 def _do_capture():
-    """ถ่ายภาพ RAW จาก latest_frame แล้ว publish แจ้งกลับ"""
     global capture_count
     with frame_lock:
         if latest_frame is None:
             rospy.logwarn("Capture: No frame available")
             return
-        frame = latest_frame.copy()  # ภาพดิบ ไม่มี bounding box
+        frame = latest_frame.copy()
 
     timestamp = int(time.time() * 1000)
     filename  = f"{capture_label}_{timestamp}.jpg"
@@ -108,7 +105,6 @@ def _do_capture():
 
     cv2.imwrite(filepath, frame)
     capture_count += 1
-
     rospy.loginfo(f"Captured [{capture_count}]: {filename}")
 
     if capture_pub:
@@ -119,23 +115,18 @@ def _do_capture():
         }))
 
 def handle_capture_single(req):
-    """Service: ถ่ายภาพครั้งเดียว"""
     if not is_stream_enabled:
         return TriggerResponse(success=False, message="Stream not running")
     _do_capture()
     return TriggerResponse(success=True, message=f"Captured as '{capture_label}'")
 
 def handle_capture_start(req):
-    """Service: เริ่ม burst capture — req เป็น String เช่น 'fire:2.0' (label:interval_sec)"""
     global capture_burst_timer, capture_label
     if not is_stream_enabled:
         return TriggerResponse(success=False, message="Stream not running")
-
-    # parse payload จาก topic แยกต่างหาก (ดูข้อ 4)
     return TriggerResponse(success=True, message=f"Burst started: {capture_label}")
 
 def handle_capture_stop(req):
-    """Service: หยุด burst capture"""
     global capture_burst_timer
     if capture_burst_timer:
         capture_burst_timer.shutdown()
@@ -144,7 +135,6 @@ def handle_capture_stop(req):
     return TriggerResponse(success=True, message=f"Stopped. Total: {capture_count} images")
 
 def handle_capture_config(msg):
-    """รับ config burst เช่น 'fire:2.0' หรือ 'stop'"""
     global capture_burst_timer, capture_label
     data = msg.data.strip()
 
@@ -187,19 +177,17 @@ def has_motion(frame, threshold=1000):
 def is_frame_usable(frame):
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     mean_brightness = np.mean(gray)
-    # มืดเกินไป < 20, สว่างเกิน (overexposed) > 240
     return 20 < mean_brightness < 240
 
 def init_alert_publisher():
     global alert_pub, ai_stats_pub, capture_pub
-    alert_pub = rospy.Publisher('/stream_manager/alert', String, queue_size=10)
+    alert_pub    = rospy.Publisher('/stream_manager/alert', String, queue_size=10)
     ai_stats_pub = rospy.Publisher('/stream_manager/ai_stats', String, queue_size=5)
-    capture_pub   = rospy.Publisher('/stream_manager/captured', String, queue_size=10)
+    capture_pub  = rospy.Publisher('/stream_manager/captured', String, queue_size=10)
 
 def publish_alert(class_name, conf):
     global last_alert_time
     now = time.time()
-    # throttle — ส่งซ้ำได้ทุก 5 วินาทีต่อ class
     if now - last_alert_time.get(class_name, 0) < 5.0:
         return
     last_alert_time[class_name] = now
@@ -215,7 +203,7 @@ def publish_alert(class_name, conf):
     alert_pub.publish(String(data=payload))
     rospy.loginfo(f"ALERT published: {class_name}")
 
-def is_night_time(start, end): 
+def is_night_time(start, end):
     now = datetime.now().hour
     return now >= start or now < end
 
@@ -251,7 +239,7 @@ def start_mediamtx():
 
     rospy.loginfo("MediaMTX is NOT running. Attempting to start...")
 
-    mediamtx_exec = rospy.get_param('~mediamtx_exec', '/home/patrolR1/MediaMtx/mediamtx')
+    mediamtx_exec   = rospy.get_param('~mediamtx_exec',   '/home/patrolR1/MediaMtx/mediamtx')
     mediamtx_config = rospy.get_param('~mediamtx_config', '/home/patrolR1/MediaMtx/mediamtx.yml')
 
     cmd = [mediamtx_exec]
@@ -275,11 +263,10 @@ def start_mediamtx():
     except Exception as e:
         rospy.logerr(f"Exception starting MediaMTX: {e}")
         return False
+
 def ffmpeg_writer_thread():
-    """Thread แยกสำหรับส่งเฟรมไป FFmpeg — ใช้แค่เฟรมล่าสุดเสมอ"""
     while not rospy.is_shutdown():
         try:
-            # ✅ รอเฟรมใหม่ timeout 1 วิ ป้องกัน block ตลอดกาล
             frame = frame_queue.get(timeout=1.0)
             if ffmpeg_process and ffmpeg_process.poll() is None:
                 ffmpeg_process.stdin.write(frame.tobytes())
@@ -288,31 +275,25 @@ def ffmpeg_writer_thread():
         except Exception as e:
             rospy.logerr(f"FFmpeg Writer Error: {e}")
             break
+
 def launch_ffmpeg_pipe():
-    """ตั้งค่า FFmpeg ให้รอรับภาพจากท่อ (stdin) ของ Python"""
     rtsp_url = rospy.get_param('~rtsp_url', 'rtsp://localhost:8554/mystream')
-    bitrate = str(rospy.get_param('~bitrate', '600k'))
+    bitrate  = str(rospy.get_param('~bitrate', '600k'))
     fps      = rospy.get_param('~camera_fps', 12)
 
     ffmpeg_command = [
-    'ffmpeg', '-y',
-    '-f', 'rawvideo', '-vcodec', 'rawvideo',
-    '-s', '640x480', '-pix_fmt', 'bgr24', '-r', str(fps),
-    '-i', '-',
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
-    '-profile:v', 'baseline', '-pix_fmt', 'yuv420p',
-    '-g', '5',
-    '-bf', '0',
-    '-refs', '1',
-    '-b:v', bitrate,
-    '-maxrate', bitrate,
-    '-bufsize', '500k',
-    '-f', 'rtsp',
-    '-rtsp_transport', 'tcp',
-    '-muxdelay', '0',
-    '-muxpreload', '0',
-    rtsp_url
-]
+        'ffmpeg', '-y',
+        '-f', 'rawvideo', '-vcodec', 'rawvideo',
+        '-s', '640x480', '-pix_fmt', 'bgr24', '-r', str(fps),
+        '-i', '-',
+        '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
+        '-profile:v', 'baseline', '-pix_fmt', 'yuv420p',
+        '-g', '5', '-bf', '0', '-refs', '1',
+        '-b:v', bitrate, '-maxrate', bitrate, '-bufsize', '500k',
+        '-f', 'rtsp', '-rtsp_transport', 'tcp',
+        '-muxdelay', '0', '-muxpreload', '0',
+        rtsp_url
+    ]
 
     rospy.loginfo("Starting FFmpeg Pipe...")
     return subprocess.Popen(ffmpeg_command, stdin=subprocess.PIPE)
@@ -320,7 +301,6 @@ def launch_ffmpeg_pipe():
 def stop_process(proc, name):
     if proc is None:
         return None
-
     rospy.loginfo(f"Stopping {name} (PID: {proc.pid})...")
     try:
         if proc.poll() is None:
@@ -339,8 +319,6 @@ def monitor_loop(event):
     global ffmpeg_process, mediamtx_process, is_stream_enabled, is_starting
 
     if is_stream_enabled and not is_starting:
-
-        # ✅ เช็ค MediaMTX ก่อน เพราะถ้าตาย FFmpeg ก็ไม่มีประโยชน์
         if mediamtx_process is not None and mediamtx_process.poll() is not None:
             rospy.logerr("Stream Monitor: MediaMTX crashed! Performing full system reset...")
             is_stream_enabled = False
@@ -348,22 +326,21 @@ def monitor_loop(event):
             time.sleep(1)
 
             if start_mediamtx():
-                is_starting = True  # ✅ ล็อคก่อนเสมอ
+                is_starting = True
                 try:
                     ffmpeg_process = launch_ffmpeg_pipe()
                 finally:
                     is_starting = False
                     is_stream_enabled = True
-            return  # ออกก่อน ไม่ต้องเช็ค FFmpeg ซ้ำ
+            return
 
-        # เช็ค FFmpeg
         if ffmpeg_process is None or ffmpeg_process.poll() is not None:
             rospy.logwarn("Stream Monitor: FFmpeg is not running. Attempting auto-restart...")
-            is_starting = True  # ✅ ล็อคก่อนเสมอ
+            is_starting = True
             try:
                 ffmpeg_process = launch_ffmpeg_pipe()
             finally:
-                is_starting = False  # ✅ ปลดล็อคเสมอแม้จะเกิด exception
+                is_starting = False
 
             if ffmpeg_process is not None:
                 rospy.loginfo("Stream Monitor: Auto-restart successful.")
@@ -381,7 +358,6 @@ def camera_reader_thread():
         else:
             time.sleep(0.01)
 
-    # ✅ thread release cap เองเลย ไม่ให้ใครมา release ทับ
     if cap:
         cap.release()
         cap = None
@@ -428,13 +404,14 @@ def handle_start_stream(req):
 
     latest_frame = None
     camera_stop_event.clear()
-    cam_reader_thread_ref = threading.Thread(target=camera_reader_thread)  # ✅ ตัวเดียว
+    cam_reader_thread_ref = threading.Thread(target=camera_reader_thread)
     cam_reader_thread_ref.daemon = True
     cam_reader_thread_ref.start()
 
     ffmpeg_process = launch_ffmpeg_pipe()
     is_stream_enabled = True
     return TriggerResponse(success=True, message="Stream + YOLO Node Started")
+
 def handle_stop_stream(req):
     global is_stream_enabled, ffmpeg_process, mediamtx_process, latest_frame
     rospy.loginfo("Request to STOP stream received.")
@@ -443,7 +420,7 @@ def handle_stop_stream(req):
     camera_stop_event.set()
 
     if cam_reader_thread_ref is not None and cam_reader_thread_ref.is_alive():
-        cam_reader_thread_ref.join(timeout=3.0)  # ✅ thread release cap เอง
+        cam_reader_thread_ref.join(timeout=3.0)
 
     latest_frame = None
 
@@ -453,7 +430,7 @@ def handle_stop_stream(req):
         except:
             pass
 
-    ffmpeg_process = stop_process(ffmpeg_process, "FFmpeg")
+    ffmpeg_process   = stop_process(ffmpeg_process, "FFmpeg")
     mediamtx_process = stop_process(mediamtx_process, "MediaMTX")
     return TriggerResponse(success=True, message="Stream stopped.")
 
@@ -464,24 +441,22 @@ def handle_toggle_ai(req):
     msg = f"AI Detection: {'ON' if detection_enabled else 'OFF'}"
     rospy.loginfo(msg)
     return TriggerResponse(success=True, message=msg)
+
 def ai_worker(frame):
     global cached_boxes, ai_running, last_inference_ms
     try:
         if model is None:
             return
         t0 = time.time()
-        # 1. Pre-processing
         orig_h, orig_w = frame.shape[:2]
         img = cv2.resize(frame, (320, 320))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = (img.transpose((2, 0, 1))[np.newaxis] / 255.0).astype(np.float32)
 
-        # 2. Inference
         outputs = model.run(None, {model_input_name: img})
         last_inference_ms = (time.time() - t0) * 1000
-        predictions = np.squeeze(outputs[0]).T  # (N, 84)
+        predictions = np.squeeze(outputs[0]).T
 
-        # 3. Post-processing แบบ vectorized
         if len(predictions) == 0:
             with ai_result_lock:
                 cached_boxes = []
@@ -491,7 +466,6 @@ def ai_worker(frame):
         class_ids      = np.argmax(classes_scores, axis=1)
         scores         = classes_scores[np.arange(len(predictions)), class_ids]
 
-        # กรอง confidence ต่ำออก
         mask        = scores > 0.45
         predictions = predictions[mask]
         scores      = scores[mask]
@@ -502,7 +476,6 @@ def ai_worker(frame):
                 cached_boxes = []
             return
 
-        # แปลง cx,cy,w,h → x1,y1,bw,bh พร้อม scale กลับขนาดจริง
         x_scale = orig_w / 320
         y_scale = orig_h / 320
 
@@ -520,7 +493,6 @@ def ai_worker(frame):
         scores_list    = scores.tolist()
         class_ids_list = class_ids.tolist()
 
-        # 4. NMS — ลบกรอบซ้อนทับ
         indices = cv2.dnn.NMSBoxes(boxes_list, scores_list, 0.35, 0.45)
 
         new_boxes = []
@@ -530,37 +502,30 @@ def ai_worker(frame):
                 new_boxes.append([x, y, x + bw_, y + bh_,
                                   scores_list[i], class_ids_list[i]])
 
-        # 5. อัปเดต cache
         with ai_result_lock:
             cached_boxes = new_boxes
 
     except Exception as e:
         rospy.logerr(f"AI Worker Error: {e}")
     finally:
-        ai_running.clear()  # ปลดล็อคเสมอ
+        ai_running.clear()
 
 def ai_worker2(frame):
-    """Worker สำหรับโมเดลที่ 2: ตรวจจับ door_open / door_close
-    รันทุก 10 เฟรม (skip 9 เฟรม ทำงาน 1 เฟรม)
-    """
     global cached_boxes2, ai_running2, last_inference_ms2
     try:
         if model2 is None:
             return
         t0 = time.time()
 
-        # 1. Pre-processing
         orig_h, orig_w = frame.shape[:2]
         img = cv2.resize(frame, (320, 320))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = (img.transpose((2, 0, 1))[np.newaxis] / 255.0).astype(np.float32)
 
-        # 2. Inference
         outputs = model2.run(None, {model2_input_name: img})
         last_inference_ms2 = (time.time() - t0) * 1000
-        predictions = np.squeeze(outputs[0]).T  # (N, num_classes+4)
+        predictions = np.squeeze(outputs[0]).T
 
-        # 3. Post-processing
         num_door_classes = len(DOOR_CLASSES)
         if len(predictions) == 0:
             with ai_result_lock2:
@@ -598,7 +563,6 @@ def ai_worker2(frame):
         scores_list    = scores.tolist()
         class_ids_list = class_ids.tolist()
 
-        # 4. NMS
         indices = cv2.dnn.NMSBoxes(boxes_list, scores_list, 0.35, 0.45)
 
         new_boxes2 = []
@@ -608,7 +572,6 @@ def ai_worker2(frame):
                 new_boxes2.append([x, y, x + bw_, y + bh_,
                                    scores_list[i], class_ids_list[i]])
 
-        # 5. อัปเดต cache
         with ai_result_lock2:
             cached_boxes2 = new_boxes2
 
@@ -622,7 +585,7 @@ def ai_worker2(frame):
 
 def cleanup():
     global is_stream_enabled, ffmpeg_process, mediamtx_process, cap, cached_boxes, ai_running, latest_frame
-    global cached_boxes2, ai_running2, door_frame_counter
+    global cached_boxes2, ai_running2
     is_stream_enabled = False
     camera_stop_event.set()
 
@@ -631,9 +594,9 @@ def cleanup():
 
     ai_running.clear()
     ai_running2.clear()
-    cached_boxes = []
+    cached_boxes  = []
     cached_boxes2 = []
-    latest_frame = None
+    latest_frame  = None
 
     if ffmpeg_process and ffmpeg_process.stdin:
         try:
@@ -641,29 +604,30 @@ def cleanup():
         except:
             pass
 
-    ffmpeg_process = stop_process(ffmpeg_process, "FFmpeg")
+    ffmpeg_process   = stop_process(ffmpeg_process, "FFmpeg")
     mediamtx_process = stop_process(mediamtx_process, "MediaMTX")
+
 def stream_manager_server():
-    global is_stream_enabled, cap, ffmpeg_process, cached_boxes, ai_running, latest_frame
+    global is_stream_enabled, ffmpeg_process, cached_boxes, ai_running, latest_frame
 
     camera_fps          = rospy.get_param('~camera_fps', 12)
     person_interval_sec = rospy.get_param('~person_interval_sec', 2.5)
     door_interval_sec   = rospy.get_param('~door_interval_sec', 6.0)
 
-    PERSON_SKIP = int(camera_fps * person_interval_sec)  # 30
-    DOOR_SKIP   = int(camera_fps * door_interval_sec)    # 72
+    PERSON_SKIP = int(camera_fps * person_interval_sec)  # เช่น 30
+    DOOR_SKIP   = int(camera_fps * door_interval_sec)    # เช่น 72
 
     rospy.loginfo(f"PERSON_SKIP={PERSON_SKIP}, DOOR_SKIP={DOOR_SKIP}")
 
     rospy.init_node('stream_manager_server')
     init_alert_publisher()
     rospy.on_shutdown(cleanup)
-    rospy.Service('/stream_manager/start', Trigger, handle_start_stream)
-    rospy.Service('/stream_manager/stop', Trigger, handle_stop_stream)
-    rospy.Service('/stream_manager/toggle_ai', Trigger, handle_toggle_ai)
-    rospy.Service('/stream_manager/update_detection', UpdateDetection, handle_update_detection)
-    rospy.Service('/stream_manager/capture',       Trigger, handle_capture_single)
-    rospy.Service('/stream_manager/capture_stop',  Trigger, handle_capture_stop)
+    rospy.Service('/stream_manager/start',            Trigger,          handle_start_stream)
+    rospy.Service('/stream_manager/stop',             Trigger,          handle_stop_stream)
+    rospy.Service('/stream_manager/toggle_ai',        Trigger,          handle_toggle_ai)
+    rospy.Service('/stream_manager/update_detection', UpdateDetection,  handle_update_detection)
+    rospy.Service('/stream_manager/capture',          Trigger,          handle_capture_single)
+    rospy.Service('/stream_manager/capture_stop',     Trigger,          handle_capture_stop)
     rospy.Subscriber('/stream_manager/capture_config', String, handle_capture_config)
     rospy.loginfo("Stream Manager Ready")
 
@@ -672,64 +636,79 @@ def stream_manager_server():
     writer.start()
 
     rate = rospy.Rate(camera_fps)
-    frame_counter = 0
-    ai_stats_counter = 0
-    door_frame_counter = 0  # นับเฟรมสำหรับโมเดล 2 (skip ทุก 10 เฟรม)
+    frame_counter      = 0
+    ai_stats_counter   = 0
+    door_frame_counter = 0
+
+    # threshold สำหรับ publish ai_stats (ทุก PERSON_SKIP * 10 เฟรม)
+    AI_STATS_THRESHOLD = PERSON_SKIP * 10
 
     rospy.Timer(rospy.Duration(5), monitor_loop)
+
     try:
         while not rospy.is_shutdown():
             if is_stream_enabled and ffmpeg_process:
 
-                # อ่านเฟรมล่าสุดจาก camera_reader_thread
                 with frame_lock:
                     if latest_frame is None:
                         rate.sleep()
                         continue
                     frame = latest_frame.copy()
-                # โมเดล 1: COCO (person)
-                if detection_enabled and model:
-                    frame_counter += 1
+
+                frame_usable = is_frame_usable(frame)
+                frame_moving = has_motion(frame)  # [FIX #3] เรียกครั้งเดียวเก็บผลไว้ใช้
+
+                # snapshot detection settings ครั้งเดียวต่อเฟรม
+                with detection_lock:
+                    _enabled = detection_enabled
+                    _mode    = detection_mode
+                    _start   = detection_start
+                    _end     = detection_end
+                    _classes = list(detection_classes)
+
+                # คำนวณว่าควร alert ไหม (ใช้ร่วมกันทั้ง 2 โมเดล)
+                should_alert = False
+                if _enabled:
+                    if _mode == 'manual':
+                        should_alert = True
+                    elif _mode == 'time':
+                        should_alert = is_night_time(_start, _end)
+
+                # ==========================================
+                # โมเดล 1: COCO (person detection)
+                # ==========================================
+                if _enabled and model and frame_moving and frame_usable:
+                    frame_counter    += 1
                     ai_stats_counter += 1
+
+                    # [FIX #2] ย้าย ai_stats ออกนอก PERSON_SKIP block
+                    if ai_stats_counter >= AI_STATS_THRESHOLD and ai_stats_pub:
+                        ai_stats_counter = 0
+                        ai_stats_pub.publish(json.dumps({
+                            'inference_ms':      round(last_inference_ms, 1),
+                            'inference_ms2':     round(last_inference_ms2, 1),
+                            'detection_enabled': _enabled,
+                            'mode':              _mode
+                        }))
+
+                    # [FIX #3] ไม่เช็ค is_frame_usable/has_motion ซ้ำ
                     if frame_counter % PERSON_SKIP == 0 and not ai_running.is_set():
                         frame_counter = 0
-                        if is_frame_usable(frame):#if is_frame_usable(frame) and has_motion(frame):
-                            ai_running.set()
-                            t = threading.Thread(target=ai_worker, args=(frame.copy(),))
-                            t.daemon = True
-                            t.start()
-                        if ai_stats_counter >= 10 and ai_stats_pub:  # ทุก 10 วิ (10Hz × 10 = 10วิ)
-                            ai_stats_counter = 0
-                            ai_stats_pub.publish(json.dumps({
-                                'inference_ms':      round(last_inference_ms, 1),
-                                'inference_ms2':     round(last_inference_ms2, 1),
-                                'detection_enabled': detection_enabled,
-                                'mode':              detection_mode
-                            }))
+                        ai_running.set()
+                        t = threading.Thread(target=ai_worker, args=(frame.copy(),))
+                        t.daemon = True
+                        t.start()
 
                     with ai_result_lock:
                         boxes_to_draw = list(cached_boxes)
-                    with detection_lock:
-                        classes_to_show = list(detection_classes)
-                        _enabled = detection_enabled
-                        _mode    = detection_mode
-                        _start   = detection_start
-                        _end     = detection_end
 
                     for box in boxes_to_draw:
                         x1, y1, x2, y2, conf, cls = box
                         class_name = COCO_CLASSES.get(int(cls), f"Unknown_{int(cls)}")
-                        if class_name not in classes_to_show:
+                        if class_name not in _classes:
                             continue
 
-                        alert = False
-                        if _enabled:
-                            if _mode == 'manual':
-                                alert = True
-                            elif _mode == 'time':
-                                alert = is_night_time(_start, _end)
-
-                        if alert:
+                        if should_alert:
                             color, thickness = (0, 0, 255), 3
                             label = f"! {class_name} {conf:.2f}"
                             publish_alert(class_name, conf)
@@ -738,20 +717,25 @@ def stream_manager_server():
                             label = f"{class_name} {conf:.2f}"
 
                         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
-                        cv2.putText(frame, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                        cv2.putText(frame, label, (int(x1), int(y1) - 10),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
                 else:
                     with ai_result_lock:
                         cached_boxes = []
-                # โมเดล 2: Door Detection 
-                if model2 and detection_enabled:
+
+                # ==========================================
+                # โมเดล 2: Door Detection
+                # ==========================================
+                if model2 and _enabled and frame_usable and frame_moving:
                     door_frame_counter += 1
+
+                    # [FIX #3] ไม่เช็ค is_frame_usable ซ้ำ
                     if door_frame_counter % DOOR_SKIP == 0 and not ai_running2.is_set():
                         door_frame_counter = 0
-                        if is_frame_usable(frame):
-                            ai_running2.set()
-                            t2 = threading.Thread(target=ai_worker2, args=(frame.copy(),))
-                            t2.daemon = True
-                            t2.start()
+                        ai_running2.set()
+                        t2 = threading.Thread(target=ai_worker2, args=(frame.copy(),))
+                        t2.daemon = True
+                        t2.start()
 
                     with ai_result_lock2:
                         door_boxes_to_draw = list(cached_boxes2)
@@ -760,26 +744,28 @@ def stream_manager_server():
                         x1, y1, x2, y2, conf, cls = box
                         door_class = DOOR_CLASSES.get(int(cls), f"door_{int(cls)}")
 
-                        # door_open → สีฟ้า, door_close → สีส้ม
-                        if door_class == 'door_open':
-                            color, thickness = (255, 165, 0), 2   # สีส้ม (BGR)
+                        # [FIX #1] เช็ค should_alert เหมือน โมเดล 1
+                        if should_alert:
+                            color     = (0, 0, 255)
+                            thickness = 3
+                            label     = f"! [M2] {door_class} {conf:.2f}"
+                            publish_alert(door_class, conf)
                         else:
-                            color, thickness = (0, 165, 255), 2   # สีฟ้า (BGR)
+                            # door_open → สีส้ม, door_close → สีฟ้า
+                            color     = (255, 165, 0) if door_class == 'door_open' else (0, 165, 255)
+                            thickness = 2
+                            label     = f"[M2] {door_class} {conf:.2f}"
 
-                        label = f"[M2] {door_class} {conf:.2f}"
                         cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, thickness)
                         cv2.putText(frame, label, (int(x1), int(y1) - 10),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-                        if detection_enabled:
-                            publish_alert(door_class, conf)
 
-                # --- ส่งเฟรมล่าสุดไป ffmpeg_writer_thread ---
+                # ส่งเฟรมไป ffmpeg_writer_thread
                 try:
-                    frame_queue.get_nowait()  # ทิ้งเฟรมเก่าถ้ามี
+                    frame_queue.get_nowait()
                 except queue.Empty:
                     pass
-                
-                frame_queue.put_nowait(frame)  # ใส่เฟรมใหม่
+                frame_queue.put_nowait(frame)
 
             rate.sleep()
 

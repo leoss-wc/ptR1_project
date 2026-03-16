@@ -1,5 +1,0 @@
-trial,bag,actual_dist,goal_error,overshoot
-1,trial_nav_forward70m_2_2026-03-10-05-04-44.bag,69.5981,0.4019,-0.4019
-2,trial_nav_forward70m_3_2026-03-10-05-20-44.bag,69.5519,0.4481,-0.4481
-3,trial_nav_forward70m_4_2026-03-10-05-31-52.bag,69.64,0.36,-0.36
-4,trial_nav_forward70m_5_2026-03-10-05-46-24.bag,69.5788,0.4212,-0.4212
