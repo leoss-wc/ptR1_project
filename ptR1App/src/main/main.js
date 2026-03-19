@@ -11,6 +11,8 @@ const { spawn, exec } = require('child_process');
 const yaml = require('js-yaml');
 const { EventEmitter } = require('events'); 
 const { initCaptureModule } = require('./captureModule');
+const ffmpegPath = require('ffmpeg-static');
+
 
 // --- Global Variables ---
 let rosWorker;
@@ -412,43 +414,29 @@ ipcMain.handle('dialog:select-folder', async () => {
     return result.filePaths[0]; 
 });
 
-ipcMain.on('save-video', (_, { buffer, date, filename }) => {
+ipcMain.handle('save-video', async (_, { buffer, date, filename }) => {
     const baseDir = path.join(videoFolder, date);
-    // สร้างโฟลเดอร์ถ้ายังไม่มี
-    if (!fs.existsSync(baseDir)) {
-        fs.mkdirSync(baseDir, { recursive: true });
-    }
+    if (!fs.existsSync(baseDir)) fs.mkdirSync(baseDir, { recursive: true });
 
     const webmPath = path.join(baseDir, filename);
-    const mp4Path = webmPath.replace(/\.webm$/, '.mp4');
+    const mp4Path  = webmPath.replace(/\.webm$/, '.mp4');
 
-    fs.writeFile(webmPath, buffer, (err) => {
-        if (err) {
-            console.error("❌ Failed to save .webm:", err);
-            return;
-        }
+    await fsPromises.writeFile(webmPath, Buffer.from(buffer));
 
-        console.log(`Converting to MP4: ${filename}`);
-        // ใช้ ffmpeg แปลงไฟล์
-        exec(`ffmpeg -y -i "${webmPath}" -c:v libx264 -c:a aac "${mp4Path}"`, (error) => {
-             const success = !error;
-             
-             if (success) {
-                 console.log(`Converted: ${mp4Path}`);
-                 // ลบไฟล์ต้นฉบับ .webm ทิ้งเพื่อประหยัดพื้นที่
-                 fs.unlink(webmPath, (unlinkErr) => {
-                     if (unlinkErr) console.error("⚠️ Failed to delete temp .webm:", unlinkErr);
-                     else console.log("🗑️ Deleted temp .webm file.");
-                 });
-             } else {
-                 console.error("❌ FFmpeg Error:", error);
-             }
-
-             // แจ้งผลกลับไปหน้าเว็บ
-             mainWindow?.webContents.send('video-save-status', { 
-                 success: success, 
-                 path: success ? mp4Path : null 
-             });
+    return new Promise((resolve) => {
+        exec(`"${ffmpegPath}" -y -i "${webmPath}" -c:v libx264 -c:a aac "${mp4Path}"`, (error) => {
+            const success = !error;
+            if (success) {
+                fs.unlink(webmPath, () => {});
+                console.log(`✅ Converted: ${mp4Path}`);
+            } else {
+                console.error('❌ FFmpeg Error:', error);
+            }
+            mainWindow?.webContents.send('video-save-status', {
+                success,
+                path: success ? mp4Path : null
+            });
+            resolve({ success });
         });
     });
 });

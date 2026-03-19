@@ -32,9 +32,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   loadVideosFromFolder: (customPath) => ipcRenderer.invoke('load:videos', customPath),
   saveVideo: ({ buffer, date, filename }) => {
-      const nodeBuffer = Buffer.from(buffer);
-      ipcRenderer.send('save-video', { buffer: nodeBuffer, date, filename });
-    },
+    ipcRenderer.invoke('save-video', { buffer, date, filename }); // ← invoke แทน send
+},
   onImage: (callback) => ipcRenderer.on('camera:image', (_, data) => callback(data)),
   sendCommand_vairable: (variableId, value) => {ipcRenderer.send('uint32-command', { variableId, value });},
   onConnectionStatus: (callback) => {ipcRenderer.on('connection-status', (_, status) => callback(status));},

@@ -163,36 +163,49 @@ function setupRecorder() {
     if(canvas && video) {
         // 1. เริ่มต้น Recorder
         
-        recorder = new CanvasRecorder(canvas, { fps: 30, segmentMs: 10 * 60 * 1000 });
+        recorder = new CanvasRecorder(canvas, { fps: 12, segmentMs: 10 * 60 * 1000 });
         
         const startBtn = document.getElementById('start-record');
         const stopBtn = document.getElementById('stop-record');
         const splitTimeInput = document.getElementById('record-split-time');
+
+        window.electronAPI.onVideoSaveStatus((result) => {
+            const original = stopBtn.textContent;
+            if (result.success) {
+                stopBtn.textContent = '✅ Saved!';
+                stopBtn.style.background = '#2a7a2a';
+            } else {
+                stopBtn.textContent = '❌ Save Failed';
+                stopBtn.style.background = '#7a2a2a';
+            }
+            setTimeout(() => {
+                stopBtn.textContent = original;
+                stopBtn.style.background = '';
+            }, 3000); // คืนค่าเดิมใน 3 วินาที
+        });
         
         startBtn.addEventListener('click', () => { 
-            // อ่านค่าเวลาจาก Input ทันทีที่กด Start
-            if (splitTimeInput) {
-                let mins = parseInt(splitTimeInput.value);
-                // ป้องกันคนกรอกค่าติดลบ หรือ 0 ให้ใช้ค่า default 10 นาทีแทน
-                if (isNaN(mins) || mins < 1) mins = 10; 
-                splitTimeInput.value = mins;
-                
-                // แปลงนาทีเป็นมิลลิวินาที แล้วอัปเดตลงใน recorder
-                recorder.segmentMs = mins * 60 * 1000;
-                console.log(`Recording segment limit set to: ${mins} minutes (${recorder.segmentMs} ms)`);
+    if (splitTimeInput) {
+        let mins = parseInt(splitTimeInput.value);
+        if (isNaN(mins) || mins < 1) mins = 10; 
+        splitTimeInput.value = mins;
+        recorder.segmentMs = mins * 60 * 1000;
             }
 
             recorder.start(); 
             startBtn.disabled = true; 
             stopBtn.disabled = false; 
-            splitTimeInput.disabled = true; //ล็อคช่องพิมพ์ระหว่างอัด
+            splitTimeInput.disabled = true;
+            startBtn.textContent = '🔴 Recording...'; 
         });
+
         stopBtn.addEventListener('click', () => { 
-            recorder.stop(); 
-            startBtn.disabled = false; 
-            stopBtn.disabled = true; 
-            splitTimeInput.disabled = false; //ปลดล็อคช่องพิมพ์เมื่อหยุดอัด
-        });
+          recorder.stop(); 
+          startBtn.disabled = false; 
+          stopBtn.disabled = true; 
+          splitTimeInput.disabled = false;
+          startBtn.textContent = 'Start Recording'; 
+      });
         const ctx = canvas.getContext('2d');
         const drawLoop = () => {
             if (video.readyState === video.HAVE_ENOUGH_DATA) {
@@ -384,3 +397,71 @@ function switchView(viewName) {
     }
   }
 }
+
+
+
+// ============================================================
+// Capture Panel
+// ============================================================
+(function initCapturePanel() {
+  const elLabel    = document.getElementById('capture-label');
+  const elInterval = document.getElementById('capture-interval');
+  const elStatus   = document.getElementById('capture-status');
+  const elCount    = document.getElementById('capture-count');
+  const elPreview  = document.getElementById('capture-preview');
+  const elLastLbl  = document.getElementById('capture-last-label');
+  const btnSingle  = document.getElementById('capture-single');
+  const btnBurst   = document.getElementById('capture-burst');
+  const btnStop    = document.getElementById('capture-stop');
+  const btnFolder  = document.getElementById('capture-open-folder');
+
+  // โหลด stats ตอนเปิด
+  window.electronAPI.captureGetStats().then(res => {
+    if (res.success && res.labels.length > 0) {
+      const total = res.labels.reduce((s, l) => s + l.count, 0);
+      elCount.textContent = `${total} images`;
+    }
+  });
+
+  // Single Shot
+  btnSingle.addEventListener('click', async () => {
+    const label = elLabel.value.trim() || 'object';
+    elStatus.textContent = '📷 Capturing...';
+    await window.electronAPI.captureSnapshot(label);
+  });
+
+  // Start Burst
+  btnBurst.addEventListener('click', async () => {
+    const label    = elLabel.value.trim() || 'object';
+    const interval = parseFloat(elInterval.value) || 2.0;
+    btnBurst.disabled = true;
+    btnStop.disabled  = false;
+    elStatus.textContent = `▶ Bursting every ${interval}s — label: "${label}"`;
+    await window.electronAPI.captureStartBurst({ label, interval });
+  });
+
+  // Stop Burst
+  btnStop.addEventListener('click', async () => {
+    btnBurst.disabled = false;
+    btnStop.disabled  = true;
+    elStatus.textContent = '■ Stopped';
+    await window.electronAPI.captureStopBurst();
+  });
+
+  // Open Folder
+  btnFolder.addEventListener('click', async () => {
+    const label = elLabel.value.trim() || '';
+    await window.electronAPI.captureOpenFolder(label);
+  });
+
+  // รับผลจาก ROS (capture:result)
+  window.electronAPI.onCaptureResult((data) => {
+    elCount.textContent   = `${data.count} images`;
+    elLastLbl.textContent = data.label || '—';
+    elStatus.textContent  = `✅ Saved: ${data.filename}`;
+    if (data.filepath) {
+      elPreview.src = `file://${data.filepath}`;
+      elPreview.classList.remove('hidden');
+    }
+  });
+})();
