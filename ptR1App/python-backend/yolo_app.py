@@ -9,16 +9,12 @@ from PIL import Image
 from ultralytics import YOLO
 from concurrent.futures import ThreadPoolExecutor
 
-# โหลดโมเดล
 try:
-    # แนะนำให้โหลดไปที่ GPU ถ้ามี (device='cuda') หรือ 'cpu'
     model = YOLO('yolov8n.pt') 
     print("YOLOv8 model loaded successfully.")
 except Exception as e:
     print(f"Error loading model: {e}")
     exit()
-
-# สร้าง ThreadPool สำหรับรัน YOLO (เพื่อไม่ให้ขวาง WebSocket Loop)
 executor = ThreadPoolExecutor(max_workers=1)
 
 def run_inference(image_data):
