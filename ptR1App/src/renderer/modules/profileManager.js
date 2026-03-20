@@ -1,12 +1,10 @@
 // modules/profileManager.js
 import { WebRTCPlayer } from './webrtcPlayer.js';
-import { FrameProcessor } from './FrameProcessor.js';
 
 let allRobotProfiles = [];
 let selectedProfileName = null;
 
 let rtcPlayer = null;
-let frameProcessor = null;
 
 export async function initProfileManager() {
   document.getElementById('robot-profile-select').addEventListener('change', handleProfileSelection);
@@ -52,11 +50,9 @@ export async function initProfileManager() {
 }
 
 export function initDatasetCollector() {
-    // รับฟัง Event การกดคีย์บอร์ด
     document.addEventListener('keydown', (event) => {
-        // เช็คว่ากดปุ่ม Spacebar และไม่ได้กำลังพิมพ์ข้อความในช่อง Input อยู่
         if (event.code === 'Space' && event.target.tagName !== 'INPUT') {
-            event.preventDefault(); // ป้องกันไม่ให้หน้าจอเลื่อนลงมาเวลากดสเปซบาร์
+            event.preventDefault();
             captureSingleFrame();
         }
     });
@@ -138,8 +134,8 @@ export async function startRobotStream() {
     const isReady = await waitForStreamReady(address, whepPort, 10);
 
     if (isReady) {
-        console.log("✅ Stream is online! Connecting Player...");
-        connectPlayerAndAI(address, whepPort);
+        console.log("Stream is online! Connecting Player...");
+        connectPlayer(address, whepPort);
         return true;
     } else {
         console.error("❌ Stream timeout. Backend started but no video signal.");
@@ -184,20 +180,20 @@ async function waitForStreamReady(address, port, maxRetries = 10) {
 }
 
 export async function stopRobotStream() {
-    console.log("🛑 Stopping Stream Sequence...");
-    disconnectPlayerAndAI();
+    console.log("Stopping Stream Sequence...");
+    disconnectPlayer();
     // 2. สั่ง Backend ให้ปิด FFmpeg
     await window.electronAPI.stopFFmpegStream();
     console.log("Stream stopped and cleaned up.");
 }
 
-export function connectPlayerAndAI(address, whepPort) {
-    console.log("🔗 Initializing Player & AI System...");
+export function connectPlayer(address, whepPort) {
+    console.log("Initializing Player ...");
     if (!address || !whepPort) {
         console.error("❌ Missing Address or Port");
         return;
     }
-    disconnectPlayerAndAI();
+    disconnectPlayer();
     const whepUrl = `http://${address}:${whepPort}/mystream/whep`;
     const videoElement = document.getElementById('stream');
     const statusElement = document.getElementById('rtc_status');
@@ -208,10 +204,6 @@ export function connectPlayerAndAI(address, whepPort) {
     // Handler เมื่อวิดีโอเริ่มเล่น
     const handlePlay = () => {
         console.log("▶ Video playing logic triggered.");
-        const isAIEnabled = document.getElementById('ai-toggle').checked;
-        if (isAIEnabled) {
-            manageAIState(true, videoElement);
-        }
     };
     videoElement.onplaying = handlePlay;
     // ถ้าวิดีโอมันเล่นอยู่แล้ว (Already Playing) ให้เรียกเลยไม่ต้องรอ Event
@@ -220,39 +212,8 @@ export function connectPlayerAndAI(address, whepPort) {
     }
 }
 
-function manageAIState(shouldEnable, videoElement) {
-    //เรียกใช้จาก app.js กลาง (window.overlay)
-    const overlay = window.overlay; 
 
-    if (shouldEnable) {
-        console.log("Starting AI Processor...");
-        
-        // ไม่ต้อง new แล้ว เพราะ app.js สร้างให้แล้ว
-        if (overlay) overlay.resize(); 
-
-        if (!frameProcessor) {
-            frameProcessor = new FrameProcessor(videoElement, (detections) => {
-                // ✅ ส่งข้อมูลไปวาด
-                if (overlay) overlay.drawDetections(detections);
-            });
-        }
-        frameProcessor.start();
-    } else {
-        console.log("zzZ Stopping AI Processor...");
-        if (frameProcessor) {
-            frameProcessor.stop();
-        }
-        // ✅ สั่งเคลียร์หน้าจอ
-        if (overlay) overlay.clear();
-    }
-}
-
-export function disconnectPlayerAndAI() {
-    // หยุด AI
-    if (frameProcessor) {
-        frameProcessor.stop();
-        frameProcessor = null;
-    }
+export function disconnectPlayer() {
     if (window.overlay) {
         window.overlay.clear();
     }
@@ -366,7 +327,7 @@ async function saveProfile() {
     
     const result = await window.electronAPI.saveRobots(allRobotProfiles);
     if (result) {
-        statusEl.textContent = '✅ Profile saved successfully!';
+        statusEl.textContent = 'Profile saved successfully!';
         statusEl.style.color = 'green';
         await loadAndDisplayProfiles();
         document.getElementById('robot-profile-select').value = newName;

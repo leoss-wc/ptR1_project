@@ -3,7 +3,6 @@
 // ---- Config ----
 const HOME_TIMEOUT_MS     = 600000; // 600s timeout สำหรับ goHome
 const LOW_BAT_WARN_PCT    = 20;     // แสดง suggestion ครั้งแรกที่ 20%
-const LOW_BAT_URGENT_PCT  = 8;      // บังคับกลับ home อัตโนมัติที่ 8%
 const BAT_NOTIFY_COOLDOWN = 5 * 60 * 1000; // แสดง suggestion ซ้ำได้ทุก 5 นาที
 
 // ---- State ----
@@ -12,13 +11,12 @@ let _cancelRequested   = false; // flag สำหรับยกเลิกก�
 let _countdownTimer    = null;
 let _rosConnected      = false;
 let _lastBatNotifyTime = 0;     // ป้องกัน notify ถี่เกินไป
-let _urgentTriggered   = false; // บังคับกลับ home ครั้งเดียวเท่านั้น
+let _navRunning        = false; // Navigation กำลังทำงานอยู่หรือไม่
 
 // ---- Reset: ใช้ทุกจุดที่ต้องการยกเลิก ----
 function _resetState() {
     _isShuttingDown  = false;
     _cancelRequested = false;
-    _urgentTriggered = false;
     if (_countdownTimer) {
         clearInterval(_countdownTimer);
         _countdownTimer = null;
@@ -63,6 +61,12 @@ export function initShutdownManager(getActiveMap) {
     btn.addEventListener('click', () => startShutdownFlow(getActiveMap));
 }
 
+// ---- Navigation State (เรียกจากภายนอกเพื่ออัปเดตสถานะ) ----
+export function setNavRunning(running) {
+    _navRunning = running;
+    console.log(`[Shutdown] Nav running: ${running}`);
+}
+
 // ---- Battery Monitor ----
 function _handleBatteryStatus(str, getActiveMap) {
     if (!str || !_rosConnected) return;
@@ -73,18 +77,10 @@ function _handleBatteryStatus(str, getActiveMap) {
     const voltage = parseFloat(batMatch[1]);
     const percent = getBatteryPercent(voltage);
 
-    // --- Urgent: บังคับกลับ home อัตโนมัติ ---
-    if (percent <= LOW_BAT_URGENT_PCT && !_urgentTriggered && !_isShuttingDown) {
-        _urgentTriggered = true;
-        console.warn(`[Shutdown] Battery CRITICAL: ${percent}% (${voltage}V). Auto go home!`);
-        showUrgentBatteryAlert(percent, voltage, getActiveMap);
-        return;
-    }
-
-    // --- Warning: แสดง suggestion ---
-    if (percent <= LOW_BAT_WARN_PCT && percent > LOW_BAT_URGENT_PCT && !_isShuttingDown) {
+    // --- Warning: แสดง suggestion เท่านั้น (ไม่บังคับอัตโนมัติ เผื่อเซนเซอร์เสีย) ---
+    if (percent <= LOW_BAT_WARN_PCT && !_isShuttingDown) {
         const now = Date.now();
-        if (now - _lastBatNotifyTime < BAT_NOTIFY_COOLDOWN) return; // cooldown
+        if (now - _lastBatNotifyTime < BAT_NOTIFY_COOLDOWN) return;
         _lastBatNotifyTime = now;
 
         console.warn(`[Shutdown] Battery LOW: ${percent}% (${voltage}V). Suggesting go home.`);
@@ -147,26 +143,6 @@ function showLowBatterySuggestion(percent, voltage, getActiveMap) {
     setTimeout(() => el?.remove(), 30000);
 }
 
-// --- Urgent: แสดง dialog บังคับ ---
-function showUrgentBatteryAlert(percent, voltage, getActiveMap) {
-    document.getElementById('bat-suggestion')?.remove();
-
-    showDialog({
-        icon: '🔴',
-        title: 'Low Battery - Returning Home',
-        message: `Battery at ${percent}% (${voltage.toFixed(2)}V)\nThe robot will attempt to return Home before powering off.`,
-        confirmText: 'Go Home Immediately',
-        cancelText: 'Cancel (Not Recommended)',
-        onConfirm: () => {
-            _isShuttingDown = true;
-            goHomeAndShutdown(getActiveMap);
-        },
-        onCancel: () => {
-            _urgentTriggered = false; // อนุญาตให้ trigger ซ้ำได้ถ้า user ยกเลิก
-            console.warn('[Shutdown] User cancelled urgent battery go-home.');
-        },
-    });
-}
 
 // ---- Manual Shutdown Flow ----
 function startShutdownFlow(getActiveMap) {
@@ -185,12 +161,26 @@ function startShutdownFlow(getActiveMap) {
         return;
     }
 
+    if (!_navRunning) {
+        showDialog({
+            icon: '🚫',
+            title: 'ไม่สามารถ Shutdown ได้',
+            message: 'Navigation ไม่ได้ทำงานอยู่\nกรุณาเริ่ม Navigation ก่อนทำการ Shutdown\nเพื่อให้หุ่นยนต์สามารถกลับ Home ได้',
+            confirmText: 'รับทราบ',
+            cancelText: '',
+            dismissText: null,
+            onConfirm: () => { _isShuttingDown = false; },
+            onCancel:  () => { _isShuttingDown = false; },
+        });
+        return;
+    }
+
     showDialog({
         icon: '⚠️',
         message: 'ต้องการ Shutdown หุ่นยนต์ใช่หรือไม่?\n\nหุ่นยนต์จะพยายามกลับ Home ก่อน แล้วจึง Power Off',
         confirmText: 'กลับ Home แล้ว Shutdown',
         cancelText: 'Power Off เดี๋ยวนี้',
-        dismissText: 'ยกเลิก',          // ← ปุ่มที่ 3: ออกโดยไม่ทำอะไร
+        dismissText: 'ยกเลิก',  
         onConfirm: () => {
             _isShuttingDown = true;
             goHomeAndShutdown(getActiveMap);
@@ -241,27 +231,49 @@ async function goHomeAndShutdown(getActiveMap) {
 
     // 2. goHome พร้อม Timeout
     showCancellable('กำลังกลับ Home...');
-    try {
-        const result = await Promise.race([
-            window.electronAPI.goHome(activeMap.name),
-            delay(HOME_TIMEOUT_MS).then(() => ({ success: false, message: 'Timeout' }))
-        ]);
+try {
+    // ขั้นที่ 1: ส่งคำสั่ง goHome (รอแค่ service ตอบรับ)
+    const result = await Promise.race([
+        window.electronAPI.goHome(activeMap.name),
+        delay(10000).then(() => ({ success: false, message: 'Service Timeout' }))
+    ]);
 
-        if (_cancelRequested) return;
+    if (_cancelRequested) return;
 
-        if (!result?.success) {
-            console.warn(`[Shutdown] goHome failed: ${result?.message}`);
-            showCancellable(`กลับ Home ไม่ได้: ${result?.message ?? 'unknown'}\nกำลังดำเนินการ Shutdown ต่อ...`);
-            await delay(2500);
-        } else {
-            console.log('[Shutdown] goHome succeeded.');
-        }
-    } catch (err) {
-        if (_cancelRequested) return;
-        console.error('[Shutdown] goHome error:', err);
-        showCancellable('เกิดข้อผิดพลาดระหว่างกลับ Home\nกำลังดำเนินการ Shutdown ต่อ...');
+    if (!result?.success) {
+        console.warn(`[Shutdown] goHome service failed: ${result?.message}`);
+        showCancellable(`⚠️ กลับ Home ไม่ได้: ${result?.message}\nกำลัง Shutdown ต่อ...`);
         await delay(2500);
+    } else {
+        // ขั้นที่ 2: รอหุ่นถึง Home จริงๆ (goal-result: SUCCEEDED)
+        console.log('[Shutdown] goHome accepted, waiting for robot to arrive...');
+        showCancellable('กำลังเดินทางกลับ Home...');
+
+        const goalResult = await Promise.race([
+                new Promise((resolve) => {
+                    window.electronAPI.onGoalResultOnce((data) => resolve(data)); // ← once
+                }),
+                delay(HOME_TIMEOUT_MS).then(() => ({ status: 'TIMEOUT' }))
+            ]);
+
+        if (_cancelRequested) return;
+
+        if (goalResult.status === 'SUCCEEDED') {
+            console.log('[Shutdown] Robot arrived at Home.');
+            showCancellable('ถึง Home แล้ว กำลัง Shutdown...');
+            await delay(1500);
+        } else {
+            console.warn(`[Shutdown] Goal ended with: ${goalResult.status}`);
+            showCancellable(`⚠️ หุ่นไม่ถึง Home (${goalResult.status})\nกำลัง Shutdown ต่อ...`);
+            await delay(2500);
+        }
     }
+} catch (err) {
+    if (_cancelRequested) return;
+    console.error('[Shutdown] goHome error:', err);
+    showCancellable('⚠️ เกิดข้อผิดพลาด\nกำลัง Shutdown ต่อ...');
+    await delay(2500);
+}
 
     if (_cancelRequested) return;
 
@@ -283,26 +295,29 @@ async function doShutdown() {
     showStatus('กำลัง Power Off Raspberry Pi...');
     console.log(`[Shutdown] ${new Date().toISOString()} - Sending shutdown_raspi command.`);
     window.electronAPI.sendCommand('shutdown_raspi');
+    // รอสักครู่แล้วปิด overlay — Pi จะ disconnect เอง
+    await delay(2000);
+    hideOverlay();
+    _isShuttingDown = false;
+
 }
 
 // ---- Countdown ----
 function startCountdown(onDone, seconds = 5) {
     let remaining = seconds;
 
-    function tick() {
-        showStatus(`⚠️ Power Off Raspberry Pi ภายใน ${remaining} วินาที...`, {
-            showCancel: true,
-            onCancel: () => {
-                _resetState();
-            },
-        });
-        if (remaining <= 0) {
+        function tick() {
+        if (remaining <= 0) {                     // check ก่อน
             clearInterval(_countdownTimer);
             _countdownTimer = null;
             hideOverlay();
             onDone();
             return;
         }
+        showStatus(`⚠️ Power Off Raspberry Pi ภายใน ${remaining} วินาที...`, {
+            showCancel: true,
+            onCancel: () => { _resetState(); },
+        });
         remaining--;
     }
 

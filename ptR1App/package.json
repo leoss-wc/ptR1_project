@@ -6,10 +6,13 @@
   "build": {
     "appId": "com.example.robotpatrol",
     "icon": "assets/icon.png",
+    "asar": true,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**/*"
+    ],
     "files": [
       "src/**/*",
-      "assets/**/*",
-      "node_modules/ffmpeg-static/**/*"
+      "assets/**/*"
     ],
     "directories": {
       "output": "dist"
@@ -19,8 +22,8 @@
       "category": "Utility"
     },
     "win": {
-        "target": "nsis",
-        "icon": "assets/icon.png"
+      "target": "nsis",
+      "icon": "assets/icon.png"
     }
   },
   "scripts": {
@@ -36,13 +39,13 @@
   "license": "ISC",
   "devDependencies": {
     "electron": "^38.1.0",
-    "electron-builder": "^26.0.12"
+    "electron-builder": "^26.0.12",
+    "express": "^5.2.1",
+    "serve-static": "^2.2.1"
   },
   "dependencies": {
-    "express": "^5.1.0",
     "ffmpeg-static": "^5.3.0",
     "js-yaml": "^4.1.0",
-    "roslib": "^1.4.1",
-    "serve-static": "^1.16.3"
+    "roslib": "^1.4.1"
   }
 }

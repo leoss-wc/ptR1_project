@@ -69,6 +69,11 @@ function saveRobotsToFile(robots) {
 const getAllVideoFilesAsync = async (dirPath) => {
   let files = [];
   try {
+    const stat = await fsPromises.stat(dirPath);
+    if (!stat.isDirectory()) {
+      console.warn(`getAllVideoFilesAsync: path is not a directory: ${dirPath}`);
+      return [];
+    }
     const items = await fsPromises.readdir(dirPath, { withFileTypes: true });
     for (const item of items) {
       const fullPath = path.join(dirPath, item.name);
@@ -410,9 +415,17 @@ ipcMain.handle('get-video-path', (_, relativePath) => {
 });
 
 ipcMain.handle('dialog:select-folder', async () => {
-    const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    const result = await dialog.showOpenDialog(mainWindow, { 
+        properties: ['openFile'],
+        title: 'Select Any Video in Folder',
+        buttonLabel: 'Select',
+        filters: [{ name: 'Videos', extensions: ['mp4', 'webm', 'mov'] }],
+        defaultPath: app.getPath('videos'),
+    });
     if (result.canceled) return null;
-    return result.filePaths[0]; 
+
+    // return folder ที่ไฟล์นั้นอยู่
+    return path.dirname(result.filePaths[0]);
 });
 
 ipcMain.handle('save-video', async (_, { buffer, date, filename }) => {

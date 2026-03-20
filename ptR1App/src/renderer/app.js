@@ -1,5 +1,6 @@
 console.log('app.js started');
 
+import { setNavRunning } from './modules/shutdownManager.js';
 import { initRelayButtons } from './modules/relayControl.js';
 import { CanvasRecorder } from './modules/recorder.js';
 
@@ -107,6 +108,15 @@ document.addEventListener('DOMContentLoaded', async() => {
         console.warn("window.api.onSystemPi not found");
     }
   });
+// ตอน nav start สำเร็จ
+const result = await window.electronAPI.startNavigation(true);
+if (result.success) {
+    setNavRunning(true);
+}
+
+// ตอน nav stop
+await window.electronAPI.stopNavigation(true);
+setNavRunning(false);
 
 
 function updateRosButtons(isConnected) {
