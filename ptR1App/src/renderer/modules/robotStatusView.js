@@ -81,10 +81,15 @@ export class PiSystemRenderer {
         this.elSvcRosserial = document.getElementById('sys-svc-rosserial');
         this.elSvcOthers    = document.getElementById('sys-svc-others');
 
-        // AI Section
-        this.elAiEnabled = document.getElementById('sys-ai-enabled');
-        this.elAiMode    = document.getElementById('sys-ai-mode');
-        this.elAiMs      = document.getElementById('sys-ai-ms');
+        // AI Section — Model 1 (Person)
+        this.elAi1Enabled = document.getElementById('sys-ai1-enabled');
+        this.elAi1Mode    = document.getElementById('sys-ai1-mode');
+        this.elAi1Ms      = document.getElementById('sys-ai1-ms');
+
+        // AI Section — Model 2 (Door)
+        this.elAi2Enabled = document.getElementById('sys-ai2-enabled');
+        this.elAi2Mode    = document.getElementById('sys-ai2-mode');
+        this.elAi2Ms      = document.getElementById('sys-ai2-ms');
 
         console.log("PiSystemRenderer initialized.");
     }
@@ -117,18 +122,33 @@ export class PiSystemRenderer {
         if (this.elSvcRosserial) this.elSvcRosserial.innerText = `${svc.rosserial   ?? 0}%`;
         if (this.elSvcOthers)    this.elSvcOthers.innerText    = `${svc.others      ?? 0}%`;
 
-        // 3. AI Section
+        // 3. AI Section — enabled/mode ใช้ร่วมกัน, inference_ms แยกต่อโมเดล
         const ai = data.ai || {};
-        if (this.elAiEnabled) {
-            const enabled = ai.enabled ?? false;
-            this.elAiEnabled.innerText    = enabled ? 'ON' : 'OFF';
-            this.elAiEnabled.style.color  = enabled ? '#00C851' : '#ff4444';
+        const enabled = ai.enabled ?? false;
+        const mode    = ai.mode ?? '--';
+
+        // Model 1 (Person/COCO)
+        if (this.elAi1Enabled) {
+            this.elAi1Enabled.innerText   = enabled ? 'ON' : 'OFF';
+            this.elAi1Enabled.style.color = enabled ? '#00C851' : '#ff4444';
         }
-        if (this.elAiMode) this.elAiMode.innerText = ai.mode ?? '--';
-        if (this.elAiMs) {
-            const ms = ai.inference_ms ?? null;
-            this.elAiMs.innerText    = ms !== null ? `${ms} ms` : '-- ms';
-            this.elAiMs.style.color  = ms > 200 ? '#ff4444' : ms > 150 ? '#ffbb33' : '#00C851';
+        if (this.elAi1Mode) this.elAi1Mode.innerText = mode;
+        if (this.elAi1Ms) {
+            const ms = ai.model1?.inference_ms ?? null;
+            this.elAi1Ms.innerText   = ms !== null ? `${ms} ms` : '-- ms';
+            this.elAi1Ms.style.color = ms !== null ? '#f0f0f0' : '#ccc';
+        }
+
+        // Model 2 (Door)
+        if (this.elAi2Enabled) {
+            this.elAi2Enabled.innerText   = enabled ? 'ON' : 'OFF';
+            this.elAi2Enabled.style.color = enabled ? '#00C851' : '#ff4444';
+        }
+        if (this.elAi2Mode) this.elAi2Mode.innerText = 'door';
+        if (this.elAi2Ms) {
+            const ms2 = ai.model2?.inference_ms ?? null;
+            this.elAi2Ms.innerText   = ms2 !== null ? `${ms2} ms` : '-- ms';
+            this.elAi2Ms.style.color = ms2 !== null ? '#f0f0f0' : '#ccc';
         }
     }
 }

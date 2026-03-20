@@ -42,6 +42,14 @@ function quatToYaw(o) {
   return Math.atan2(2 * (o.w * o.z + o.x * o.y), 1 - 2 * (o.y * o.y + o.z * o.z));
 }
 
+// Helper: กรอง message ที่เก่าเกินไป (ป้องกัน message สะสมตอนเน็ตสะดุดแล้วโยนมาทีเดียว)
+const MAX_MSG_AGE_MS = 2000; // ทิ้ง message ที่เก่ากว่า 2 วินาที
+function isFresh(stamp) {
+  if (!stamp) return true; // ถ้าไม่มี stamp ให้ผ่านเสมอ
+  const msgTimeMs = stamp.secs * 1000 + stamp.nsecs / 1e6;
+  return (Date.now() - msgTimeMs) < MAX_MSG_AGE_MS;
+}
+
 // Helper: เช็คว่า pose เปลี่ยนพอจะส่งหรือเปล่า
 function poseChanged(pos, yaw, lastPos, lastYaw) {
   if (!lastPos) return true;
@@ -243,10 +251,13 @@ function connectROSBridge(url) {
 
 function startReconnect() {
   if (!reconnectTimer) {
-    console.log(`Server : 🔄 Attempting to reconnect every ${reconnectInterval / 1000}s...`);
+    // แจ้ง UI ว่ากำลัง connecting
+    parentPort.postMessage({ 
+      type: 'connection', 
+      data: { isConnected: false, isConnecting: true } 
+    });
     reconnectTimer = setInterval(() => {
       if (!ros.isConnected) {
-        console.log('Server : 🔗 Reconnecting to ROSBridge at', rosbridgeURL);
         connectROSBridge(rosbridgeURL);
       } else {
         clearInterval(reconnectTimer);
@@ -323,10 +334,12 @@ function subscribeRobotPoseSlam() {
   slamPoseSubscriber = new ROSLIB.Topic({
     ros,
     name: '/robot_pose_sample',
-    messageType: 'geometry_msgs/PoseStamped'
+    messageType: 'geometry_msgs/PoseStamped',
+    throttle_rate: 200  // รับสูงสุด 5Hz (เดิมไม่จำกัด)
   });
 
   slamPoseSubscriber.subscribe((msg) => {
+    if (!isFresh(msg.header?.stamp)) return; // ทิ้ง message เก่าที่สะสมระหว่างเน็ตสะดุด
     const pos = msg.pose.position;
     const ori = msg.pose.orientation;
     const yaw = quatToYaw(ori);
@@ -350,10 +363,12 @@ function subscribeAmclPose() {
   amclPoseSubscriber = new ROSLIB.Topic({
     ros,
     name: '/amcl_pose',
-    messageType: 'geometry_msgs/PoseWithCovarianceStamped'
+    messageType: 'geometry_msgs/PoseWithCovarianceStamped',
+    throttle_rate: 200  // รับสูงสุด 5Hz 
   });
 
   amclPoseSubscriber.subscribe((msg) => {
+    if (!isFresh(msg.header?.stamp)) return; // ทิ้ง message เก่าที่สะสมระหว่างเน็ตสะดุด
     const pos = msg.pose.pose.position;
     const ori = msg.pose.pose.orientation;
     const yaw = quatToYaw(ori);
@@ -381,6 +396,7 @@ function subscribeLaserScanData() {
   console.log('[Server] Subscribing to LaserScan: /scan');
 
   scanTopic.subscribe((msg) => {
+    if (!isFresh(msg.header?.stamp)) return; // ทิ้ง scan เก่าที่สะสมระหว่างเน็ตสะดุด
     // เก็บทุก LASER_STEP ค่า → ลด payload ~67%
     const sampledRanges = msg.ranges.filter((_, i) => i % LASER_STEP === 0);
 
@@ -388,7 +404,7 @@ function subscribeLaserScanData() {
       type: 'laser-scan-update',
       data: {
         angle_min:       msg.angle_min,
-        angle_increment: msg.angle_increment * LASER_STEP, // ปรับ increment ตาม step
+        angle_increment: msg.angle_increment * LASER_STEP,
         ranges:          sampledRanges
       }
     });
@@ -400,10 +416,12 @@ function subscribePlannedPath() {
   const planTopic = new ROSLIB.Topic({
     ros,
     name: '/move_base/NavfnROS/plan',
-    messageType: 'nav_msgs/Path'
+    messageType: 'nav_msgs/Path',
+    throttle_rate: 500  // รับสูงสุด 2Hz
   });
 
   planTopic.subscribe((message) => {
+    if (!isFresh(message.header?.stamp)) return; // ทิ้ง path เก่าที่สะสมระหว่างเน็ตสะดุด
     const pathPoints = message.poses.map(p => ({
       x: p.pose.position.x,
       y: p.pose.position.y
@@ -799,7 +817,7 @@ function publishServoPanAngle(angle) {
   _servoPanTopic.publish(new ROSLIB.Message({ data: angle }));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 function subscribeSystemProfile() {
   if (!ros || !ros.isConnected) return;
   const topic = new ROSLIB.Topic({ ros, name: '/pi/system_profile', messageType: 'std_msgs/String', throttle_rate: 1000 });
@@ -843,5 +861,4 @@ function subscribeDetectionAlert() {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 parentPort.postMessage({ type: 'log', data: 'Worker Initialized' });

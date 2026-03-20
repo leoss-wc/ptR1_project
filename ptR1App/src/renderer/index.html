@@ -248,30 +248,53 @@
             <button id="btn-update-pid" class="btn btn-blue btn-small" style="width: 100%;">Update PID</button>
           </div>
         </div>
-
-        <!-- RIGHT COLUMN -->
         <div class="commd-col">
-
-          <!-- AI Section (ย้ายมาไว้ด้านบนฝั่งขวา) -->
           <div class="panel" style="margin-bottom: 10px;">
             <div style="border-bottom: 1px solid #444; padding-bottom: 8px; margin-bottom: 8px; font-size: 11px;">
                 <span style="color: #aaa; display: block; margin-bottom: 6px; font-size: 13px; font-weight: bold;">
                     <i class="fa-solid fa-brain"></i> AI Detection Status
                 </span>
-                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px;">
-                    <div>
-                        <span style="color: #888;">Status:</span>
-                        <span id="sys-ai-enabled" style="font-weight: bold;">--</span>
-                    </div>
-                    <div>
-                        <span style="color: #888;">Mode:</span>
-                        <span id="sys-ai-mode" style="color: #ccc;">--</span>
-                    </div>
-                    <div>
-                        <span style="color: #888;">Infer:</span>
-                        <span id="sys-ai-ms" style="color: #ccc;">-- ms</span>
+                <!-- Model 1: Person Detection -->
+                <div style="margin-bottom: 5px;">
+                    <span style="color: #777; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fa-solid fa-person"></i> Model 1 · Person
+                    </span>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 2px;">
+                        <div>
+                            <span style="color: #888;">Status:</span>
+                            <span id="sys-ai1-enabled" style="font-weight: bold;">--</span>
+                        </div>
+                        <div>
+                            <span style="color: #888;">Mode:</span>
+                            <span id="sys-ai1-mode" style="color: #ccc;">--</span>
+                        </div>
+                        <div>
+                            <span style="color: #888;">Infer:</span>
+                            <span id="sys-ai1-ms" style="color: #ccc;">-- ms</span>
+                        </div>
                     </div>
                 </div>
+                <!-- Model 2: Door Detection -->
+                <div style="border-top: 1px solid #333; padding-top: 5px;">
+                    <span style="color: #777; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <i class="fa-solid fa-door-open"></i> Model 2 · Door
+                    </span>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-top: 2px;">
+                        <div>
+                            <span style="color: #888;">Status:</span>
+                            <span id="sys-ai2-enabled" style="font-weight: bold;">--</span>
+                        </div>
+                        <div>
+                            <span style="color: #888;">Mode:</span>
+                            <span id="sys-ai2-mode" style="color: #ccc;">--</span>
+                        </div>
+                        <div>
+                            <span style="color: #888;">Infer:</span>
+                            <span id="sys-ai2-ms" style="color: #ccc;">-- ms</span>
+                        </div>
+                    </div>
+                </div>
+                
             </div>
           </div>
 

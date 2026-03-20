@@ -2,16 +2,30 @@
 
 // ---- Config ----
 const HOME_TIMEOUT_MS     = 600000; // 600s timeout สำหรับ goHome
-const LOW_BAT_WARN_PCT    = 20;    // แสดง suggestion ครั้งแรกที่ 20%
-const LOW_BAT_URGENT_PCT  = 8;    // บังคับกลับ home อัตโนมัติที่ 8%
+const LOW_BAT_WARN_PCT    = 20;     // แสดง suggestion ครั้งแรกที่ 20%
+const LOW_BAT_URGENT_PCT  = 8;      // บังคับกลับ home อัตโนมัติที่ 8%
 const BAT_NOTIFY_COOLDOWN = 5 * 60 * 1000; // แสดง suggestion ซ้ำได้ทุก 5 นาที
 
 // ---- State ----
 let _isShuttingDown    = false;
+let _cancelRequested   = false; // flag สำหรับยกเลิกกลางทาง goHome
 let _countdownTimer    = null;
 let _rosConnected      = false;
-let _lastBatNotifyTime = 0;      // ป้องกัน notify ถี่เกินไป
-let _urgentTriggered   = false;  // บังคับกลับ home ครั้งเดียวเท่านั้น
+let _lastBatNotifyTime = 0;     // ป้องกัน notify ถี่เกินไป
+let _urgentTriggered   = false; // บังคับกลับ home ครั้งเดียวเท่านั้น
+
+// ---- Reset: ใช้ทุกจุดที่ต้องการยกเลิก ----
+function _resetState() {
+    _isShuttingDown  = false;
+    _cancelRequested = false;
+    _urgentTriggered = false;
+    if (_countdownTimer) {
+        clearInterval(_countdownTimer);
+        _countdownTimer = null;
+    }
+    hideOverlay();
+    console.log(`[Shutdown] ${new Date().toISOString()} - State reset (cancelled).`);
+}
 
 // ---- Battery Helper (ใช้ logic เดียวกับ RobotStatusRenderer) ----
 function getBatteryPercent(voltage) {
@@ -95,7 +109,7 @@ function showLowBatterySuggestion(percent, voltage, getActiveMap) {
     `;
     el.innerHTML = `
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:12px;">
-            <span style="font-size:22px;">🔋</span>
+            <i class="fa-solid fa-battery-low" style="font-size:22px; color:#f0ad00;"></i>
             <div>
                 <div style="font-weight:600; color:#f0ad00;">แบตเตอรี่ใกล้หมด</div>
                 <div style="font-size:13px; color:#ccc;">${percent}% (${voltage.toFixed(2)}V)</div>
@@ -125,6 +139,7 @@ function showLowBatterySuggestion(percent, voltage, getActiveMap) {
     document.getElementById('bat-later').onclick   = () => el.remove();
     document.getElementById('bat-go-home').onclick = () => {
         el.remove();
+        _isShuttingDown = true;
         goHomeAndShutdown(getActiveMap);
     };
 
@@ -132,11 +147,9 @@ function showLowBatterySuggestion(percent, voltage, getActiveMap) {
     setTimeout(() => el?.remove(), 30000);
 }
 
-// --- Urgent: แสดง dialog บังคับ (ไม่มีปุ่ม dismiss) ---
+// --- Urgent: แสดง dialog บังคับ ---
 function showUrgentBatteryAlert(percent, voltage, getActiveMap) {
-    if (document.getElementById('bat-suggestion')) {
-        document.getElementById('bat-suggestion').remove();
-    }
+    document.getElementById('bat-suggestion')?.remove();
 
     showDialog({
         icon: '🔴',
@@ -144,8 +157,11 @@ function showUrgentBatteryAlert(percent, voltage, getActiveMap) {
         message: `Battery at ${percent}% (${voltage.toFixed(2)}V)\nThe robot will attempt to return Home before powering off.`,
         confirmText: 'Go Home Immediately',
         cancelText: 'Cancel (Not Recommended)',
-        onConfirm: () => goHomeAndShutdown(getActiveMap),
-        onCancel:  () => {
+        onConfirm: () => {
+            _isShuttingDown = true;
+            goHomeAndShutdown(getActiveMap);
+        },
+        onCancel: () => {
             _urgentTriggered = false; // อนุญาตให้ trigger ซ้ำได้ถ้า user ยกเลิก
             console.warn('[Shutdown] User cancelled urgent battery go-home.');
         },
@@ -158,9 +174,8 @@ function startShutdownFlow(getActiveMap) {
         console.warn('[Shutdown] Already in shutdown flow.');
         return;
     }
-    _isShuttingDown = true;
+    // ยังไม่ set _isShuttingDown = true — รอให้ user กด confirm ก่อน
 
-    // ปิด suggestion ถ้าแสดงอยู่
     document.getElementById('bat-suggestion')?.remove();
 
     console.log(`[Shutdown] ${new Date().toISOString()} - User initiated shutdown.`);
@@ -171,56 +186,84 @@ function startShutdownFlow(getActiveMap) {
     }
 
     showDialog({
-        message: 'Are you sure you want to shutdown the robot?\n\nThe robot will attempt to return Home before powering off.',
-        confirmText: 'Yes, Go Home',
-        cancelText: 'Power Off Now',
-        onConfirm: () => goHomeAndShutdown(getActiveMap),
-        onCancel:  () => startCountdown(doShutdown),
+        icon: '⚠️',
+        message: 'ต้องการ Shutdown หุ่นยนต์ใช่หรือไม่?\n\nหุ่นยนต์จะพยายามกลับ Home ก่อน แล้วจึง Power Off',
+        confirmText: 'กลับ Home แล้ว Shutdown',
+        cancelText: 'Power Off เดี๋ยวนี้',
+        dismissText: 'ยกเลิก',          // ← ปุ่มที่ 3: ออกโดยไม่ทำอะไร
+        onConfirm: () => {
+            _isShuttingDown = true;
+            goHomeAndShutdown(getActiveMap);
+        },
+        onCancel: () => {
+            _isShuttingDown = true;
+            startCountdown(doShutdown);
+        },
+        onDismiss: () => {
+            // ไม่ทำอะไร — user กดผิดหรือเปลี่ยนใจ
+            console.log(`[Shutdown] ${new Date().toISOString()} - Dismissed at initial dialog.`);
+        },
     });
 }
 
 // ---- goHome Logic ----
 async function goHomeAndShutdown(getActiveMap) {
-    _isShuttingDown = true;
+    _cancelRequested = false;
     const activeMap = getActiveMap();
 
     console.log(`[Shutdown] ${new Date().toISOString()} - Going home. Map: ${activeMap?.name ?? 'unknown'}`);
 
     if (!activeMap?.name) {
         console.warn('[Shutdown] No active map. Skipping goHome.');
-        startCountdown(doShutdown);
+        if (!_cancelRequested) startCountdown(doShutdown);
         return;
     }
 
+    // Helper: showStatus พร้อมปุ่มยกเลิกที่ reset state ทั้งหมด
+    const showCancellable = (msg) => showStatus(msg, {
+        showCancel: true,
+        onCancel: () => {
+            _cancelRequested = true;
+            _resetState();
+        },
+    });
+
     // 1. หยุด Patrol ก่อน
     try {
-        showStatus('Stopping Patrol...');
+        showCancellable('กำลังหยุด Patrol...');
         await window.electronAPI.stopPatrol();
         await delay(500);
     } catch (err) {
         console.warn('[Shutdown] stopPatrol error (ignored):', err);
     }
 
+    if (_cancelRequested) return;
+
     // 2. goHome พร้อม Timeout
-    showStatus('Going Home...');
+    showCancellable('กำลังกลับ Home...');
     try {
         const result = await Promise.race([
             window.electronAPI.goHome(activeMap.name),
-            delay(HOME_TIMEOUT_MS).then(() => ({ success: false, message: 'Timeout (60s)' }))
+            delay(HOME_TIMEOUT_MS).then(() => ({ success: false, message: 'Timeout' }))
         ]);
+
+        if (_cancelRequested) return;
 
         if (!result?.success) {
             console.warn(`[Shutdown] goHome failed: ${result?.message}`);
-            showStatus(`Cannot go home: ${result?.message ?? 'unknown'}`);
-            await delay(2000);
+            showCancellable(`กลับ Home ไม่ได้: ${result?.message ?? 'unknown'}\nกำลังดำเนินการ Shutdown ต่อ...`);
+            await delay(2500);
         } else {
             console.log('[Shutdown] goHome succeeded.');
         }
     } catch (err) {
+        if (_cancelRequested) return;
         console.error('[Shutdown] goHome error:', err);
-        showStatus('Something went wrong while going home.');
-        await delay(2000);
+        showCancellable('เกิดข้อผิดพลาดระหว่างกลับ Home\nกำลังดำเนินการ Shutdown ต่อ...');
+        await delay(2500);
     }
+
+    if (_cancelRequested) return;
 
     startCountdown(doShutdown);
 }
@@ -229,7 +272,7 @@ async function goHomeAndShutdown(getActiveMap) {
 async function doShutdown() {
     console.log(`[Shutdown] ${new Date().toISOString()} - Executing shutdown.`);
 
-    showStatus('Attempting position save  ...');
+    showStatus('กำลังบันทึกตำแหน่ง...');
     try {
         await window.electronAPI.stopNavigation(true); // true = save pose
         await delay(1000);
@@ -237,7 +280,7 @@ async function doShutdown() {
         console.warn('[Shutdown] stopNavigation error (ignored):', err);
     }
 
-    showStatus('⏻ กำลัง Power Off Raspberry Pi...');
+    showStatus('กำลัง Power Off Raspberry Pi...');
     console.log(`[Shutdown] ${new Date().toISOString()} - Sending shutdown_raspi command.`);
     window.electronAPI.sendCommand('shutdown_raspi');
 }
@@ -249,7 +292,9 @@ function startCountdown(onDone, seconds = 5) {
     function tick() {
         showStatus(`⚠️ Power Off Raspberry Pi ภายใน ${remaining} วินาที...`, {
             showCancel: true,
-            onCancel: cancelCountdown,
+            onCancel: () => {
+                _resetState();
+            },
         });
         if (remaining <= 0) {
             clearInterval(_countdownTimer);
@@ -263,17 +308,6 @@ function startCountdown(onDone, seconds = 5) {
 
     tick();
     _countdownTimer = setInterval(tick, 1000);
-}
-
-function cancelCountdown() {
-    if (_countdownTimer) {
-        clearInterval(_countdownTimer);
-        _countdownTimer = null;
-    }
-    _isShuttingDown  = false;
-    _urgentTriggered = false;
-    hideOverlay();
-    console.log(`[Shutdown] ${new Date().toISOString()} - Cancelled by user.`);
 }
 
 // ---- UI Helpers ----
@@ -296,31 +330,43 @@ function hideOverlay() {
     document.getElementById('shutdown-overlay')?.remove();
 }
 
-function showDialog({ icon = '⚠️', title, message, confirmText, cancelText, onConfirm, onCancel }) {
+// showDialog รองรับปุ่มที่ 3 (dismissText/onDismiss) สำหรับ "ยกเลิก"
+function showDialog({ icon = '⚠️', title, message, confirmText, cancelText, dismissText, onConfirm, onCancel, onDismiss }) {
     const overlay = getOrCreateOverlay();
     overlay.innerHTML = `
         <div style="
             background: #1e1e2e; border-radius: 12px; padding: 32px 40px;
-            color: #fff; text-align: center; max-width: 380px; width: 90%;
+            color: #fff; text-align: center; max-width: 400px; width: 90%;
             box-shadow: 0 8px 32px rgba(0,0,0,0.6);
         ">
-            ${title ? `<div style="font-size:28px; margin-bottom:8px;">${icon}</div>
-                       <div style="font-weight:700; font-size:16px; margin-bottom:12px;">${title}</div>` : ''}
+            <div style="font-size:32px; margin-bottom:10px;">${icon}</div>
+            ${title ? `<div style="font-weight:700; font-size:16px; margin-bottom:12px;">${title}</div>` : ''}
             <p style="font-size:15px; margin-bottom:28px; line-height:1.7; white-space:pre-line;">${message}</p>
-            <div style="display:flex; gap:12px; justify-content:center;">
-                <button id="sd-confirm" style="
-                    padding:10px 22px; border-radius:8px; border:none; cursor:pointer;
-                    background:#4CAF50; color:#fff; font-size:14px; font-weight:600;
-                ">${confirmText}</button>
-                <button id="sd-cancel" style="
-                    padding:10px 22px; border-radius:8px; border:none; cursor:pointer;
-                    background:#e53935; color:#fff; font-size:14px; font-weight:600;
-                ">${cancelText}</button>
+            <div style="display:flex; flex-direction:column; gap:10px; align-items:center;">
+                <div style="display:flex; gap:10px; justify-content:center; width:100%;">
+                    <button id="sd-confirm" style="
+                        flex:1; padding:10px 16px; border-radius:8px; border:none; cursor:pointer;
+                        background:#4CAF50; color:#fff; font-size:14px; font-weight:600;
+                    ">${confirmText}</button>
+                    <button id="sd-cancel" style="
+                        flex:1; padding:10px 16px; border-radius:8px; border:none; cursor:pointer;
+                        background:#e53935; color:#fff; font-size:14px; font-weight:600;
+                    ">${cancelText}</button>
+                </div>
+                ${dismissText ? `
+                <button id="sd-dismiss" style="
+                    padding:8px 32px; border-radius:8px; cursor:pointer;
+                    background:transparent; border:1px solid #555;
+                    color:#aaa; font-size:13px;
+                ">${dismissText}</button>` : ''}
             </div>
         </div>
     `;
     document.getElementById('sd-confirm').onclick = () => { hideOverlay(); onConfirm(); };
     document.getElementById('sd-cancel').onclick  = () => { hideOverlay(); onCancel();  };
+    if (dismissText && onDismiss) {
+        document.getElementById('sd-dismiss').onclick = () => { hideOverlay(); onDismiss(); };
+    }
 }
 
 function showStatus(message, { showCancel = false, onCancel } = {}) {
@@ -336,7 +382,7 @@ function showStatus(message, { showCancel = false, onCancel } = {}) {
             </p>
             ${showCancel ? `
                 <button id="sd-abort" style="
-                    padding:10px 24px; border-radius:8px; border:none; cursor:pointer;
+                    padding:10px 28px; border-radius:8px; border:none; cursor:pointer;
                     background:#555; color:#fff; font-size:14px;
                 ">ยกเลิก</button>
             ` : ''}

@@ -134,13 +134,14 @@ function createRosWorker() {
       switch (message.type) {
         // --- Status Updates ---
         case 'connection':
-          const isConnected = message.data.isConnected;
-          console.log(`ROS Connection Status: ${isConnected}`);
-          mainWindow.webContents.send('connection-status', {
-            connected: isConnected,
-            message: isConnected ? 'Connected' : 'Disconnected'
-          });
-          break;
+        const isConnected = message.data.isConnected;
+        const isConnecting = message.data.isConnecting ?? false;
+        mainWindow.webContents.send('connection-status', {
+          connected: isConnected,
+          connecting: isConnecting,
+          message: isConnected ? 'Connected' : (isConnecting ? 'Connecting...' : 'Disconnected')
+        });
+        break;
         case 'log': console.log('Worker Log:', message.data); break;
         case 'error': console.error('Worker Error:', message.data); break;
 

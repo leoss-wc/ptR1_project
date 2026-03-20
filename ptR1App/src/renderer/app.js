@@ -24,6 +24,7 @@ import { initSlamControl } from './modules/slamControl.js';
 import { RobotStatusRenderer, PidTuner,PiSystemRenderer} from './modules/robotStatusView.js';
 import { initDetectionSettings } from './modules/detectionSettings.js';
 import { initShutdownManager } from './modules/shutdownManager.js';
+import { activeMap } from './modules/mapState.js';
 
 
 let recorder = null;
@@ -172,10 +173,10 @@ function setupRecorder() {
         window.electronAPI.onVideoSaveStatus((result) => {
             const original = stopBtn.textContent;
             if (result.success) {
-                stopBtn.textContent = '✅ Saved!';
+                stopBtn.textContent = 'Saved!';
                 stopBtn.style.background = '#2a7a2a';
             } else {
-                stopBtn.textContent = '❌ Save Failed';
+                stopBtn.textContent = 'Save Failed';
                 stopBtn.style.background = '#7a2a2a';
             }
             setTimeout(() => {
@@ -226,12 +227,17 @@ function setupRecorder() {
 function setupGlobalCallbacks() {
     // ROS Connection Status
     const rosStatusEl = document.getElementById('home-ros-status');
+    rosStatusEl.textContent = 'Disconnected';          // ← set ก่อนรอ event
+    rosStatusEl.className = 'status-disconnected';
     updateRosButtons(false);
+
     window.electronAPI.onConnectionStatus((status) => {
-        rosStatusEl.textContent = status.message;
-        rosStatusEl.className = status.connected ? 'status-connected' : (status.connecting ? 'status-connecting' : 'status-disconnected');
-        updateRosButtons(status.connected);
-    });
+    rosStatusEl.textContent = status.message;
+    rosStatusEl.className = status.connected
+        ? 'status-connected'
+        : (status.connecting ? 'status-connecting' : 'status-disconnected');
+    updateRosButtons(status.connected);
+});
     
     
     window.electronAPI.onStreamStatus((res) => console.log("Stream:", res));
