@@ -1,7 +1,0 @@
-string map_name
-string base64_image
-string yaml_content 
----
-# Response
-bool success
-string message

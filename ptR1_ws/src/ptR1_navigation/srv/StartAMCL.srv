@@ -1,4 +1,0 @@
-bool restore_pose  # True = ให้โหลดตำแหน่งล่าสุดที่บันทึกไว้
----
-bool success
-string message

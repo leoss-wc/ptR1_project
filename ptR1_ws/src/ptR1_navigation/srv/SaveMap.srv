@@ -1,4 +1,0 @@
-string name  # ชื่อไฟล์เป้าหมาย เช่น "office1"
----
-bool success
-string message
